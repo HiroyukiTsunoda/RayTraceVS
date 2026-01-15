@@ -1,0 +1,83 @@
+<UserControl x:Class="RayTraceVS.WPF.Views.ComponentPaletteView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d" 
+             d:DesignHeight="450" d:DesignWidth="250">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="10">
+            <TextBlock Text="コンポーネントパレット" 
+                       FontSize="16" FontWeight="Bold" 
+                       Foreground="{StaticResource TextBrush}"
+                       Margin="0,0,0,10"/>
+
+            <!-- オブジェクトカテゴリ -->
+            <Expander Header="◆ オブジェクト" IsExpanded="True"
+                      Foreground="{StaticResource TextBrush}"
+                      Background="{StaticResource PanelBrush}">
+                <StackPanel Margin="10,5">
+                    <Button Content="球" Click="AddSphere_Click" 
+                            Margin="0,2" HorizontalAlignment="Stretch"
+                            Background="{StaticResource NodeObjectBrush}"/>
+                    <Button Content="平面" Click="AddPlane_Click" 
+                            Margin="0,2" HorizontalAlignment="Stretch"
+                            Background="{StaticResource NodeObjectBrush}"/>
+                    <Button Content="円柱" Click="AddCylinder_Click" 
+                            Margin="0,2" HorizontalAlignment="Stretch"
+                            Background="{StaticResource NodeObjectBrush}"/>
+                </StackPanel>
+            </Expander>
+
+            <!-- 数学カテゴリ -->
+            <Expander Header="◆ 数学" Margin="0,5"
+                      Foreground="{StaticResource TextBrush}"
+                      Background="{StaticResource PanelBrush}">
+                <StackPanel Margin="10,5">
+                    <Button Content="Vector3" Click="AddVector3_Click" 
+                            Margin="0,2" HorizontalAlignment="Stretch"
+                            Background="{StaticResource NodeMathBrush}"/>
+                    <Button Content="加算" Click="AddMath_Click" 
+                            Margin="0,2" HorizontalAlignment="Stretch"
+                            Background="{StaticResource NodeMathBrush}"/>
+                    <Button Content="乗算" Click="AddMultiply_Click" 
+                            Margin="0,2" HorizontalAlignment="Stretch"
+                            Background="{StaticResource NodeMathBrush}"/>
+                </StackPanel>
+            </Expander>
+
+            <!-- カメラカテゴリ -->
+            <Expander Header="◆ カメラ" Margin="0,5"
+                      Foreground="{StaticResource TextBrush}"
+                      Background="{StaticResource PanelBrush}">
+                <StackPanel Margin="10,5">
+                    <Button Content="カメラ" Click="AddCamera_Click" 
+                            Margin="0,2" HorizontalAlignment="Stretch"
+                            Background="{StaticResource NodeCameraBrush}"/>
+                </StackPanel>
+            </Expander>
+
+            <!-- ライトカテゴリ -->
+            <Expander Header="◆ ライト" Margin="0,5"
+                      Foreground="{StaticResource TextBrush}"
+                      Background="{StaticResource PanelBrush}">
+                <StackPanel Margin="10,5">
+                    <Button Content="ポイントライト" Click="AddLight_Click" 
+                            Margin="0,2" HorizontalAlignment="Stretch"
+                            Background="{StaticResource NodeLightBrush}"/>
+                </StackPanel>
+            </Expander>
+
+            <!-- シーンカテゴリ -->
+            <Expander Header="◆ シーン" Margin="0,5"
+                      Foreground="{StaticResource TextBrush}"
+                      Background="{StaticResource PanelBrush}">
+                <StackPanel Margin="10,5">
+                    <Button Content="シーン出力" Click="AddScene_Click" 
+                            Margin="0,2" HorizontalAlignment="Stretch"
+                            Background="{StaticResource NodeSceneBrush}"/>
+                </StackPanel>
+            </Expander>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

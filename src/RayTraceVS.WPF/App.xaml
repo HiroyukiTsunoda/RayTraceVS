@@ -1,0 +1,28 @@
+<Application x:Class="RayTraceVS.WPF.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:converters="clr-namespace:RayTraceVS.WPF.Converters"
+             StartupUri="MainWindow.xaml">
+    <Application.Resources>
+        <!-- Converters -->
+        <converters:BoolToSelectionBrushConverter x:Key="BoolToSelectionBrushConverter"/>
+        <converters:NullToVisibilityConverter x:Key="NullToVisibilityConverter"/>
+        <converters:NotNullToVisibilityConverter x:Key="NotNullToVisibilityConverter"/>
+        
+        <!-- Dark Theme Color Palette -->
+        <SolidColorBrush x:Key="BackgroundBrush" Color="#1E1E1E"/>
+        <SolidColorBrush x:Key="PanelBrush" Color="#2D2D30"/>
+        <SolidColorBrush x:Key="BorderBrush" Color="#3F3F46"/>
+        <SolidColorBrush x:Key="AccentBrush" Color="#007ACC"/>
+        <SolidColorBrush x:Key="TextBrush" Color="#F0F0F0"/>
+        <SolidColorBrush x:Key="TextSecondaryBrush" Color="#C0C0C0"/>
+        
+        <!-- Node Colors -->
+        <SolidColorBrush x:Key="NodeObjectBrush" Color="#4A90E2"/>
+        <SolidColorBrush x:Key="NodeMathBrush" Color="#E27A3F"/>
+        <SolidColorBrush x:Key="NodeCameraBrush" Color="#9B59B6"/>
+        <SolidColorBrush x:Key="NodeLightBrush" Color="#F1C40F"/>
+        <SolidColorBrush x:Key="NodeSceneBrush" Color="#2ECC71"/>
+        <SolidColorBrush x:Key="NodeSocketBrush" Color="#FFFFFF"/>
+    </Application.Resources>
+</Application>
