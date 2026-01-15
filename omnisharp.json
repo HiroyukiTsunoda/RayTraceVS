@@ -1,0 +1,13 @@
+{
+  "MsBuild": {
+    "LoadProjectsOnDemand": false
+  },
+  "FileOptions": {
+    "SystemExcludeSearchPatterns": [
+      "**/*.vcxproj",
+      "**/*.vcxproj.filters",
+      "**/RayTraceVS.DXEngine/**",
+      "**/RayTraceVS.Interop/**"
+    ]
+  }
+}
