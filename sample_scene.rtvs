@@ -1,33 +1,25 @@
 {
-  "$id": "1",
   "Version": "1.0",
   "Nodes": [
     {
-      "$id": "2",
       "Id": "a1b2c3d4-e5f6-7890-abcd-111111111111",
       "Type": "SphereNode",
       "Title": "Sphere",
       "PositionX": 807.1500000000005,
       "PositionY": 591.5,
       "Properties": {
-        "$id": "3",
         "Transform": {
-          "$id": "4",
-          "$type": "RayTraceVS.WPF.Models.Transform, RayTraceVS.WPF",
           "Position": {
-            "$id": "5",
             "X": -2.0,
             "Y": 1.0,
             "Z": 0.0
           },
           "Rotation": {
-            "$id": "6",
             "X": 0.0,
             "Y": 0.0,
             "Z": 0.0
           },
           "Scale": {
-            "$id": "7",
             "X": 1.0,
             "Y": 1.0,
             "Z": 1.0
@@ -37,39 +29,30 @@
       }
     },
     {
-      "$id": "8",
       "Id": "a1b2c3d4-e5f6-7890-abcd-222222222222",
       "Type": "PlaneNode",
       "Title": "Plane",
       "PositionX": 790.3500000000005,
       "PositionY": 717.1000000000001,
       "Properties": {
-        "$id": "9",
         "Transform": {
-          "$id": "10",
-          "$type": "RayTraceVS.WPF.Models.Transform, RayTraceVS.WPF",
           "Position": {
-            "$id": "11",
             "X": 0.0,
             "Y": 0.0,
             "Z": 0.0
           },
           "Rotation": {
-            "$id": "12",
             "X": 0.0,
             "Y": 0.0,
             "Z": 0.0
           },
           "Scale": {
-            "$id": "13",
             "X": 1.0,
             "Y": 1.0,
             "Z": 1.0
           }
         },
         "Normal": {
-          "$id": "14",
-          "$type": "System.Numerics.Vector3, System.Private.CoreLib",
           "X": 0.0,
           "Y": 1.0,
           "Z": 0.0
@@ -77,31 +60,23 @@
       }
     },
     {
-      "$id": "15",
       "Id": "a1b2c3d4-e5f6-7890-abcd-333333333333",
       "Type": "CameraNode",
       "Title": "Camera",
       "PositionX": 779.9500000000005,
       "PositionY": 1005.0999999999999,
       "Properties": {
-        "$id": "16",
         "CameraPosition": {
-          "$id": "17",
-          "$type": "System.Numerics.Vector3, System.Private.CoreLib",
           "X": 0.0,
           "Y": 2.0,
           "Z": -5.0
         },
         "LookAt": {
-          "$id": "18",
-          "$type": "System.Numerics.Vector3, System.Private.CoreLib",
           "X": 0.0,
           "Y": 1.0,
           "Z": 0.0
         },
         "Up": {
-          "$id": "19",
-          "$type": "System.Numerics.Vector3, System.Private.CoreLib",
           "X": 0.0,
           "Y": 1.0,
           "Z": 0.0
@@ -112,24 +87,18 @@
       }
     },
     {
-      "$id": "20",
       "Id": "a1b2c3d4-e5f6-7890-abcd-444444444444",
       "Type": "PointLightNode",
       "Title": "Point Light",
       "PositionX": 767.1500000000005,
       "PositionY": 1144.3,
       "Properties": {
-        "$id": "21",
         "LightPosition": {
-          "$id": "22",
-          "$type": "System.Numerics.Vector3, System.Private.CoreLib",
           "X": 3.0,
           "Y": 5.0,
           "Z": -3.0
         },
         "Color": {
-          "$id": "23",
-          "$type": "System.Numerics.Vector4, System.Private.CoreLib",
           "X": 1.0,
           "Y": 1.0,
           "Z": 1.0,
@@ -140,64 +109,47 @@
       }
     },
     {
-      "$id": "24",
       "Id": "a1b2c3d4-e5f6-7890-abcd-555555555555",
       "Type": "SceneNode",
       "Title": "Scene",
-      "PositionX": 1142.3500000000004,
-      "PositionY": 672.7000000000003,
+      "PositionX": 1135.2071428571433,
+      "PositionY": 669.8428571428574,
       "Properties": {
-        "$id": "25",
-        "ObjectSocketNames": {
-          "$type": "System.Collections.Generic.List`1[[System.String, System.Private.CoreLib]], System.Private.CoreLib",
-          "$values": [
-            "Object1",
-            "Object2"
-          ]
-        },
-        "LightSocketNames": {
-          "$type": "System.Collections.Generic.List`1[[System.String, System.Private.CoreLib]], System.Private.CoreLib",
-          "$values": [
-            "Light1",
-            "Light2"
-          ]
-        }
+        "ObjectSocketNames": [
+          "Object1",
+          "Object2"
+        ],
+        "LightSocketNames": [
+          "Light1",
+          "Light2"
+        ]
       }
     },
     {
-      "$id": "26",
       "Id": "d38ae94a-cab2-47e9-b086-7e48c9b4bdf0",
       "Type": "CylinderNode",
       "Title": "Cylinder",
       "PositionX": 773.1500000000005,
       "PositionY": 846.5,
       "Properties": {
-        "$id": "27",
         "Transform": {
-          "$id": "28",
-          "$type": "RayTraceVS.WPF.Models.Transform, RayTraceVS.WPF",
           "Position": {
-            "$id": "29",
             "X": 0.0,
             "Y": 0.0,
             "Z": 0.0
           },
           "Rotation": {
-            "$id": "30",
             "X": 0.0,
             "Y": 0.0,
             "Z": 0.0
           },
           "Scale": {
-            "$id": "31",
             "X": 1.0,
             "Y": 1.0,
             "Z": 1.0
           }
         },
         "Axis": {
-          "$id": "32",
-          "$type": "System.Numerics.Vector3, System.Private.CoreLib",
           "X": 0.0,
           "Y": 1.0,
           "Z": 0.0
@@ -207,40 +159,34 @@
       }
     },
     {
-      "$id": "33",
       "Id": "14aac4c6-22d9-485f-9dd7-56c0ff789dab",
       "Type": "FloatNode",
       "Title": "Float",
       "PositionX": 574.3500000000001,
       "PositionY": 602.7000000000002,
       "Properties": {
-        "$id": "34",
         "Value": 10.0
       }
     },
     {
-      "$id": "35",
       "Id": "67341e98-e5c7-4a90-bc8d-b5d68087067b",
       "Type": "Vector3Node",
       "Title": "Vector3",
       "PositionX": 377.1500000000001,
       "PositionY": 690.1000000000003,
       "Properties": {
-        "$id": "36",
         "X": 1.0,
         "Y": 1.0,
         "Z": 1.0
       }
     },
     {
-      "$id": "37",
       "Id": "4f85a86b-06e3-4d6a-9935-b192daa4e1ed",
       "Type": "ColorNode",
       "Title": "Color",
       "PositionX": 375.3500000000001,
       "PositionY": 363.9,
       "Properties": {
-        "$id": "38",
         "R": 0.8,
         "G": 0.8,
         "B": 0.8,
@@ -248,17 +194,13 @@
       }
     },
     {
-      "$id": "39",
       "Id": "4af90323-6dce-40e1-b265-e75ca90ed84e",
       "Type": "DiffuseMaterialNode",
       "Title": "Diffuse",
-      "PositionX": 604.95,
-      "PositionY": 454.50000000000006,
+      "PositionX": 599.2357142857144,
+      "PositionY": 470.21428571428584,
       "Properties": {
-        "$id": "40",
         "BaseColor": {
-          "$id": "41",
-          "$type": "System.Numerics.Vector4, System.Private.CoreLib",
           "X": 0.8,
           "Y": 0.8,
           "Z": 0.8,
@@ -268,70 +210,60 @@
       }
     },
     {
-      "$id": "42",
       "Id": "82a9effc-5823-4b1a-af47-0d1dccd0d4ab",
       "Type": "FloatNode",
       "Title": "Float",
-      "PositionX": 358.94999999999993,
+      "PositionX": 358.23571428571415,
       "PositionY": 527.3,
       "Properties": {
-        "$id": "43",
         "Value": 0.5
       }
     }
   ],
   "Connections": [
     {
-      "$id": "44",
       "OutputNodeId": "a1b2c3d4-e5f6-7890-abcd-111111111111",
       "OutputSocketName": "Object",
       "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
       "InputSocketName": "Object1"
     },
     {
-      "$id": "45",
       "OutputNodeId": "a1b2c3d4-e5f6-7890-abcd-333333333333",
       "OutputSocketName": "Camera",
       "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
       "InputSocketName": "Camera"
     },
     {
-      "$id": "46",
       "OutputNodeId": "a1b2c3d4-e5f6-7890-abcd-444444444444",
       "OutputSocketName": "Light",
       "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
       "InputSocketName": "Light1"
     },
     {
-      "$id": "47",
       "OutputNodeId": "14aac4c6-22d9-485f-9dd7-56c0ff789dab",
       "OutputSocketName": "Value",
       "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-111111111111",
       "InputSocketName": "Radius"
     },
     {
-      "$id": "48",
       "OutputNodeId": "67341e98-e5c7-4a90-bc8d-b5d68087067b",
       "OutputSocketName": "Vector",
       "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-222222222222",
       "InputSocketName": "Normal"
     },
     {
-      "$id": "49",
       "OutputNodeId": "4f85a86b-06e3-4d6a-9935-b192daa4e1ed",
       "OutputSocketName": "Color",
       "InputNodeId": "4af90323-6dce-40e1-b265-e75ca90ed84e",
       "InputSocketName": "Base Color"
     },
     {
-      "$id": "50",
       "OutputNodeId": "4af90323-6dce-40e1-b265-e75ca90ed84e",
       "OutputSocketName": "Material",
       "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-111111111111",
       "InputSocketName": "Material"
     },
     {
-      "$id": "51",
       "OutputNodeId": "82a9effc-5823-4b1a-af47-0d1dccd0d4ab",
       "OutputSocketName": "Value",
       "InputNodeId": "4af90323-6dce-40e1-b265-e75ca90ed84e",
@@ -339,14 +271,12 @@
     }
   ],
   "Viewport": {
-    "$id": "52",
-    "PanX": -271.7400236978647,
-    "PanY": -323.7863570778964,
+    "PanX": -199.74002369786467,
+    "PanY": -383.7863570778965,
     "Zoom": 1.12,
     "IsLeftPanelVisible": true,
     "IsRightPanelVisible": true,
     "ExpanderStates": {
-      "$id": "53",
       "IsObjectExpanded": true,
       "IsMaterialExpanded": true,
       "IsMathExpanded": true,

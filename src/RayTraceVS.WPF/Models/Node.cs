@@ -40,6 +40,52 @@ namespace RayTraceVS.WPF.Models
         [ObservableProperty]
         private bool isSelected;
 
+        /// <summary>
+        /// ノードが「汚れている」（再評価が必要）かどうか
+        /// </summary>
+        [ObservableProperty]
+        private bool isDirty = true;
+
+        /// <summary>
+        /// 前回の評価結果のキャッシュ
+        /// </summary>
+        public object? CachedResult { get; private set; }
+
+        /// <summary>
+        /// ノードがDirtyになったときに発火するイベント
+        /// </summary>
+        public event EventHandler? DirtyChanged;
+
+        /// <summary>
+        /// ノードをDirty状態にする
+        /// </summary>
+        public void MarkDirty()
+        {
+            if (!IsDirty)
+            {
+                IsDirty = true;
+                DirtyChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }
+
+        /// <summary>
+        /// キャッシュ結果を設定してDirtyフラグをクリアする
+        /// </summary>
+        public void SetCachedResult(object? result)
+        {
+            CachedResult = result;
+            IsDirty = false;
+        }
+
+        /// <summary>
+        /// キャッシュをクリアしてDirty状態にする
+        /// </summary>
+        public void InvalidateCache()
+        {
+            CachedResult = null;
+            MarkDirty();
+        }
+
         public Brush CategoryColor => category switch
         {
             NodeCategory.Object => new SolidColorBrush(Color.FromRgb(0x2C, 0x54, 0x87)),   // 青（暗め）
