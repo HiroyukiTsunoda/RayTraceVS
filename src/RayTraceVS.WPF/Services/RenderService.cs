@@ -7,6 +7,7 @@ namespace RayTraceVS.WPF.Services
     {
         private EngineWrapper? engineWrapper;
         private bool isInitialized = false;
+        private bool disposed = false;
 
         public bool Initialize(IntPtr windowHandle, int width, int height)
         {
@@ -75,12 +76,29 @@ namespace RayTraceVS.WPF.Services
 
         public void Dispose()
         {
-            if (engineWrapper != null)
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (disposed)
+                return;
+
+            if (disposing)
             {
-                engineWrapper = null;
+                // マネージドリソースの解放
+                if (engineWrapper != null)
+                {
+                    // EngineWrapper の ~EngineWrapper() (IDisposable.Dispose) を呼び出し
+                    // これによりネイティブリソースが即座に解放される
+                    engineWrapper.Dispose();
+                    engineWrapper = null;
+                }
             }
 
             isInitialized = false;
+            disposed = true;
         }
     }
 }

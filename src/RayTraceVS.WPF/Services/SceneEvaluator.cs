@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -220,11 +221,30 @@ namespace RayTraceVS.WPF.Services
         {
             // MaterialDataから旧形式のパラメータに変換
             var material = data.Material;
-            
+
+            // Guard against default Vector3Node (1,1,1) being used as a normal
+            // If plane is at origin and normal is roughly (1,1,1), treat it as floor normal
+            var normal = data.Normal;
+            if (normal.LengthSquared() > 0.0f)
+            {
+                normal = Vector3.Normalize(normal);
+            }
+
+            if (data.Position.LengthSquared() < 1e-6f)
+            {
+                // Detect default Vector3Node normal (approx equal components, positive)
+                if (MathF.Abs(normal.X - normal.Y) < 0.01f &&
+                    MathF.Abs(normal.Y - normal.Z) < 0.01f &&
+                    normal.X > 0.0f && normal.Y > 0.0f && normal.Z > 0.0f)
+                {
+                    normal = Vector3.UnitY;
+                }
+            }
+
             return new InteropPlaneData
             {
                 Position = new InteropVector3(data.Position.X, data.Position.Y, data.Position.Z),
-                Normal = new InteropVector3(data.Normal.X, data.Normal.Y, data.Normal.Z),
+                Normal = new InteropVector3(normal.X, normal.Y, normal.Z),
                 Color = new InteropVector4(material.BaseColor.X, material.BaseColor.Y, material.BaseColor.Z, material.BaseColor.W),
                 Reflectivity = material.Metallic
             };

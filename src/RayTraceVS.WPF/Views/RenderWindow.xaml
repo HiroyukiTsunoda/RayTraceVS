@@ -23,7 +23,7 @@
         <Border VerticalAlignment="Top" HorizontalAlignment="Right"
                 Margin="10" Background="#80000000" Padding="10">
             <StackPanel>
-                <TextBlock x:Name="FpsText" Text="FPS: 0" Foreground="White" FontSize="14"/>
+                <TextBlock x:Name="StatusText" Text="状態: 停止中" Foreground="White" FontSize="14"/>
                 <TextBlock x:Name="ResolutionText" Text="解像度: 1280x720" Foreground="White" FontSize="14"/>
                 <TextBlock x:Name="ObjectCountText" Text="オブジェクト: 0" Foreground="White" FontSize="14"/>
             </StackPanel>

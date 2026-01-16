@@ -131,6 +131,12 @@
       <ShaderType>Library</ShaderType>
       <ShaderModel>6.3</ShaderModel>
     </FxCompile>
+    <FxCompile Include="Shaders\RayTraceCompute.hlsl">
+      <ShaderType>Compute</ShaderType>
+      <ShaderModel>5.1</ShaderModel>
+      <EntryPointName>CSMain</EntryPointName>
+      <ObjectFileOutput>$(OutDir)%(Filename).cso</ObjectFileOutput>
+    </FxCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\Common.hlsli" />

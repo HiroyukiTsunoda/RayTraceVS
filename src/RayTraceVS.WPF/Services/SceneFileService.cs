@@ -22,11 +22,7 @@ namespace RayTraceVS.WPF.Services
                 Viewport = viewportState
             };
 
-            var json = JsonConvert.SerializeObject(sceneData, Formatting.Indented, new JsonSerializerSettings
-            {
-                TypeNameHandling = TypeNameHandling.Auto,
-                PreserveReferencesHandling = PreserveReferencesHandling.Objects
-            });
+            var json = JsonConvert.SerializeObject(sceneData, Formatting.Indented);
 
             File.WriteAllText(filePath, json);
         }
@@ -34,21 +30,25 @@ namespace RayTraceVS.WPF.Services
         public (List<Node>, List<NodeConnection>, ViewportState?) LoadScene(string filePath)
         {
             var json = File.ReadAllText(filePath);
-            var sceneData = JsonConvert.DeserializeObject<SceneFileData>(json, new JsonSerializerSettings
-            {
-                TypeNameHandling = TypeNameHandling.Auto,
-                PreserveReferencesHandling = PreserveReferencesHandling.Objects
-            });
+            var sceneData = JsonConvert.DeserializeObject<SceneFileData>(json);
 
             if (sceneData == null)
                 throw new Exception("Invalid scene file format");
 
-            var nodes = sceneData.Nodes.Select(n => DeserializeNode(n)).Where(n => n != null).ToList()!;
+            var nodes = sceneData.Nodes
+                .Select(n => DeserializeNode(n))
+                .Where(n => n != null)
+                .Select(n => n!)
+                .ToList();
             
             // 古いシーンファイルの互換性のため、接続データからSceneNodeに必要なソケットを準備
             PrepareSceneNodeSockets(nodes, sceneData.Connections);
             
-            var connections = sceneData.Connections.Select(c => DeserializeConnection(c, nodes)).Where(c => c != null).ToList()!;
+            var connections = sceneData.Connections
+                .Select(c => DeserializeConnection(c, nodes))
+                .Where(c => c != null)
+                .Select(c => c!)
+                .ToList();
 
             return (nodes, connections, sceneData.Viewport);
         }

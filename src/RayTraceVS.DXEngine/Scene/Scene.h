@@ -16,6 +16,7 @@ namespace RayTraceVS::DXEngine
 
         void SetCamera(const Camera& cam) { camera = cam; }
         Camera& GetCamera() { return camera; }
+        const Camera& GetCamera() const { return camera; }
 
         void AddObject(std::shared_ptr<RayTracingObject> obj);
         void AddLight(const Light& light);
