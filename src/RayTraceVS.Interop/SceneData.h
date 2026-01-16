@@ -28,29 +28,33 @@ namespace RayTraceVS::Interop
         Vector4(float x, float y, float z, float w) : X(x), Y(y), Z(z), W(w) {}
     };
 
-    // Sphere data
+    // Sphere data (with PBR material)
     [StructLayout(LayoutKind::Sequential)]
     public value struct SphereData
     {
         Vector3 Position;
         float Radius;
         Vector4 Color;
-        float Reflectivity;
-        float Transparency;
-        float IOR;
+        float Metallic;     // 0.0 = dielectric, 1.0 = metal
+        float Roughness;    // 0.0 = smooth, 1.0 = rough
+        float Transmission; // 0.0 = opaque, 1.0 = transparent (glass)
+        float IOR;          // Index of Refraction (1.5 for glass)
     };
 
-    // Plane data
+    // Plane data (with PBR material)
     [StructLayout(LayoutKind::Sequential)]
     public value struct PlaneData
     {
         Vector3 Position;
         Vector3 Normal;
         Vector4 Color;
-        float Reflectivity;
+        float Metallic;
+        float Roughness;
+        float Transmission;
+        float IOR;
     };
 
-    // Cylinder data
+    // Cylinder data (with PBR material)
     [StructLayout(LayoutKind::Sequential)]
     public value struct CylinderData
     {
@@ -59,7 +63,10 @@ namespace RayTraceVS::Interop
         float Radius;
         float Height;
         Vector4 Color;
-        float Reflectivity;
+        float Metallic;
+        float Roughness;
+        float Transmission;
+        float IOR;
     };
 
     // Camera data

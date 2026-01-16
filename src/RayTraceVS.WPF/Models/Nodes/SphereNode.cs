@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 
 namespace RayTraceVS.WPF.Models.Nodes
@@ -15,6 +16,7 @@ namespace RayTraceVS.WPF.Models.Nodes
         public SphereNode() : base("Sphere", NodeCategory.Object)
         {
             // 入力ソケット
+            AddInputSocket("Transform", SocketType.Transform);
             AddInputSocket("Material", SocketType.Material);
             AddInputSocket("Radius", SocketType.Float);
             
@@ -24,6 +26,14 @@ namespace RayTraceVS.WPF.Models.Nodes
 
         public override object? Evaluate(Dictionary<System.Guid, object?> inputValues)
         {
+            // Transform入力を取得（未接続の場合は内部プロパティを使用）
+            var transformSocket = InputSockets.FirstOrDefault(s => s.Name == "Transform");
+            Transform transform = ObjectTransform;
+            if (transformSocket != null && inputValues.TryGetValue(transformSocket.Id, out var transformVal) && transformVal is Transform inputTransform)
+            {
+                transform = inputTransform;
+            }
+
             // マテリアル入力を取得（未接続の場合はデフォルト）
             var material = GetInputValue<MaterialData?>("Material", inputValues) ?? MaterialData.Default;
             
@@ -32,11 +42,11 @@ namespace RayTraceVS.WPF.Models.Nodes
             var radius = radiusInput ?? Radius;
             
             // スケールを考慮した半径を計算
-            var scaledRadius = radius * Math.Max(Math.Max(ObjectTransform.Scale.X, ObjectTransform.Scale.Y), ObjectTransform.Scale.Z);
+            var scaledRadius = radius * Math.Max(Math.Max(transform.Scale.X, transform.Scale.Y), transform.Scale.Z);
 
             return new SphereData
             {
-                Position = ObjectTransform.Position,
+                Position = transform.Position,
                 Radius = scaledRadius,
                 Material = material
             };

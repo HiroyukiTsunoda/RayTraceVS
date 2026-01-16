@@ -7,8 +7,9 @@ namespace RayTraceVS::DXEngine
         , normal(0.0f, 1.0f, 0.0f)
     {
         material.color = XMFLOAT4(0.8f, 0.8f, 0.8f, 1.0f);
-        material.reflectivity = 0.0f;
-        material.transparency = 0.0f;
+        material.metallic = 0.0f;
+        material.roughness = 0.5f;
+        material.transmission = 0.0f;
         material.ior = 1.0f;
     }
 
@@ -17,8 +18,9 @@ namespace RayTraceVS::DXEngine
         , normal(normal)
     {
         material.color = XMFLOAT4(0.8f, 0.8f, 0.8f, 1.0f);
-        material.reflectivity = 0.0f;
-        material.transparency = 0.0f;
+        material.metallic = 0.0f;
+        material.roughness = 0.5f;
+        material.transmission = 0.0f;
         material.ior = 1.0f;
     }
 }

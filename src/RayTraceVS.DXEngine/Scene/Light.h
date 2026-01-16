@@ -8,9 +8,10 @@ namespace RayTraceVS::DXEngine
 {
     enum class LightType
     {
-        Point,
-        Directional,
-        Spot
+        Ambient = 0,
+        Point = 1,
+        Directional = 2,
+        Spot = 3
     };
 
     class Light

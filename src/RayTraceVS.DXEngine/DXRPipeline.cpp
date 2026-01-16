@@ -358,6 +358,8 @@ namespace RayTraceVS::DXEngine
         mappedConstantData->ScreenHeight = height;
         mappedConstantData->AspectRatio = (float)width / (float)height;
         mappedConstantData->TanHalfFov = tanf(camera.GetFieldOfView() * 0.5f * 3.14159265f / 180.0f);
+        mappedConstantData->SamplesPerPixel = scene->GetSamplesPerPixel();
+        mappedConstantData->MaxBounces = scene->GetMaxBounces();
 
         // Get objects from scene
         const auto& objects = scene->GetObjects();
@@ -377,21 +379,25 @@ namespace RayTraceVS::DXEngine
                 gs.Radius = sphere->GetRadius();
                 const Material& mat = sphere->GetMaterial();
                 gs.Color = mat.color;
-                gs.Reflectivity = mat.reflectivity;
-                gs.Padding = XMFLOAT3(0, 0, 0);
+                gs.Metallic = mat.metallic;
+                gs.Roughness = mat.roughness;
+                gs.Transmission = mat.transmission;
+                gs.IOR = mat.ior;
                 spheres.push_back(gs);
             }
             else if (auto plane = dynamic_cast<Plane*>(obj.get()))
             {
                 GPUPlane gp;
                 gp.Position = plane->GetPosition();
-                gp.Padding1 = 0;
                 gp.Normal = plane->GetNormal();
-                gp.Padding2 = 0;
                 const Material& mat = plane->GetMaterial();
                 gp.Color = mat.color;
-                gp.Reflectivity = mat.reflectivity;
-                gp.Padding3 = XMFLOAT3(0, 0, 0);
+                gp.Metallic = mat.metallic;
+                gp.Roughness = mat.roughness;
+                gp.Transmission = mat.transmission;
+                gp.IOR = mat.ior;
+                gp.Padding1 = 0;
+                gp.Padding2 = 0;
                 planes.push_back(gp);
             }
             else if (auto cyl = dynamic_cast<Cylinder*>(obj.get()))
@@ -403,8 +409,10 @@ namespace RayTraceVS::DXEngine
                 gc.Height = cyl->GetHeight();
                 const Material& mat = cyl->GetMaterial();
                 gc.Color = mat.color;
-                gc.Reflectivity = mat.reflectivity;
-                gc.Padding = XMFLOAT3(0, 0, 0);
+                gc.Metallic = mat.metallic;
+                gc.Roughness = mat.roughness;
+                gc.Transmission = mat.transmission;
+                gc.IOR = mat.ior;
                 cylinders.push_back(gc);
             }
         }
@@ -415,10 +423,25 @@ namespace RayTraceVS::DXEngine
             gl.Position = light.GetPosition();
             gl.Intensity = light.GetIntensity();
             gl.Color = light.GetColor();
+            
+            // Convert light type
+            switch (light.GetType())
+            {
+                case LightType::Directional:
+                    gl.Type = GPULightType_Directional;
+                    break;
+                case LightType::Point:
+                    gl.Type = GPULightType_Point;
+                    break;
+                default:
+                    gl.Type = GPULightType_Ambient;
+                    break;
+            }
+            gl.Padding = XMFLOAT3(0, 0, 0);
             gpuLights.push_back(gl);
 
-            // Update main light from first light
-            if (gpuLights.size() == 1)
+            // Update main light from first non-ambient light
+            if (gl.Type == GPULightType_Point && mappedConstantData->LightIntensity == 1.5f)
             {
                 mappedConstantData->LightPosition = gl.Position;
                 mappedConstantData->LightIntensity = gl.Intensity;

@@ -84,7 +84,9 @@ namespace RayTraceVS::Interop
         array<PlaneData>^ planes,
         array<CylinderData>^ cylinders,
         CameraData camera,
-        array<LightData>^ lights)
+        array<LightData>^ lights,
+        int samplesPerPixel,
+        int maxBounces)
     {
         if (!isInitialized || !nativeScene)
             return;
@@ -95,6 +97,9 @@ namespace RayTraceVS::Interop
         // Set camera
         auto nativeCamera = Marshalling::ToNativeCamera(camera);
         Bridge::SetCamera(nativeScene, nativeCamera);
+
+        // Set render settings
+        Bridge::SetRenderSettings(nativeScene, samplesPerPixel, maxBounces);
 
         // Add spheres
         if (spheres != nullptr)

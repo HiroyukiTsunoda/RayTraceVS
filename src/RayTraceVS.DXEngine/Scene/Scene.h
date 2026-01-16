@@ -18,6 +18,10 @@ namespace RayTraceVS::DXEngine
         Camera& GetCamera() { return camera; }
         const Camera& GetCamera() const { return camera; }
 
+        void SetRenderSettings(int samples, int bounces) { samplesPerPixel = samples; maxBounces = bounces; }
+        int GetSamplesPerPixel() const { return samplesPerPixel; }
+        int GetMaxBounces() const { return maxBounces; }
+
         void AddObject(std::shared_ptr<RayTracingObject> obj);
         void AddLight(const Light& light);
 
@@ -30,5 +34,7 @@ namespace RayTraceVS::DXEngine
         Camera camera;
         std::vector<std::shared_ptr<RayTracingObject>> objects;
         std::vector<Light> lights;
+        int samplesPerPixel = 1;
+        int maxBounces = 4;
     };
 }

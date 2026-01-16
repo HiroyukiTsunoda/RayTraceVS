@@ -125,6 +125,8 @@ namespace RayTraceVS.WPF.Services
                 nameof(SubNode) => new SubNode(),
                 nameof(MulNode) => new MulNode(),
                 nameof(DivNode) => new DivNode(),
+                nameof(TransformNode) => new TransformNode(),
+                nameof(CombineTransformNode) => new CombineTransformNode(),
                 _ => null
             };
 
@@ -214,6 +216,7 @@ namespace RayTraceVS.WPF.Services
                     properties["Color"] = glass.Color;
                     properties["Roughness"] = glass.Roughness;
                     properties["IOR"] = glass.IOR;
+                    properties["Transparency"] = glass.Transparency;
                     break;
 
                 case MetalMaterialNode metal:
@@ -239,6 +242,8 @@ namespace RayTraceVS.WPF.Services
                         .ToList();
                     properties["ObjectSocketNames"] = objectSocketNames;
                     properties["LightSocketNames"] = lightSocketNames;
+                    properties["SamplesPerPixel"] = sceneNode.SamplesPerPixel;
+                    properties["MaxBounces"] = sceneNode.MaxBounces;
                     break;
 
                 case Vector3Node vector3:
@@ -256,6 +261,22 @@ namespace RayTraceVS.WPF.Services
 
                 case FloatNode floatNode:
                     properties["Value"] = floatNode.Value;
+                    break;
+
+                case TransformNode transformNode:
+                    properties["PositionX"] = transformNode.PositionX;
+                    properties["PositionY"] = transformNode.PositionY;
+                    properties["PositionZ"] = transformNode.PositionZ;
+                    properties["RotationX"] = transformNode.RotationX;
+                    properties["RotationY"] = transformNode.RotationY;
+                    properties["RotationZ"] = transformNode.RotationZ;
+                    properties["ScaleX"] = transformNode.ScaleX;
+                    properties["ScaleY"] = transformNode.ScaleY;
+                    properties["ScaleZ"] = transformNode.ScaleZ;
+                    break;
+
+                case CombineTransformNode:
+                    // CombineTransformNodeにはプロパティがない（入力ソケットのみ）
                     break;
             }
 
@@ -408,6 +429,8 @@ namespace RayTraceVS.WPF.Services
                         glass.Roughness = Convert.ToSingle(glassRoughness);
                     if (properties.TryGetValue("IOR", out var glassIor))
                         glass.IOR = Convert.ToSingle(glassIor);
+                    if (properties.TryGetValue("Transparency", out var glassTransparency))
+                        glass.Transparency = Convert.ToSingle(glassTransparency);
                     break;
 
                 case MetalMaterialNode metal:
@@ -462,6 +485,12 @@ namespace RayTraceVS.WPF.Services
                     
                     // ソケット名からカウンタを復元
                     sceneNode.RestoreSocketCounters();
+                    
+                    // レンダリング設定を復元
+                    if (properties.TryGetValue("SamplesPerPixel", out var samplesObj))
+                        sceneNode.SamplesPerPixel = Convert.ToInt32(samplesObj);
+                    if (properties.TryGetValue("MaxBounces", out var bouncesObj))
+                        sceneNode.MaxBounces = Convert.ToInt32(bouncesObj);
                     break;
 
                 case Vector3Node vector3:
@@ -487,6 +516,31 @@ namespace RayTraceVS.WPF.Services
                 case FloatNode floatNode:
                     if (properties.TryGetValue("Value", out var value))
                         floatNode.Value = Convert.ToSingle(value);
+                    break;
+
+                case TransformNode transformNode:
+                    if (properties.TryGetValue("PositionX", out var posX))
+                        transformNode.PositionX = Convert.ToSingle(posX);
+                    if (properties.TryGetValue("PositionY", out var posY))
+                        transformNode.PositionY = Convert.ToSingle(posY);
+                    if (properties.TryGetValue("PositionZ", out var posZ))
+                        transformNode.PositionZ = Convert.ToSingle(posZ);
+                    if (properties.TryGetValue("RotationX", out var rotX))
+                        transformNode.RotationX = Convert.ToSingle(rotX);
+                    if (properties.TryGetValue("RotationY", out var rotY))
+                        transformNode.RotationY = Convert.ToSingle(rotY);
+                    if (properties.TryGetValue("RotationZ", out var rotZ))
+                        transformNode.RotationZ = Convert.ToSingle(rotZ);
+                    if (properties.TryGetValue("ScaleX", out var scaleX))
+                        transformNode.ScaleX = Convert.ToSingle(scaleX);
+                    if (properties.TryGetValue("ScaleY", out var scaleY))
+                        transformNode.ScaleY = Convert.ToSingle(scaleY);
+                    if (properties.TryGetValue("ScaleZ", out var scaleZ))
+                        transformNode.ScaleZ = Convert.ToSingle(scaleZ);
+                    break;
+
+                case CombineTransformNode:
+                    // CombineTransformNodeにはプロパティがない
                     break;
             }
         }
@@ -524,15 +578,20 @@ namespace RayTraceVS.WPF.Services
             if (obj is Newtonsoft.Json.Linq.JObject jobj)
             {
                 var position = ConvertToVector3(jobj["Position"]);
-                var rotation = ConvertToVector3(jobj["Rotation"]);
+                // Rotation（旧形式）またはEulerAngles（新形式）からオイラー角を取得
+                var rotationEuler = jobj["Rotation"] != null 
+                    ? ConvertToVector3(jobj["Rotation"]) 
+                    : ConvertToVector3(jobj["EulerAngles"]);
                 var scale = ConvertToVector3(jobj["Scale"]);
 
-                return new Transform
+                var result = new Transform
                 {
                     Position = position,
-                    Rotation = rotation,
                     Scale = scale
                 };
+                // オイラー角からQuaternionに変換
+                result.EulerAngles = rotationEuler;
+                return result;
             }
 
             return Transform.Identity;

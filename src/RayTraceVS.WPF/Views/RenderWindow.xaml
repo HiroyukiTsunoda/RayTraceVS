@@ -5,18 +5,16 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
         Title="レンダリング結果 - RayTraceVS (1920x1080)" 
-        Height="650" Width="1024"
+        SizeToContent="WidthAndHeight"
         Background="Black"
         Loaded="Window_Loaded"
         Closing="Window_Closing">
     
     <Grid>
         <!-- DirectX レンダリング用のホストパネル -->
-        <Border x:Name="RenderPanel" 
-                Background="Black"
-                ClipToBounds="True">
+        <Border x:Name="RenderPanel" Background="Black">
             <!-- D3D11Imageを使用してDirectXの出力を表示 -->
-            <Image x:Name="RenderImage" Stretch="Uniform"/>
+            <Image x:Name="RenderImage" Width="1920" Height="1080" Stretch="None"/>
         </Border>
 
         <!-- 情報オーバーレイ -->

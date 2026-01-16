@@ -7,8 +7,9 @@ namespace RayTraceVS::DXEngine
         , radius(1.0f)
     {
         material.color = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-        material.reflectivity = 0.0f;
-        material.transparency = 0.0f;
+        material.metallic = 0.0f;
+        material.roughness = 0.5f;
+        material.transmission = 0.0f;
         material.ior = 1.5f;
     }
 
@@ -17,8 +18,9 @@ namespace RayTraceVS::DXEngine
         , radius(radius)
     {
         material.color = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-        material.reflectivity = 0.0f;
-        material.transparency = 0.0f;
+        material.metallic = 0.0f;
+        material.roughness = 0.5f;
+        material.transmission = 0.0f;
         material.ior = 1.5f;
     }
 }

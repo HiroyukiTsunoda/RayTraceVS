@@ -24,12 +24,18 @@ namespace RayTraceVS.WPF.Models.Nodes
         /// </summary>
         public float IOR { get; set; } = 1.5f;
 
+        /// <summary>
+        /// 透明度（0.0 = 不透明, 1.0 = 完全透明）
+        /// </summary>
+        public float Transparency { get; set; } = 1.0f;
+
         public GlassMaterialNode() : base("Glass", NodeCategory.Material)
         {
             // 入力ソケット
             AddInputSocket("Color", SocketType.Color);
             AddInputSocket("Roughness", SocketType.Float);
             AddInputSocket("IOR", SocketType.Float);
+            AddInputSocket("Transparency", SocketType.Float);
 
             // 出力ソケット
             AddOutputSocket("Material", SocketType.Material);
@@ -47,12 +53,15 @@ namespace RayTraceVS.WPF.Models.Nodes
             var ior = GetInputValue<float?>("IOR", inputValues) ?? IOR;
             ior = Math.Max(ior, 1.0f);
 
+            var transparency = GetInputValue<float?>("Transparency", inputValues) ?? Transparency;
+            transparency = Math.Clamp(transparency, 0.0f, 1.0f);
+
             return new MaterialData
             {
                 BaseColor = color,
                 Metallic = 0.0f,           // 非金属
                 Roughness = roughness,
-                Transmission = 1.0f,       // 完全透過
+                Transmission = transparency,
                 IOR = ior,
                 Emission = Vector4.Zero    // 発光なし
             };

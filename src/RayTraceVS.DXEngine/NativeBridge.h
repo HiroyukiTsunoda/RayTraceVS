@@ -37,9 +37,10 @@ namespace RayTraceVS::Interop::Bridge
     struct MaterialNative
     {
         ColorNative color;
-        float reflectivity;
-        float transparency;
-        float ior;
+        float metallic;     // 0.0 = dielectric, 1.0 = metal
+        float roughness;    // 0.0 = smooth, 1.0 = rough
+        float transmission; // 0.0 = opaque, 1.0 = transparent (glass)
+        float ior;          // Index of Refraction (1.5 for glass)
     };
 
     struct CameraDataNative
@@ -98,6 +99,7 @@ namespace RayTraceVS::Interop::Bridge
     DXENGINE_API void DestroyScene(RayTraceVS::DXEngine::Scene* scene);
     DXENGINE_API void ClearScene(RayTraceVS::DXEngine::Scene* scene);
     DXENGINE_API void SetCamera(RayTraceVS::DXEngine::Scene* scene, const CameraDataNative& camera);
+    DXENGINE_API void SetRenderSettings(RayTraceVS::DXEngine::Scene* scene, int samplesPerPixel, int maxBounces);
     DXENGINE_API void AddSphere(RayTraceVS::DXEngine::Scene* scene, const SphereDataNative& sphere);
     DXENGINE_API void AddPlane(RayTraceVS::DXEngine::Scene* scene, const PlaneDataNative& plane);
     DXENGINE_API void AddCylinder(RayTraceVS::DXEngine::Scene* scene, const CylinderDataNative& cylinder);

@@ -16,10 +16,10 @@ namespace RayTraceVS::DXEngine
     struct Material
     {
         XMFLOAT4 color;
-        float reflectivity;
-        float transparency;
-        float ior; // Index of Refraction
-        float padding;
+        float metallic;     // 0.0 = dielectric, 1.0 = metal
+        float roughness;    // 0.0 = smooth, 1.0 = rough
+        float transmission; // 0.0 = opaque, 1.0 = fully transparent (glass)
+        float ior;          // Index of Refraction (default 1.5 for glass)
     };
 
     class RayTracingObject
