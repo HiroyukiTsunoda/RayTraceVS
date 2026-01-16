@@ -100,11 +100,9 @@ struct HitInfo
 };
 
 // Intersect ray with sphere
-bool IntersectSphere(Ray ray, Sphere sphere, out float t, out float3 normal)
+// Using inout instead of out to suppress X4000 warnings - caller must initialize
+bool IntersectSphere(Ray ray, Sphere sphere, inout float t, inout float3 normal)
 {
-    // Initialize out parameters to avoid uninitialized variable warnings
-    t = 1e30;
-    normal = float3(0, 0, 0);
     
     float3 oc = ray.Origin - sphere.Center;
     
@@ -132,11 +130,9 @@ bool IntersectSphere(Ray ray, Sphere sphere, out float t, out float3 normal)
 }
 
 // Intersect ray with plane
-bool IntersectPlane(Ray ray, Plane plane, out float t, out float3 normal)
+// Using inout instead of out to suppress X4000 warnings - caller must initialize
+bool IntersectPlane(Ray ray, Plane plane, inout float t, inout float3 normal)
 {
-    // Initialize out parameters to avoid uninitialized variable warnings
-    t = 1e30;
-    normal = float3(0, 0, 0);
     
     float3 n = normalize(plane.Normal);
     float denom = dot(n, ray.Direction);
@@ -155,11 +151,9 @@ bool IntersectPlane(Ray ray, Plane plane, out float t, out float3 normal)
 }
 
 // Intersect ray with cylinder
-bool IntersectCylinder(Ray ray, Cylinder cyl, out float t, out float3 normal)
+// Using inout instead of out to suppress X4000 warnings - caller must initialize
+bool IntersectCylinder(Ray ray, Cylinder cyl, inout float t, inout float3 normal)
 {
-    // Initialize out parameters to avoid uninitialized variable warnings
-    t = 1e30;
-    normal = float3(0, 0, 0);
     
     float3 axis = normalize(cyl.Axis);
     float3 oc = ray.Origin - cyl.Position;

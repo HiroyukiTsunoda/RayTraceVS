@@ -1,5 +1,8 @@
 using System;
+using System.IO;
 using System.Windows;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using Microsoft.Win32;
 using RayTraceVS.WPF.ViewModels;
 using RayTraceVS.WPF.Views;
@@ -14,6 +17,7 @@ namespace RayTraceVS.WPF
         private string? currentFilePath;
         private SettingsService settingsService;
         private bool hasUnsavedChanges;
+        private bool isRendering = false;
 
         public MainWindow()
         {
@@ -72,15 +76,6 @@ namespace RayTraceVS.WPF
             Dispatcher.BeginInvoke(new Action(() =>
             {
                 NodeEditor.RefreshConnectionLines();
-                
-                // シーンが読み込まれている場合は自動的にレンダリングウィンドウを開く
-                if (viewModel != null && viewModel.Nodes.Count > 0)
-                {
-                    Dispatcher.BeginInvoke(new Action(() =>
-                    {
-                        StartRendering_Click(this, new RoutedEventArgs());
-                    }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
-                }
             }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
         }
 
@@ -165,6 +160,23 @@ namespace RayTraceVS.WPF
                 return;
             }
             
+            // F5: レンダリング開始
+            if (e.Key == System.Windows.Input.Key.F5)
+            {
+                if (e.KeyboardDevice.Modifiers == System.Windows.Input.ModifierKeys.Shift)
+                {
+                    // Shift+F5: レンダリング停止
+                    StopRendering();
+                }
+                else
+                {
+                    // F5: レンダリング開始
+                    StartRendering();
+                }
+                e.Handled = true;
+                return;
+            }
+            
             // キーボードショートカット
             if (e.KeyboardDevice.Modifiers == System.Windows.Input.ModifierKeys.Control)
             {
@@ -196,6 +208,12 @@ namespace RayTraceVS.WPF
                 if (e.Key == System.Windows.Input.Key.S)
                 {
                     SaveSceneAs_Click(this, new RoutedEventArgs());
+                    e.Handled = true;
+                }
+                else if (e.Key == System.Windows.Input.Key.P)
+                {
+                    // Ctrl+Shift+P: スクリーンショット保存
+                    SaveScreenshot();
                     e.Handled = true;
                 }
             }
@@ -447,6 +465,40 @@ namespace RayTraceVS.WPF
 
         private void StartRendering_Click(object sender, RoutedEventArgs e)
         {
+            StartRendering();
+        }
+
+        private void StopRendering_Click(object sender, RoutedEventArgs e)
+        {
+            // レンダリングウィンドウを閉じる
+            if (renderWindow != null && renderWindow.IsLoaded)
+            {
+                renderWindow.Close();
+                renderWindow = null;
+            }
+            UpdateRenderingState(false);
+        }
+        
+        // ツールバーボタンのイベントハンドラ
+        private void PlayButton_Click(object sender, RoutedEventArgs e)
+        {
+            StartRendering();
+        }
+        
+        private void StopButton_Click(object sender, RoutedEventArgs e)
+        {
+            StopRendering();
+        }
+        
+        private void ScreenshotButton_Click(object sender, RoutedEventArgs e)
+        {
+            SaveScreenshot();
+        }
+        
+        private void StartRendering()
+        {
+            if (isRendering) return;
+            
             // レンダリングウィンドウを開く
             if (renderWindow == null || !renderWindow.IsLoaded)
             {
@@ -457,21 +509,105 @@ namespace RayTraceVS.WPF
                     renderWindow.SetNodeGraph(viewModel.NodeGraph);
                 }
                 
+                renderWindow.Closed += (s, args) => 
+                {
+                    UpdateRenderingState(false);
+                    renderWindow = null;
+                };
+                
                 renderWindow.Show();
+                
+                // レンダリング開始を通知
+                renderWindow.StartRenderingFromToolbar();
             }
             else
             {
                 renderWindow.Activate();
+                renderWindow.StartRenderingFromToolbar();
             }
+            
+            UpdateRenderingState(true);
         }
-
-        private void StopRendering_Click(object sender, RoutedEventArgs e)
+        
+        private void StopRendering()
         {
-            // レンダリングウィンドウを閉じる
+            if (!isRendering) return;
+            
             if (renderWindow != null && renderWindow.IsLoaded)
             {
-                renderWindow.Close();
-                renderWindow = null;
+                renderWindow.StopRenderingFromToolbar();
+            }
+            
+            UpdateRenderingState(false);
+        }
+        
+        private void UpdateRenderingState(bool rendering)
+        {
+            isRendering = rendering;
+            PlayButton.IsEnabled = !rendering;
+            StopButton.IsEnabled = rendering;
+            ScreenshotButton.IsEnabled = rendering;
+            
+            StatusText.Text = rendering ? "レンダリング中..." : "準備完了";
+        }
+        
+        private void SaveScreenshot()
+        {
+            if (renderWindow == null || !renderWindow.IsLoaded)
+            {
+                MessageBox.Show("レンダリングウィンドウが開いていません。", "情報", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+            
+            try
+            {
+                var dialog = new SaveFileDialog
+                {
+                    Filter = "PNG画像|*.png|JPEG画像|*.jpg|ビットマップ|*.bmp",
+                    DefaultExt = "png",
+                    FileName = $"render_{DateTime.Now:yyyyMMdd_HHmmss}"
+                };
+
+                if (dialog.ShowDialog() == true)
+                {
+                    var bitmap = renderWindow.GetRenderBitmap();
+                    if (bitmap != null)
+                    {
+                        BitmapEncoder encoder;
+                        var ext = Path.GetExtension(dialog.FileName).ToLowerInvariant();
+                        
+                        switch (ext)
+                        {
+                            case ".jpg":
+                            case ".jpeg":
+                                encoder = new JpegBitmapEncoder { QualityLevel = 95 };
+                                break;
+                            case ".bmp":
+                                encoder = new BmpBitmapEncoder();
+                                break;
+                            default:
+                                encoder = new PngBitmapEncoder();
+                                break;
+                        }
+                        
+                        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+                        
+                        using (var stream = File.Create(dialog.FileName))
+                        {
+                            encoder.Save(stream);
+                        }
+                        
+                        MessageBox.Show($"画像を保存しました。\n\n{dialog.FileName}", "保存完了", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+                    else
+                    {
+                        MessageBox.Show("レンダリング画像を取得できませんでした。", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"保存エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
