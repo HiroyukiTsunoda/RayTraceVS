@@ -141,51 +141,37 @@ namespace RayTraceVS::Interop
     void EngineWrapper::Render()
     {
         if (!isInitialized || !nativePipeline || !nativeRenderTarget || !nativeContext)
-        {
-            System::Diagnostics::Debug::WriteLine("Render: Not initialized");
             return;
-        }
 
         try
         {
-            System::Diagnostics::Debug::WriteLine("Render: Starting");
-            
             // Reset command list
-            System::Diagnostics::Debug::WriteLine("Render: Resetting command list");
             Bridge::ResetCommandList(nativeContext);
             
             // Render test pattern
-            System::Diagnostics::Debug::WriteLine("Render: Rendering test pattern");
-            Bridge::RenderTestPattern(nativePipeline, nativeRenderTarget);
+            Bridge::RenderTestPattern(nativePipeline, nativeRenderTarget, nativeScene);
             
             // TODO: Actual ray tracing rendering
             // Bridge::DispatchRays(nativePipeline, renderWidth, renderHeight);
             
             // Execute command list
-            System::Diagnostics::Debug::WriteLine("Render: Executing command list");
             Bridge::ExecuteCommandList(nativeContext);
             
             // Wait for GPU completion
-            System::Diagnostics::Debug::WriteLine("Render: Waiting for GPU");
             Bridge::WaitForGPU(nativeContext);
             
             // Copy to readback buffer
-            System::Diagnostics::Debug::WriteLine("Render: Copying to readback");
             Bridge::ResetCommandList(nativeContext);
             Bridge::CopyRenderTargetToReadback(nativeRenderTarget, nativeContext);
             Bridge::ExecuteCommandList(nativeContext);
             Bridge::WaitForGPU(nativeContext);
-            
-            System::Diagnostics::Debug::WriteLine("Render: Complete");
         }
-        catch (System::Exception^ ex)
+        catch (System::Exception^)
         {
-            System::Diagnostics::Debug::WriteLine("Render: Exception - " + ex->Message);
             throw;
         }
         catch (...)
         {
-            System::Diagnostics::Debug::WriteLine("Render: Native exception");
             throw gcnew System::Exception("Native rendering error");
         }
     }
@@ -202,25 +188,14 @@ namespace RayTraceVS::Interop
     
     array<System::Byte>^ EngineWrapper::GetPixelData()
     {
-        System::Diagnostics::Debug::WriteLine("EngineWrapper::GetPixelData - Starting");
-        
         if (!isInitialized)
-        {
-            System::Diagnostics::Debug::WriteLine("EngineWrapper::GetPixelData - Not initialized");
             return nullptr;
-        }
             
         if (!nativeRenderTarget)
-        {
-            System::Diagnostics::Debug::WriteLine("EngineWrapper::GetPixelData - No render target");
             return nullptr;
-        }
             
         // Calculate pixel data size
         int dataSize = renderWidth * renderHeight * 4; // RGBA
-        System::Diagnostics::Debug::WriteLine(System::String::Format(
-            "EngineWrapper::GetPixelData - Size: {0}x{1}, dataSize: {2}", 
-            renderWidth, renderHeight, dataSize));
         
         // Create managed array
         array<System::Byte>^ pixelData = gcnew array<System::Byte>(dataSize);
@@ -229,37 +204,23 @@ namespace RayTraceVS::Interop
         pin_ptr<System::Byte> pinnedData = &pixelData[0];
         
         // Read pixel data in native code
-        System::Diagnostics::Debug::WriteLine("EngineWrapper::GetPixelData - Calling ReadRenderTargetPixels");
-        System::Diagnostics::Debug::WriteLine(System::String::Format(
-            "EngineWrapper::GetPixelData - Target ptr: 0x{0:X}, Data ptr: 0x{1:X}", 
-            (System::IntPtr)nativeRenderTarget, 
-            (System::IntPtr)pinnedData));
-        
         bool result = false;
         try
         {
             result = Bridge::ReadRenderTargetPixels(nativeRenderTarget, pinnedData, dataSize);
-            System::Diagnostics::Debug::WriteLine(System::String::Format(
-                "EngineWrapper::GetPixelData - ReadRenderTargetPixels returned: {0}", result));
         }
-        catch (System::Exception^ ex)
+        catch (System::Exception^)
         {
-            System::Diagnostics::Debug::WriteLine("EngineWrapper::GetPixelData - Managed exception: " + ex->Message);
             return nullptr;
         }
         catch (...)
         {
-            System::Diagnostics::Debug::WriteLine("EngineWrapper::GetPixelData - Native exception caught");
             return nullptr;
         }
         
         if (!result)
-        {
-            System::Diagnostics::Debug::WriteLine("EngineWrapper::GetPixelData - ReadRenderTargetPixels FAILED");
             return nullptr;
-        }
         
-        System::Diagnostics::Debug::WriteLine("EngineWrapper::GetPixelData - Success");
         return pixelData;
     }
 }

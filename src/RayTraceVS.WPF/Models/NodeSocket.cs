@@ -14,7 +14,8 @@ namespace RayTraceVS.WPF.Models
         Material,    // マテリアル
         Camera,      // カメラ
         Light,       // ライト
-        Scene        // シーン
+        Scene,       // シーン
+        Transform    // トランスフォーム
     }
 
     public partial class NodeSocket : ObservableObject
@@ -40,6 +41,26 @@ namespace RayTraceVS.WPF.Models
         [ObservableProperty]
         private object? value;
 
+        /// <summary>
+        /// ソケットが接続されているかどうか
+        /// </summary>
+        [ObservableProperty]
+        private bool isConnected;
+
+        /// <summary>
+        /// 接続から受け取った値（表示用）
+        /// </summary>
+        [ObservableProperty]
+        private float connectedValue;
+
+        // 位置が変更されたときに発生するイベント
+        public event EventHandler? PositionChanged;
+
+        partial void OnPositionChanged(Point value)
+        {
+            PositionChanged?.Invoke(this, EventArgs.Empty);
+        }
+
         // ソケットの型に応じた色を返す
         public Brush SocketColor => socketType switch
         {
@@ -51,6 +72,7 @@ namespace RayTraceVS.WPF.Models
             SocketType.Camera => new SolidColorBrush(Color.FromRgb(0x9B, 0x59, 0xB6)),    // 紫
             SocketType.Light => new SolidColorBrush(Color.FromRgb(0xF1, 0xC4, 0x0F)),     // 黄色
             SocketType.Scene => new SolidColorBrush(Color.FromRgb(0x2E, 0xCC, 0x71)),     // 緑
+            SocketType.Transform => new SolidColorBrush(Color.FromRgb(0x1A, 0xBC, 0x9C)),  // 青緑
             _ => new SolidColorBrush(Colors.White)
         };
 

@@ -16,9 +16,8 @@ namespace RayTraceVS.WPF.Services
                 isInitialized = engineWrapper.IsInitialized();
                 return isInitialized;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                System.Diagnostics.Debug.WriteLine($"Failed to initialize render service: {ex.Message}");
                 return false;
             }
         }
@@ -37,9 +36,9 @@ namespace RayTraceVS.WPF.Services
             {
                 engineWrapper.UpdateScene(spheres, planes, cylinders, camera, lights);
             }
-            catch (Exception ex)
+            catch
             {
-                System.Diagnostics.Debug.WriteLine($"Failed to update scene: {ex.Message}");
+                // Silently handle errors
             }
         }
 
@@ -52,9 +51,9 @@ namespace RayTraceVS.WPF.Services
             {
                 engineWrapper.Render();
             }
-            catch (Exception ex)
+            catch
             {
-                System.Diagnostics.Debug.WriteLine($"Failed to render: {ex.Message}");
+                // Silently handle errors
             }
         }
 

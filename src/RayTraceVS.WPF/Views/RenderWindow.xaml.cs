@@ -26,10 +26,17 @@ namespace RayTraceVS.WPF.Views
         
         private const int RenderWidth = 1280;
         private const int RenderHeight = 720;
+        
+        private SettingsService settingsService;
 
         public RenderWindow()
         {
             InitializeComponent();
+            
+            settingsService = new SettingsService();
+            
+            // ウィンドウの位置とサイズを復元
+            RestoreWindowBounds();
             
             renderTimer = new DispatcherTimer();
             renderTimer.Interval = TimeSpan.FromMilliseconds(16); // ~60 FPS
@@ -92,8 +99,54 @@ namespace RayTraceVS.WPF.Views
         {
             StopRendering();
             
+            // ウィンドウの位置とサイズを保存
+            SaveWindowBounds();
+            
             renderService?.Dispose();
             renderService = null;
+        }
+        
+        private void RestoreWindowBounds()
+        {
+            var bounds = settingsService.RenderWindowBounds;
+            if (bounds != null && bounds.Width > 0 && bounds.Height > 0)
+            {
+                // 位置を復元（マルチモニター対応で負の座標も許可）
+                this.Left = bounds.Left;
+                this.Top = bounds.Top;
+                this.Width = bounds.Width;
+                this.Height = bounds.Height;
+                
+                if (bounds.IsMaximized)
+                {
+                    this.WindowState = WindowState.Maximized;
+                }
+            }
+        }
+        
+        private void SaveWindowBounds()
+        {
+            // 最大化状態の場合はRestoreBoundsから位置とサイズを取得
+            var bounds = new WindowBounds();
+            
+            if (this.WindowState == WindowState.Maximized)
+            {
+                bounds.Left = this.RestoreBounds.Left;
+                bounds.Top = this.RestoreBounds.Top;
+                bounds.Width = this.RestoreBounds.Width;
+                bounds.Height = this.RestoreBounds.Height;
+                bounds.IsMaximized = true;
+            }
+            else
+            {
+                bounds.Left = this.Left;
+                bounds.Top = this.Top;
+                bounds.Width = this.Width;
+                bounds.Height = this.Height;
+                bounds.IsMaximized = false;
+            }
+            
+            settingsService.RenderWindowBounds = bounds;
         }
 
         private void Start_Click(object sender, RoutedEventArgs e)
@@ -159,13 +212,10 @@ namespace RayTraceVS.WPF.Views
                 renderService.Render();
                 
                 // ピクセルデータを取得
-                System.Diagnostics.Debug.WriteLine("Getting pixel data...");
                 var pixelData = renderService.GetPixelData();
                 
                 if (pixelData != null)
                 {
-                    System.Diagnostics.Debug.WriteLine($"Got pixel data: {pixelData.Length} bytes");
-                    
                     renderBitmap.Lock();
                     try
                     {
@@ -192,7 +242,6 @@ namespace RayTraceVS.WPF.Views
                         }
                         
                         renderBitmap.AddDirtyRect(new Int32Rect(0, 0, RenderWidth, RenderHeight));
-                        System.Diagnostics.Debug.WriteLine("Updated bitmap");
                     }
                     finally
                     {

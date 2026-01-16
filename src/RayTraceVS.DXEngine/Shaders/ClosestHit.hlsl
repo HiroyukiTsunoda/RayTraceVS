@@ -2,7 +2,9 @@
 
 // オブジェクトデータ（構造化バッファとして渡される想定）
 StructuredBuffer<SphereData> Spheres : register(t1);
-StructuredBuffer<LightData> Lights : register(t2);
+StructuredBuffer<PlaneData> Planes : register(t2);
+StructuredBuffer<CylinderData> Cylinders : register(t3);
+StructuredBuffer<LightData> Lights : register(t4);
 
 [shader("closesthit")]
 void ClosestHit(inout RayPayload payload, in SphereAttributes attribs)
@@ -12,11 +14,31 @@ void ClosestHit(inout RayPayload payload, in SphereAttributes attribs)
     float3 normal = attribs.normal;
     
     // オブジェクトデータ取得（PrimitiveIndexから）
+    // オブジェクトタイプはHitGroupIndexから判定
+    uint hitGroupIndex = HitKind();
     uint primitiveIndex = PrimitiveIndex();
-    SphereData sphere = Spheres[primitiveIndex];
     
     // 基本色
-    float3 objectColor = sphere.color.rgb;
+    float3 objectColor;
+    float reflectivity;
+    float transparency = 0.0;
+    float ior = 1.0;
+    
+    // オブジェクトタイプごとの処理
+    // 0=Sphere, 1=Plane, 2=Cylinder と仮定
+    uint geometryIndex = InstanceID(); // ジオメトリタイプの識別に使用
+    
+    // とりあえず簡易的に全て球として処理し、後で改善
+    // 実際のプロジェクトではヒットグループで分ける必要がある
+    SphereData sphere = Spheres[primitiveIndex];
+    objectColor = sphere.color.rgb;
+    reflectivity = sphere.reflectivity;
+    transparency = sphere.transparency;
+    ior = sphere.ior;
+    
+    // TODO: 平面と円柱の処理を追加
+    // 現時点では簡易実装として、全オブジェクトを球データから読み込む
+    
     float3 finalColor = float3(0, 0, 0);
     
     // アンビエント項

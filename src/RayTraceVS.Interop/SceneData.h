@@ -71,13 +71,16 @@ namespace RayTraceVS::Interop
         Vector3 Up;
         float FieldOfView;
         float AspectRatio;
+        float Near;
+        float Far;
     };
 
     // Light type enumeration
     public enum class LightType
     {
-        Point = 0,
-        Directional = 1
+        Ambient = 0,
+        Point = 1,
+        Directional = 2
     };
 
     // Light data

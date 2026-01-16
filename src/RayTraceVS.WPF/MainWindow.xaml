@@ -8,32 +8,47 @@
         mc:Ignorable="d"
         Title="RayTraceVS - DirectX12 DXR Visual Raytracing" 
         Height="900" Width="1600"
-        Background="{StaticResource BackgroundBrush}">
+        MinWidth="800" MinHeight="600"
+        ResizeMode="CanResizeWithGrip"
+        WindowState="Normal"
+        Background="{StaticResource BackgroundBrush}"
+        KeyDown="Window_KeyDown">
     
     <DockPanel>
         <!-- メニューバー -->
         <Menu DockPanel.Dock="Top" Background="{StaticResource PanelBrush}">
-            <MenuItem Header="ファイル(_F)" Foreground="{StaticResource TextBrush}">
-                <MenuItem Header="新規シーン(_N)" Click="NewScene_Click"/>
-                <MenuItem Header="開く(_O)..." Click="OpenScene_Click"/>
-                <MenuItem Header="保存(_S)" Click="SaveScene_Click"/>
-                <MenuItem Header="名前を付けて保存(_A)..." Click="SaveSceneAs_Click"/>
+            <Menu.Resources>
+                <Style TargetType="MenuItem">
+                    <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                    <Setter Property="Background" Value="{StaticResource PanelBrush}"/>
+                </Style>
+            </Menu.Resources>
+            
+            <MenuItem Header="ファイル(_F)">
+                <MenuItem Header="新規シーン(_N)" Click="NewScene_Click" InputGestureText="Ctrl+N"/>
+                <MenuItem Header="開く(_O)..." Click="OpenScene_Click" InputGestureText="Ctrl+O"/>
+                <MenuItem Header="保存(_S)" Click="SaveScene_Click" InputGestureText="Ctrl+S"/>
+                <MenuItem Header="名前を付けて保存(_A)..." Click="SaveSceneAs_Click" InputGestureText="Ctrl+Shift+S"/>
                 <Separator/>
-                <MenuItem Header="終了(_X)" Click="Exit_Click"/>
+                <MenuItem Header="終了(_X)" Click="Exit_Click" InputGestureText="Alt+F4"/>
             </MenuItem>
-            <MenuItem Header="編集(_E)" Foreground="{StaticResource TextBrush}">
+            <MenuItem Header="編集(_E)">
                 <MenuItem Header="元に戻す(_U)"/>
                 <MenuItem Header="やり直し(_R)"/>
                 <Separator/>
                 <MenuItem Header="削除(_D)"/>
             </MenuItem>
-            <MenuItem Header="レンダリング(_R)" Foreground="{StaticResource TextBrush}">
+            <MenuItem Header="表示(_V)">
+                <MenuItem x:Name="ToggleLeftPanelMenuItem" Header="コンポーネントパレット(_C)" IsCheckable="True" IsChecked="True" Click="ToggleLeftPanel_Click"/>
+                <MenuItem x:Name="ToggleRightPanelMenuItem" Header="プロパティパネル(_P)" IsCheckable="True" IsChecked="True" Click="ToggleRightPanel_Click"/>
+            </MenuItem>
+            <MenuItem Header="レンダリング(_R)">
                 <MenuItem Header="レンダリング開始(_S)" Click="StartRendering_Click"/>
                 <MenuItem Header="レンダリング停止(_P)" Click="StopRendering_Click"/>
                 <Separator/>
                 <MenuItem Header="レンダリング設定(_O)..."/>
             </MenuItem>
-            <MenuItem Header="ヘルプ(_H)" Foreground="{StaticResource TextBrush}">
+            <MenuItem Header="ヘルプ(_H)">
                 <MenuItem Header="バージョン情報(_A)"/>
             </MenuItem>
         </Menu>
@@ -54,34 +69,34 @@
         </StatusBar>
 
         <!-- メインコンテンツ：3パネルレイアウト -->
-        <Grid>
+        <Grid x:Name="MainGrid">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="250"/>
+                <ColumnDefinition x:Name="LeftPanelColumn" Width="250"/>
                 <ColumnDefinition Width="5"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="5"/>
-                <ColumnDefinition Width="300"/>
+                <ColumnDefinition x:Name="RightPanelColumn" Width="300"/>
             </Grid.ColumnDefinitions>
 
             <!-- 左パネル：コンポーネントパレット -->
-            <Border Grid.Column="0" Background="{StaticResource PanelBrush}" 
+            <Border x:Name="LeftPanelBorder" Grid.Column="0" Background="{StaticResource PanelBrush}" 
                     BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
                 <views:ComponentPaletteView x:Name="ComponentPalette"/>
             </Border>
 
-            <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch" 
+            <GridSplitter x:Name="LeftSplitter" Grid.Column="1" Width="5" HorizontalAlignment="Stretch" 
                           Background="{StaticResource BorderBrush}"/>
 
             <!-- 中央パネル：ノードエディタ -->
-            <Border Grid.Column="2" Background="{StaticResource BackgroundBrush}">
+            <Border Grid.Column="2" Background="{StaticResource BackgroundBrush}" ClipToBounds="True">
                 <views:NodeEditorView x:Name="NodeEditor"/>
             </Border>
 
-            <GridSplitter Grid.Column="3" Width="5" HorizontalAlignment="Stretch" 
+            <GridSplitter x:Name="RightSplitter" Grid.Column="3" Width="5" HorizontalAlignment="Stretch" 
                           Background="{StaticResource BorderBrush}"/>
 
             <!-- 右パネル：プロパティパネル -->
-            <Border Grid.Column="4" Background="{StaticResource PanelBrush}" 
+            <Border x:Name="RightPanelBorder" Grid.Column="4" Background="{StaticResource PanelBrush}" 
                     BorderBrush="{StaticResource BorderBrush}" BorderThickness="1,0,0,0">
                 <views:PropertyPanelView x:Name="PropertyPanel"/>
             </Border>
