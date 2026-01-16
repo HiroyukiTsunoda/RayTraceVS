@@ -39,31 +39,39 @@ namespace RayTraceVS::DXEngine
         UINT ScreenHeight;
         float AspectRatio;
         float TanHalfFov;
+        UINT SamplesPerPixel;
+        UINT MaxBounces;
+        float Padding1;
+        float Padding2;
     };
 
-    // GPU sphere data
+    // GPU sphere data (with PBR material)
     struct alignas(16) GPUSphere
     {
         XMFLOAT3 Center;
         float Radius;
         XMFLOAT4 Color;
-        float Reflectivity;
-        XMFLOAT3 Padding;
+        float Metallic;
+        float Roughness;
+        float Transmission;
+        float IOR;
     };
 
-    // GPU plane data
+    // GPU plane data (with PBR material)
     struct alignas(16) GPUPlane
     {
         XMFLOAT3 Position;
-        float Padding1;
+        float Metallic;
         XMFLOAT3 Normal;
-        float Padding2;
+        float Roughness;
         XMFLOAT4 Color;
-        float Reflectivity;
-        XMFLOAT3 Padding3;
+        float Transmission;
+        float IOR;
+        float Padding1;
+        float Padding2;
     };
 
-    // GPU cylinder data
+    // GPU cylinder data (with PBR material)
     struct alignas(16) GPUCylinder
     {
         XMFLOAT3 Position;
@@ -71,16 +79,28 @@ namespace RayTraceVS::DXEngine
         XMFLOAT3 Axis;
         float Height;
         XMFLOAT4 Color;
-        float Reflectivity;
-        XMFLOAT3 Padding;
+        float Metallic;
+        float Roughness;
+        float Transmission;
+        float IOR;
+    };
+
+    // Light type enum (must match shader)
+    enum GPULightType : UINT
+    {
+        GPULightType_Ambient = 0,
+        GPULightType_Point = 1,
+        GPULightType_Directional = 2
     };
 
     // GPU light data
     struct alignas(16) GPULight
     {
-        XMFLOAT3 Position;
+        XMFLOAT3 Position;    // Position (Point) or Direction (Directional)
         float Intensity;
         XMFLOAT4 Color;
+        UINT Type;            // 0=Ambient, 1=Point, 2=Directional
+        XMFLOAT3 Padding;
     };
 
     class DXRPipeline

@@ -69,6 +69,12 @@
                     <Button Content="Vector4" Click="AddVector4_Click" 
                             Margin="0,2" HorizontalAlignment="Stretch"
                             Background="{StaticResource NodeMathBrush}"/>
+                    <Button Content="Transform" Click="AddTransform_Click" 
+                            Margin="0,2" HorizontalAlignment="Stretch"
+                            Background="{StaticResource NodeMathBrush}"/>
+                    <Button Content="Combine Transform" Click="AddCombineTransform_Click" 
+                            Margin="0,2" HorizontalAlignment="Stretch"
+                            Background="{StaticResource NodeMathBrush}"/>
                     <Button Content="Add" Click="AddMath_Click" 
                             Margin="0,2" HorizontalAlignment="Stretch"
                             Background="{StaticResource NodeMathBrush}"/>

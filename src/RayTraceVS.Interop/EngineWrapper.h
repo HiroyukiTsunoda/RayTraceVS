@@ -25,7 +25,9 @@ namespace RayTraceVS::Interop
             array<PlaneData>^ planes,
             array<CylinderData>^ cylinders,
             CameraData camera,
-            array<LightData>^ lights);
+            array<LightData>^ lights,
+            int samplesPerPixel,
+            int maxBounces);
 
         // Rendering
         void Render();

@@ -226,6 +226,26 @@ namespace RayTraceVS.WPF.Views
             }
         }
 
+        private void AddTransform_Click(object sender, RoutedEventArgs e)
+        {
+            var viewModel = GetViewModel();
+            if (viewModel != null)
+            {
+                var node = new TransformNode { Position = GetRandomPosition() };
+                viewModel.AddNode(node);
+            }
+        }
+
+        private void AddCombineTransform_Click(object sender, RoutedEventArgs e)
+        {
+            var viewModel = GetViewModel();
+            if (viewModel != null)
+            {
+                var node = new CombineTransformNode { Position = GetRandomPosition() };
+                viewModel.AddNode(node);
+            }
+        }
+
         private void AddCamera_Click(object sender, RoutedEventArgs e)
         {
             var viewModel = GetViewModel();

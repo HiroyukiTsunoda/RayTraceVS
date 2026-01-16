@@ -17,12 +17,14 @@ namespace RayTraceVS.WPF.Services
 {
     public class SceneEvaluator
     {
-        public (InteropSphereData[], InteropPlaneData[], InteropCylinderData[], InteropCameraData, InteropLightData[]) EvaluateScene(NodeGraph nodeGraph)
+        public (InteropSphereData[], InteropPlaneData[], InteropCylinderData[], InteropCameraData, InteropLightData[], int SamplesPerPixel, int MaxBounces) EvaluateScene(NodeGraph nodeGraph)
         {
             var spheres = new List<InteropSphereData>();
             var planes = new List<InteropPlaneData>();
             var cylinders = new List<InteropCylinderData>();
             var lights = new List<InteropLightData>();
+            int samplesPerPixel = 1;
+            int maxBounces = 4;
             InteropCameraData camera = new InteropCameraData
             {
                 Position = new InteropVector3(0, 2, -5),
@@ -32,187 +34,223 @@ namespace RayTraceVS.WPF.Services
                 AspectRatio = 16.0f / 9.0f
             };
 
-            // 接続があるかチェック
+            var allNodes = nodeGraph.GetAllNodes();
             var connections = nodeGraph.GetAllConnections();
             
-            // 接続がある場合のみグラフ評価を実行
-            bool hasResults = false;
-            if (connections.Any())
+            // SceneNodeが存在するか確認
+            var sceneNode = allNodes.OfType<Models.Nodes.SceneNode>().FirstOrDefault();
+            
+            if (sceneNode != null && connections.Any())
             {
-                var results = nodeGraph.EvaluateGraph();
+                // SceneNodeが存在する場合：グラフを評価してSceneNodeの出力を使用
+                // 常に完全再評価を行い、キャッシュの問題を回避
+                var results = nodeGraph.EvaluateGraphFull();
                 
-                // グラフ評価の結果から各オブジェクトを抽出
-                foreach (var kvp in results)
-            {
-                var value = kvp.Value;
-
-                if (value is Models.Nodes.SphereData sphereDataFromGraph)
+                // SceneNodeの評価結果を取得
+                if (results.TryGetValue(sceneNode.Id, out var sceneResult) && sceneResult is Models.Nodes.SceneData sceneData)
                 {
-                    // 有効なデータかチェック（半径が0より大きい）
-                    if (sphereDataFromGraph.Radius > 0)
+                    // カメラの設定（デフォルト値でなければ使用）
+                    if (sceneData.Camera.FieldOfView > 0)
                     {
-                        spheres.Add(ConvertSphereData(sphereDataFromGraph));
-                        hasResults = true;
-                    }
-                }
-                else if (value is Models.Nodes.PlaneData planeDataFromGraph)
-                {
-                    planes.Add(ConvertPlaneData(planeDataFromGraph));
-                    hasResults = true;
-                }
-                else if (value is Models.Nodes.CylinderData cylinderDataFromGraph)
-                {
-                    // 有効なデータかチェック
-                    if (cylinderDataFromGraph.Radius > 0 && cylinderDataFromGraph.Height > 0)
-                    {
-                        cylinders.Add(ConvertCylinderData(cylinderDataFromGraph));
-                        hasResults = true;
-                    }
-                }
-                else if (value is Models.Nodes.CameraData cameraDataFromGraph)
-                {
-                    camera = ConvertCameraData(cameraDataFromGraph);
-                    hasResults = true;
-                }
-                else if (value is Models.Nodes.LightData lightDataFromGraph)
-                {
-                    lights.Add(ConvertLightData(lightDataFromGraph));
-                    hasResults = true;
-                }
-                else if (value is Models.Nodes.SceneData sceneData)
-                {
-                    // シーンデータが有効なデータを含むかチェック
-                    if (sceneData.Objects.Count > 0 || sceneData.Lights.Count > 0)
-                    {
-                        // シーンデータから個別オブジェクトを展開
                         camera = ConvertCameraData(sceneData.Camera);
-                        
-                        foreach (var obj in sceneData.Objects)
-                        {
-                            if (obj is Models.Nodes.SphereData sd)
-                                spheres.Add(ConvertSphereData(sd));
-                            else if (obj is Models.Nodes.PlaneData pd)
-                                planes.Add(ConvertPlaneData(pd));
-                            else if (obj is Models.Nodes.CylinderData cd)
-                                cylinders.Add(ConvertCylinderData(cd));
-                        }
-
-                        lights.AddRange(sceneData.Lights.Select(ConvertLightData));
-                        hasResults = true;
                     }
-                }
+                    
+                    // SceneNodeに接続されたオブジェクトのみを追加
+                    foreach (var obj in sceneData.Objects)
+                    {
+                        if (obj is Models.Nodes.SphereData sd && sd.Radius > 0)
+                        {
+                            spheres.Add(ConvertSphereData(sd));
+                        }
+                        else if (obj is Models.Nodes.PlaneData pd)
+                        {
+                            planes.Add(ConvertPlaneData(pd));
+                        }
+                        else if (obj is Models.Nodes.CylinderData cd && cd.Radius > 0 && cd.Height > 0)
+                        {
+                            cylinders.Add(ConvertCylinderData(cd));
+                        }
+                    }
+                    
+                    // SceneNodeに接続されたライトのみを追加
+                    foreach (var light in sceneData.Lights)
+                    {
+                        lights.Add(ConvertLightData(light));
+                    }
+                    
+                    // レンダリング設定を取得
+                    samplesPerPixel = sceneData.SamplesPerPixel > 0 ? sceneData.SamplesPerPixel : 1;
+                    maxBounces = sceneData.MaxBounces > 0 ? sceneData.MaxBounces : 4;
+                    
+                    System.Diagnostics.Debug.WriteLine($"[SceneEvaluator] SceneNode経由: Spheres={spheres.Count}, Planes={planes.Count}, Cylinders={cylinders.Count}, Lights={lights.Count}, Samples={samplesPerPixel}, Bounces={maxBounces}");
+                    
+                    // デバッグ：詳細情報を出力
+                    foreach (var s in spheres)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"  Sphere: Pos=({s.Position.X}, {s.Position.Y}, {s.Position.Z}), Radius={s.Radius}");
+                    }
+                    System.Diagnostics.Debug.WriteLine($"  Camera: Pos=({camera.Position.X}, {camera.Position.Y}, {camera.Position.Z}), LookAt=({camera.LookAt.X}, {camera.LookAt.Y}, {camera.LookAt.Z}), FOV={camera.FieldOfView}");
                 }
             }
-            
-            // グラフ評価で結果が得られなかった場合のみ、ノードから直接取得
-            if (!hasResults)
+            else
             {
-                var allNodes = nodeGraph.GetAllNodes();
+                // SceneNodeがない場合：すべてのオブジェクトノードから直接取得（フォールバック）
+                System.Diagnostics.Debug.WriteLine("[SceneEvaluator] SceneNodeなし：フォールバックモード");
+                
+                // 接続がある場合はグラフ評価を利用（入力値が正しく伝播される）
+                Dictionary<Guid, object?>? results = null;
+                if (connections.Any())
+                {
+                    results = nodeGraph.EvaluateGraph();
+                }
                 
                 foreach (var node in allNodes)
                 {
+                    // グラフ評価結果があればそれを使用、なければノードプロパティから取得
                     if (node is Models.Nodes.SphereNode sphereNode)
-                {
-                    var sphereData = new Models.Nodes.SphereData
                     {
-                        Position = sphereNode.ObjectTransform.Position,
-                        Radius = sphereNode.Radius,
-                        Material = Models.Nodes.MaterialData.Default
-                    };
-                    spheres.Add(ConvertSphereData(sphereData));
-                }
-                else if (node is Models.Nodes.PlaneNode planeNode)
-                {
-                    var planeData = new Models.Nodes.PlaneData
+                        Models.Nodes.SphereData sphereData;
+                        if (results != null && results.TryGetValue(sphereNode.Id, out var evalResult) && evalResult is Models.Nodes.SphereData sd)
+                        {
+                            sphereData = sd;
+                        }
+                        else
+                        {
+                            sphereData = new Models.Nodes.SphereData
+                            {
+                                Position = sphereNode.ObjectTransform.Position,
+                                Radius = sphereNode.Radius,
+                                Material = Models.Nodes.MaterialData.Default
+                            };
+                        }
+                        if (sphereData.Radius > 0)
+                        {
+                            spheres.Add(ConvertSphereData(sphereData));
+                        }
+                    }
+                    else if (node is Models.Nodes.PlaneNode planeNode)
                     {
-                        Position = planeNode.ObjectTransform.Position,
-                        Normal = planeNode.Normal,
-                        Material = Models.Nodes.MaterialData.Default
-                    };
-                    planes.Add(ConvertPlaneData(planeData));
-                }
-                else if (node is Models.Nodes.CylinderNode cylinderNode)
-                {
-                    var cylinderData = new Models.Nodes.CylinderData
+                        Models.Nodes.PlaneData planeData;
+                        if (results != null && results.TryGetValue(planeNode.Id, out var evalResult) && evalResult is Models.Nodes.PlaneData pd)
+                        {
+                            planeData = pd;
+                        }
+                        else
+                        {
+                            planeData = new Models.Nodes.PlaneData
+                            {
+                                Position = planeNode.ObjectTransform.Position,
+                                Normal = planeNode.Normal,
+                                Material = Models.Nodes.MaterialData.Default
+                            };
+                        }
+                        planes.Add(ConvertPlaneData(planeData));
+                    }
+                    else if (node is Models.Nodes.CylinderNode cylinderNode)
                     {
-                        Position = cylinderNode.ObjectTransform.Position,
-                        Axis = cylinderNode.Axis,
-                        Radius = cylinderNode.Radius,
-                        Height = cylinderNode.Height,
-                        Material = Models.Nodes.MaterialData.Default
-                    };
-                    cylinders.Add(ConvertCylinderData(cylinderData));
-                }
-                else if (node is Models.Nodes.CameraNode cameraNode)
-                {
-                    var cameraData = new Models.Nodes.CameraData
+                        Models.Nodes.CylinderData cylinderData;
+                        if (results != null && results.TryGetValue(cylinderNode.Id, out var evalResult) && evalResult is Models.Nodes.CylinderData cd)
+                        {
+                            cylinderData = cd;
+                        }
+                        else
+                        {
+                            cylinderData = new Models.Nodes.CylinderData
+                            {
+                                Position = cylinderNode.ObjectTransform.Position,
+                                Axis = cylinderNode.Axis,
+                                Radius = cylinderNode.Radius,
+                                Height = cylinderNode.Height,
+                                Material = Models.Nodes.MaterialData.Default
+                            };
+                        }
+                        if (cylinderData.Radius > 0 && cylinderData.Height > 0)
+                        {
+                            cylinders.Add(ConvertCylinderData(cylinderData));
+                        }
+                    }
+                    else if (node is Models.Nodes.CameraNode cameraNode)
                     {
-                        Position = cameraNode.CameraPosition,
-                        LookAt = cameraNode.LookAt,
-                        Up = cameraNode.Up,
-                        FieldOfView = cameraNode.FieldOfView,
-                        Near = cameraNode.Near,
-                        Far = cameraNode.Far
-                    };
-                    camera = ConvertCameraData(cameraData);
-                }
-                else if (node is Models.Nodes.PointLightNode pointLightNode)
-                {
-                    var lightData = new Models.Nodes.LightData
+                        Models.Nodes.CameraData cameraData;
+                        if (results != null && results.TryGetValue(cameraNode.Id, out var evalResult) && evalResult is Models.Nodes.CameraData cd)
+                        {
+                            cameraData = cd;
+                        }
+                        else
+                        {
+                            cameraData = new Models.Nodes.CameraData
+                            {
+                                Position = cameraNode.CameraPosition,
+                                LookAt = cameraNode.LookAt,
+                                Up = cameraNode.Up,
+                                FieldOfView = cameraNode.FieldOfView,
+                                Near = cameraNode.Near,
+                                Far = cameraNode.Far
+                            };
+                        }
+                        camera = ConvertCameraData(cameraData);
+                    }
+                    else if (node is Models.Nodes.PointLightNode pointLightNode)
                     {
-                        Type = Models.Nodes.LightType.Point,
-                        Position = pointLightNode.LightPosition,
-                        Direction = Vector3.Zero,
-                        Color = pointLightNode.Color,
-                        Intensity = pointLightNode.Intensity,
-                        Attenuation = pointLightNode.Attenuation
-                    };
-                    lights.Add(ConvertLightData(lightData));
-                }
-                else if (node is Models.Nodes.AmbientLightNode ambientLightNode)
-                {
-                    var lightData = new Models.Nodes.LightData
+                        var lightData = new Models.Nodes.LightData
+                        {
+                            Type = Models.Nodes.LightType.Point,
+                            Position = pointLightNode.LightPosition,
+                            Direction = Vector3.Zero,
+                            Color = pointLightNode.Color,
+                            Intensity = pointLightNode.Intensity,
+                            Attenuation = pointLightNode.Attenuation
+                        };
+                        lights.Add(ConvertLightData(lightData));
+                    }
+                    else if (node is Models.Nodes.AmbientLightNode ambientLightNode)
                     {
-                        Type = Models.Nodes.LightType.Ambient,
-                        Position = Vector3.Zero,
-                        Direction = Vector3.Zero,
-                        Color = ambientLightNode.Color,
-                        Intensity = ambientLightNode.Intensity,
-                        Attenuation = 0.0f
-                    };
-                    lights.Add(ConvertLightData(lightData));
-                }
-                else if (node is Models.Nodes.DirectionalLightNode directionalLightNode)
-                {
-                    var lightData = new Models.Nodes.LightData
+                        var lightData = new Models.Nodes.LightData
+                        {
+                            Type = Models.Nodes.LightType.Ambient,
+                            Position = Vector3.Zero,
+                            Direction = Vector3.Zero,
+                            Color = ambientLightNode.Color,
+                            Intensity = ambientLightNode.Intensity,
+                            Attenuation = 0.0f
+                        };
+                        lights.Add(ConvertLightData(lightData));
+                    }
+                    else if (node is Models.Nodes.DirectionalLightNode directionalLightNode)
                     {
-                        Type = Models.Nodes.LightType.Directional,
-                        Position = Vector3.Zero,
-                        Direction = directionalLightNode.Direction,
-                        Color = directionalLightNode.Color,
-                        Intensity = directionalLightNode.Intensity,
-                        Attenuation = 0.0f
-                    };
-                    lights.Add(ConvertLightData(lightData));
+                        var lightData = new Models.Nodes.LightData
+                        {
+                            Type = Models.Nodes.LightType.Directional,
+                            Position = Vector3.Zero,
+                            Direction = directionalLightNode.Direction,
+                            Color = directionalLightNode.Color,
+                            Intensity = directionalLightNode.Intensity,
+                            Attenuation = 0.0f
+                        };
+                        lights.Add(ConvertLightData(lightData));
+                    }
                 }
-                }
+                
+                System.Diagnostics.Debug.WriteLine($"[SceneEvaluator] フォールバック: Spheres={spheres.Count}, Planes={planes.Count}, Cylinders={cylinders.Count}, Lights={lights.Count}");
             }
 
-            return (spheres.ToArray(), planes.ToArray(), cylinders.ToArray(), camera, lights.ToArray());
+            return (spheres.ToArray(), planes.ToArray(), cylinders.ToArray(), camera, lights.ToArray(), samplesPerPixel, maxBounces);
         }
 
         private InteropSphereData ConvertSphereData(Models.Nodes.SphereData data)
         {
-            // MaterialDataから旧形式のパラメータに変換
             var material = data.Material;
+            
+            System.Diagnostics.Debug.WriteLine($"[SceneEvaluator] Sphere Material: Color=({material.BaseColor.X:F2},{material.BaseColor.Y:F2},{material.BaseColor.Z:F2}), Metallic={material.Metallic:F2}, Roughness={material.Roughness:F2}, Transmission={material.Transmission:F2}, IOR={material.IOR:F2}");
             
             return new InteropSphereData
             {
                 Position = new InteropVector3(data.Position.X, data.Position.Y, data.Position.Z),
                 Radius = data.Radius,
                 Color = new InteropVector4(material.BaseColor.X, material.BaseColor.Y, material.BaseColor.Z, material.BaseColor.W),
-                Reflectivity = material.Metallic,  // 金属度を反射率として使用
-                Transparency = material.Transmission,
+                Metallic = material.Metallic,
+                Roughness = material.Roughness,
+                Transmission = material.Transmission,
                 IOR = material.IOR
             };
         }
@@ -246,14 +284,18 @@ namespace RayTraceVS.WPF.Services
                 Position = new InteropVector3(data.Position.X, data.Position.Y, data.Position.Z),
                 Normal = new InteropVector3(normal.X, normal.Y, normal.Z),
                 Color = new InteropVector4(material.BaseColor.X, material.BaseColor.Y, material.BaseColor.Z, material.BaseColor.W),
-                Reflectivity = material.Metallic
+                Metallic = material.Metallic,
+                Roughness = material.Roughness,
+                Transmission = material.Transmission,
+                IOR = material.IOR
             };
         }
 
         private InteropCylinderData ConvertCylinderData(Models.Nodes.CylinderData data)
         {
-            // MaterialDataから旧形式のパラメータに変換
             var material = data.Material;
+            
+            System.Diagnostics.Debug.WriteLine($"[SceneEvaluator] Cylinder Material: Color=({material.BaseColor.X:F2},{material.BaseColor.Y:F2},{material.BaseColor.Z:F2}), Metallic={material.Metallic:F2}, Roughness={material.Roughness:F2}, Transmission={material.Transmission:F2}, IOR={material.IOR:F2}");
             
             return new InteropCylinderData
             {
@@ -262,7 +304,10 @@ namespace RayTraceVS.WPF.Services
                 Radius = data.Radius,
                 Height = data.Height,
                 Color = new InteropVector4(material.BaseColor.X, material.BaseColor.Y, material.BaseColor.Z, material.BaseColor.W),
-                Reflectivity = material.Metallic
+                Metallic = material.Metallic,
+                Roughness = material.Roughness,
+                Transmission = material.Transmission,
+                IOR = material.IOR
             };
         }
 
@@ -282,18 +327,23 @@ namespace RayTraceVS.WPF.Services
 
         private InteropLightData ConvertLightData(Models.Nodes.LightData data)
         {
-            // LightTypeを変換
+            // LightTypeを正しく変換
             var interopType = data.Type switch
             {
-                Models.Nodes.LightType.Ambient => InteropLightType.Point,  // Ambientは現在Pointとして扱う
-                Models.Nodes.LightType.Directional => InteropLightType.Point,  // Directionalも現在Pointとして扱う
+                Models.Nodes.LightType.Ambient => InteropLightType.Ambient,
+                Models.Nodes.LightType.Directional => InteropLightType.Directional,
                 Models.Nodes.LightType.Point => InteropLightType.Point,
                 _ => InteropLightType.Point
             };
             
+            // Directionalライトの場合、Positionに方向ベクトルを格納
+            var position = data.Type == Models.Nodes.LightType.Directional 
+                ? data.Direction 
+                : data.Position;
+            
             return new InteropLightData
             {
-                Position = new InteropVector3(data.Position.X, data.Position.Y, data.Position.Z),
+                Position = new InteropVector3(position.X, position.Y, position.Z),
                 Color = new InteropVector4(data.Color.X, data.Color.Y, data.Color.Z, data.Color.W),
                 Intensity = data.Intensity,
                 Type = interopType

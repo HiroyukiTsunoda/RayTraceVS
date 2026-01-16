@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 
 namespace RayTraceVS.WPF.Models.Nodes
@@ -16,6 +17,7 @@ namespace RayTraceVS.WPF.Models.Nodes
         public CylinderNode() : base("Cylinder", NodeCategory.Object)
         {
             // 入力ソケット
+            AddInputSocket("Transform", SocketType.Transform);
             AddInputSocket("Material", SocketType.Material);
             AddInputSocket("Axis", SocketType.Vector3);
             AddInputSocket("Radius", SocketType.Float);
@@ -27,8 +29,17 @@ namespace RayTraceVS.WPF.Models.Nodes
 
         public override object? Evaluate(Dictionary<System.Guid, object?> inputValues)
         {
+            // Transform入力を取得（未接続の場合は内部プロパティを使用）
+            var transformSocket = InputSockets.FirstOrDefault(s => s.Name == "Transform");
+            Transform transform = ObjectTransform;
+            if (transformSocket != null && inputValues.TryGetValue(transformSocket.Id, out var transformVal) && transformVal is Transform inputTransform)
+            {
+                transform = inputTransform;
+            }
+
             // マテリアル入力を取得（未接続の場合はデフォルト）
             var material = GetInputValue<MaterialData?>("Material", inputValues) ?? MaterialData.Default;
+            System.Diagnostics.Debug.WriteLine($"[CylinderNode] Material: Transmission={material.Transmission}, Metallic={material.Metallic}, IOR={material.IOR}");
             
             // 形状パラメータ入力を取得
             var axisInput = GetInputValue<Vector3?>("Axis", inputValues);
@@ -40,17 +51,16 @@ namespace RayTraceVS.WPF.Models.Nodes
             var height = heightInput ?? Height;
             
             // 回転を軸に適用
-            var rotationQuat = ObjectTransform.GetQuaternion();
-            var rotatedAxis = Vector3.Transform(axis, rotationQuat);
+            var rotatedAxis = Vector3.Transform(axis, transform.Rotation);
             
             // スケールを半径と高さに適用
-            var avgScale = (ObjectTransform.Scale.X + ObjectTransform.Scale.Z) / 2.0f;
+            var avgScale = (transform.Scale.X + transform.Scale.Z) / 2.0f;
             var scaledRadius = radius * avgScale;
-            var scaledHeight = height * ObjectTransform.Scale.Y;
+            var scaledHeight = height * transform.Scale.Y;
 
             return new CylinderData
             {
-                Position = ObjectTransform.Position,
+                Position = transform.Position,
                 Axis = Vector3.Normalize(rotatedAxis),
                 Radius = scaledRadius,
                 Height = scaledHeight,

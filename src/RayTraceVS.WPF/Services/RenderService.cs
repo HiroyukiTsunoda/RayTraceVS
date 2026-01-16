@@ -28,14 +28,16 @@ namespace RayTraceVS.WPF.Services
             PlaneData[] planes,
             CylinderData[] cylinders,
             CameraData camera,
-            LightData[] lights)
+            LightData[] lights,
+            int samplesPerPixel = 1,
+            int maxBounces = 4)
         {
             if (!isInitialized || engineWrapper == null)
                 return;
 
             try
             {
-                engineWrapper.UpdateScene(spheres, planes, cylinders, camera, lights);
+                engineWrapper.UpdateScene(spheres, planes, cylinders, camera, lights, samplesPerPixel, maxBounces);
             }
             catch
             {

@@ -1,12 +1,19 @@
 using System.Collections.Generic;
 using System.Linq;
+using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace RayTraceVS.WPF.Models.Nodes
 {
-    public class SceneNode : Node
+    public partial class SceneNode : Node
     {
         private int objectSocketCount = 0;
         private int lightSocketCount = 0;
+
+        [ObservableProperty]
+        private int _samplesPerPixel = 1;
+
+        [ObservableProperty]
+        private int _maxBounces = 4;
 
         public SceneNode() : base("Scene", NodeCategory.Scene)
         {
@@ -152,7 +159,9 @@ namespace RayTraceVS.WPF.Models.Nodes
             {
                 Camera = cameraObj is CameraData camera ? camera : default,
                 Objects = objects,
-                Lights = lights
+                Lights = lights,
+                SamplesPerPixel = SamplesPerPixel,
+                MaxBounces = MaxBounces
             };
         }
     }
@@ -162,5 +171,7 @@ namespace RayTraceVS.WPF.Models.Nodes
         public CameraData Camera;
         public List<object> Objects;
         public List<LightData> Lights;
+        public int SamplesPerPixel;
+        public int MaxBounces;
     }
 }

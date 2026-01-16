@@ -22,17 +22,10 @@ namespace RayTraceVS.WPF.Views
         // 解像度を1920x1080に固定
         private const int RenderWidth = 1920;
         private const int RenderHeight = 1080;
-        
-        private SettingsService settingsService;
 
         public RenderWindow()
         {
             InitializeComponent();
-            
-            settingsService = new SettingsService();
-            
-            // ウィンドウの位置とサイズを復元
-            RestoreWindowBounds();
         }
 
         public void SetNodeGraph(NodeGraph graph)
@@ -98,6 +91,14 @@ namespace RayTraceVS.WPF.Views
                 RenderImage.Source = renderBitmap;
                 
                 UpdateInfo();
+                
+                // 初期サイズ設定後、ユーザーがリサイズできるようにする
+                SizeToContent = SizeToContent.Manual;
+                
+                // リサイズ時はスケーリングを有効にする
+                RenderImage.Width = double.NaN;
+                RenderImage.Height = double.NaN;
+                RenderImage.Stretch = Stretch.Uniform;
             }
             catch (Exception ex)
             {
@@ -116,54 +117,8 @@ namespace RayTraceVS.WPF.Views
                 nodeGraph.SceneChanged -= OnSceneChanged;
             }
             
-            // ウィンドウの位置とサイズを保存
-            SaveWindowBounds();
-            
             renderService?.Dispose();
             renderService = null;
-        }
-        
-        private void RestoreWindowBounds()
-        {
-            var bounds = settingsService.RenderWindowBounds;
-            if (bounds != null && bounds.Width > 0 && bounds.Height > 0)
-            {
-                // 位置を復元（マルチモニター対応で負の座標も許可）
-                this.Left = bounds.Left;
-                this.Top = bounds.Top;
-                this.Width = bounds.Width;
-                this.Height = bounds.Height;
-                
-                if (bounds.IsMaximized)
-                {
-                    this.WindowState = WindowState.Maximized;
-                }
-            }
-        }
-        
-        private void SaveWindowBounds()
-        {
-            // 最大化状態の場合はRestoreBoundsから位置とサイズを取得
-            var bounds = new WindowBounds();
-            
-            if (this.WindowState == WindowState.Maximized)
-            {
-                bounds.Left = this.RestoreBounds.Left;
-                bounds.Top = this.RestoreBounds.Top;
-                bounds.Width = this.RestoreBounds.Width;
-                bounds.Height = this.RestoreBounds.Height;
-                bounds.IsMaximized = true;
-            }
-            else
-            {
-                bounds.Left = this.Left;
-                bounds.Top = this.Top;
-                bounds.Width = this.Width;
-                bounds.Height = this.Height;
-                bounds.IsMaximized = false;
-            }
-            
-            settingsService.RenderWindowBounds = bounds;
         }
 
         // MainWindowのツールバーから呼び出されるメソッド
@@ -214,10 +169,10 @@ namespace RayTraceVS.WPF.Views
             try
             {
                 // ノードグラフからシーンデータを評価
-                var (spheres, planes, cylinders, camera, lights) = sceneEvaluator.EvaluateScene(nodeGraph);
+                var (spheres, planes, cylinders, camera, lights, samplesPerPixel, maxBounces) = sceneEvaluator.EvaluateScene(nodeGraph);
                 
                 // シーン更新
-                renderService.UpdateScene(spheres, planes, cylinders, camera, lights);
+                renderService.UpdateScene(spheres, planes, cylinders, camera, lights, samplesPerPixel, maxBounces);
                 
                 // レンダリング
                 renderService.Render();

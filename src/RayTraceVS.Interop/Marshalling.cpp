@@ -29,8 +29,9 @@ namespace RayTraceVS::Interop
         native.center = { managedSphere.Position.X, managedSphere.Position.Y, managedSphere.Position.Z };
         native.radius = managedSphere.Radius;
         native.material.color = { managedSphere.Color.X, managedSphere.Color.Y, managedSphere.Color.Z, managedSphere.Color.W };
-        native.material.reflectivity = managedSphere.Reflectivity;
-        native.material.transparency = managedSphere.Transparency;
+        native.material.metallic = managedSphere.Metallic;
+        native.material.roughness = managedSphere.Roughness;
+        native.material.transmission = managedSphere.Transmission;
         native.material.ior = managedSphere.IOR;
         return native;
     }
@@ -41,9 +42,10 @@ namespace RayTraceVS::Interop
         native.position = { managedPlane.Position.X, managedPlane.Position.Y, managedPlane.Position.Z };
         native.normal = { managedPlane.Normal.X, managedPlane.Normal.Y, managedPlane.Normal.Z };
         native.material.color = { managedPlane.Color.X, managedPlane.Color.Y, managedPlane.Color.Z, managedPlane.Color.W };
-        native.material.reflectivity = managedPlane.Reflectivity;
-        native.material.transparency = 0.0f;
-        native.material.ior = 1.0f;
+        native.material.metallic = managedPlane.Metallic;
+        native.material.roughness = managedPlane.Roughness;
+        native.material.transmission = managedPlane.Transmission;
+        native.material.ior = managedPlane.IOR;
         return native;
     }
 
@@ -55,9 +57,10 @@ namespace RayTraceVS::Interop
         native.radius = managedCylinder.Radius;
         native.height = managedCylinder.Height;
         native.material.color = { managedCylinder.Color.X, managedCylinder.Color.Y, managedCylinder.Color.Z, managedCylinder.Color.W };
-        native.material.reflectivity = managedCylinder.Reflectivity;
-        native.material.transparency = 0.0f;
-        native.material.ior = 1.0f;
+        native.material.metallic = managedCylinder.Metallic;
+        native.material.roughness = managedCylinder.Roughness;
+        native.material.transmission = managedCylinder.Transmission;
+        native.material.ior = managedCylinder.IOR;
         return native;
     }
 }

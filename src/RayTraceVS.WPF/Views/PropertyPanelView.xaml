@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:nodes="clr-namespace:RayTraceVS.WPF.Models.Nodes"
              mc:Ignorable="d" 
              d:DesignHeight="450" d:DesignWidth="300">
     <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -82,6 +83,58 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
+                        
+                        <!-- SceneNode専用プロパティ -->
+                        <StackPanel Margin="0,15,0,0">
+                            <StackPanel.Style>
+                                <Style TargetType="StackPanel">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding SelectedNode, Converter={StaticResource TypeNameConverter}}" Value="SceneNode">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </StackPanel.Style>
+                            
+                            <TextBlock Text="レンダリング設定" 
+                                       Foreground="{StaticResource AccentBrush}"
+                                       FontWeight="Bold"
+                                       FontSize="12"
+                                       Margin="0,0,0,10"/>
+                            
+                            <!-- SamplesPerPixel -->
+                            <TextBlock Text="サンプル数 (SamplesPerPixel)" 
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       FontSize="10"
+                                       Margin="0,5,0,2"/>
+                            <TextBox Text="{Binding SelectedNode.SamplesPerPixel, UpdateSourceTrigger=PropertyChanged}"
+                                     Background="#3C3C3C"
+                                     Foreground="{StaticResource TextBrush}"
+                                     BorderBrush="{StaticResource BorderBrush}"
+                                     Padding="5,3"
+                                     Margin="0,0,0,5"/>
+                            <TextBlock Text="1: プレビュー / 4-8: 高品質 / 16+: 最高品質" 
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       FontSize="9"
+                                       Margin="0,0,0,10"/>
+                            
+                            <!-- MaxBounces -->
+                            <TextBlock Text="最大反射回数 (MaxBounces)" 
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       FontSize="10"
+                                       Margin="0,5,0,2"/>
+                            <TextBox Text="{Binding SelectedNode.MaxBounces, UpdateSourceTrigger=PropertyChanged}"
+                                     Background="#3C3C3C"
+                                     Foreground="{StaticResource TextBrush}"
+                                     BorderBrush="{StaticResource BorderBrush}"
+                                     Padding="5,3"
+                                     Margin="0,0,0,5"/>
+                            <TextBlock Text="ガラス/メタルの反射・屈折の最大回数" 
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       FontSize="9"
+                                       Margin="0,0,0,10"/>
+                        </StackPanel>
                         
                         <!-- 削除ボタン -->
                         <Button Content="ノードを削除" 
