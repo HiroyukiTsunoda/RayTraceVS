@@ -22,11 +22,22 @@
     <ProjectReference Include="..\RayTraceVS.Interop\RayTraceVS.Interop.vcxproj" />
   </ItemGroup>
 
+  <!-- C++プロジェクトの出力ディレクトリを明示的に定義（環境依存を排除） -->
+  <PropertyGroup>
+    <NativeOutputDir>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\bin\$(Configuration)\'))</NativeOutputDir>
+  </PropertyGroup>
+
   <Target Name="CopyNativeDlls" AfterTargets="Build">
     <ItemGroup>
-      <NativeDlls Include="$(SolutionDir)bin\$(Configuration)\*.dll" />
+      <!-- DXEngine と Interop の出力DLLを明示的に指定 -->
+      <NativeDlls Include="$(NativeOutputDir)RayTraceVS.DXEngine.dll" />
+      <NativeDlls Include="$(NativeOutputDir)RayTraceVS.Interop.dll" />
+      <NativeDlls Include="$(NativeOutputDir)Ijwhost.dll" Condition="Exists('$(NativeOutputDir)Ijwhost.dll')" />
+      <!-- シェーダーファイル -->
+      <ShaderFiles Include="$(NativeOutputDir)*.cso" />
     </ItemGroup>
     <Copy SourceFiles="@(NativeDlls)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
-    <Message Text="Copied native DLLs to $(OutDir)" Importance="high" />
+    <Copy SourceFiles="@(ShaderFiles)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+    <Message Text="Copied native DLLs from $(NativeOutputDir) to $(OutDir)" Importance="high" />
   </Target>
 </Project>

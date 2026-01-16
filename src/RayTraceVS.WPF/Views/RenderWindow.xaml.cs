@@ -17,12 +17,8 @@ namespace RayTraceVS.WPF.Views
         private SceneEvaluator? sceneEvaluator;
         private WriteableBitmap? renderBitmap;
         
-        private DispatcherTimer renderTimer;
-        private DispatcherTimer fpsTimer;
-        
-        private int frameCount = 0;
-        private int fps = 0;
         private bool isRendering = false;
+        private bool needsRedraw = false;
         
         private const int RenderWidth = 1280;
         private const int RenderHeight = 720;
@@ -37,19 +33,34 @@ namespace RayTraceVS.WPF.Views
             
             // ウィンドウの位置とサイズを復元
             RestoreWindowBounds();
-            
-            renderTimer = new DispatcherTimer();
-            renderTimer.Interval = TimeSpan.FromMilliseconds(16); // ~60 FPS
-            renderTimer.Tick += RenderTimer_Tick;
-
-            fpsTimer = new DispatcherTimer();
-            fpsTimer.Interval = TimeSpan.FromSeconds(1);
-            fpsTimer.Tick += FpsTimer_Tick;
         }
 
         public void SetNodeGraph(NodeGraph graph)
         {
+            // 以前のノードグラフのイベント購読を解除
+            if (nodeGraph != null)
+            {
+                nodeGraph.SceneChanged -= OnSceneChanged;
+            }
+            
             nodeGraph = graph;
+            
+            // 新しいノードグラフのシーン変更を監視
+            if (nodeGraph != null)
+            {
+                nodeGraph.SceneChanged += OnSceneChanged;
+            }
+        }
+        
+        private void OnSceneChanged(object? sender, EventArgs e)
+        {
+            // シーンが変更されたら再描画が必要
+            if (isRendering)
+            {
+                needsRedraw = true;
+                // UIスレッドで再描画を実行
+                Dispatcher.BeginInvoke(new Action(() => RenderOnce()), DispatcherPriority.Render);
+            }
         }
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
@@ -98,6 +109,12 @@ namespace RayTraceVS.WPF.Views
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
             StopRendering();
+            
+            // ノードグラフのイベント購読を解除
+            if (nodeGraph != null)
+            {
+                nodeGraph.SceneChanged -= OnSceneChanged;
+            }
             
             // ウィンドウの位置とサイズを保存
             SaveWindowBounds();
@@ -177,9 +194,11 @@ namespace RayTraceVS.WPF.Views
             isRendering = true;
             StartButton.IsEnabled = false;
             StopButton.IsEnabled = true;
+            StatusText.Text = "状態: レンダリング中";
 
-            renderTimer.Start();
-            fpsTimer.Start();
+            // 一回だけレンダリング
+            RenderOnce();
+            UpdateInfo();
         }
 
         private void StopRendering()
@@ -190,15 +209,15 @@ namespace RayTraceVS.WPF.Views
             isRendering = false;
             StartButton.IsEnabled = true;
             StopButton.IsEnabled = false;
-
-            renderTimer.Stop();
-            fpsTimer.Stop();
+            StatusText.Text = "状態: 停止中";
         }
 
-        private void RenderTimer_Tick(object? sender, EventArgs e)
+        private void RenderOnce()
         {
             if (!isRendering || renderService == null || nodeGraph == null || sceneEvaluator == null || renderBitmap == null)
                 return;
+
+            needsRedraw = false;
 
             try
             {
@@ -224,19 +243,24 @@ namespace RayTraceVS.WPF.Views
                             byte* pBackBuffer = (byte*)renderBitmap.BackBuffer;
                             int stride = renderBitmap.BackBufferStride;
                             
-                            // RGBAからBGRAに変換
-                            for (int y = 0; y < RenderHeight; y++)
+                            // RGBA to BGRA conversion using uint32 swap for better performance
+                            fixed (byte* pSrc = pixelData)
                             {
-                                for (int x = 0; x < RenderWidth; x++)
+                                for (int y = 0; y < RenderHeight; y++)
                                 {
-                                    int srcIndex = (y * RenderWidth + x) * 4;
-                                    int dstIndex = y * stride + x * 4;
+                                    uint* srcRow = (uint*)(pSrc + y * RenderWidth * 4);
+                                    uint* dstRow = (uint*)(pBackBuffer + y * stride);
                                     
-                                    // RGBAからBGRAに変換
-                                    pBackBuffer[dstIndex + 0] = pixelData[srcIndex + 2]; // B
-                                    pBackBuffer[dstIndex + 1] = pixelData[srcIndex + 1]; // G
-                                    pBackBuffer[dstIndex + 2] = pixelData[srcIndex + 0]; // R
-                                    pBackBuffer[dstIndex + 3] = pixelData[srcIndex + 3]; // A
+                                    for (int x = 0; x < RenderWidth; x++)
+                                    {
+                                        uint rgba = srcRow[x];
+                                        // RGBA -> BGRA: swap R and B
+                                        uint r = (rgba >> 0) & 0xFF;
+                                        uint g = (rgba >> 8) & 0xFF;
+                                        uint b = (rgba >> 16) & 0xFF;
+                                        uint a = (rgba >> 24) & 0xFF;
+                                        dstRow[x] = (a << 24) | (r << 16) | (g << 8) | b;
+                                    }
                                 }
                             }
                         }
@@ -252,8 +276,6 @@ namespace RayTraceVS.WPF.Views
                 {
                     System.Diagnostics.Debug.WriteLine("Pixel data is null!");
                 }
-                
-                frameCount++;
             }
             catch (Exception ex)
             {
@@ -263,18 +285,8 @@ namespace RayTraceVS.WPF.Views
             }
         }
 
-        private void FpsTimer_Tick(object? sender, EventArgs e)
-        {
-            fps = frameCount;
-            frameCount = 0;
-            
-            UpdateInfo();
-        }
-
         private void UpdateInfo()
         {
-            FpsText.Text = $"FPS: {fps}";
-            
             if (nodeGraph != null)
             {
                 var objects = nodeGraph.GetAllNodes();

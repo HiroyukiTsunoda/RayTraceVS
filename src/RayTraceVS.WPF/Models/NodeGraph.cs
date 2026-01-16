@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
 
 namespace RayTraceVS.WPF.Models
@@ -9,10 +10,23 @@ namespace RayTraceVS.WPF.Models
         private Dictionary<Guid, Node> nodes;
         private Dictionary<Guid, NodeConnection> connections;
 
+        /// <summary>
+        /// シーンが変更されたときに発火するイベント
+        /// </summary>
+        public event EventHandler? SceneChanged;
+
         public NodeGraph()
         {
             nodes = new Dictionary<Guid, Node>();
             connections = new Dictionary<Guid, NodeConnection>();
+        }
+
+        /// <summary>
+        /// シーン変更を通知する
+        /// </summary>
+        public void NotifySceneChanged()
+        {
+            SceneChanged?.Invoke(this, EventArgs.Empty);
         }
 
         public void AddNode(Node node)
@@ -20,6 +34,11 @@ namespace RayTraceVS.WPF.Models
             if (!nodes.ContainsKey(node.Id))
             {
                 nodes[node.Id] = node;
+                
+                // ノードのプロパティ変更を監視
+                node.PropertyChanged += OnNodePropertyChanged;
+                
+                NotifySceneChanged();
             }
         }
 
@@ -27,6 +46,9 @@ namespace RayTraceVS.WPF.Models
         {
             if (nodes.ContainsKey(node.Id))
             {
+                // ノードのプロパティ変更監視を解除
+                node.PropertyChanged -= OnNodePropertyChanged;
+                
                 // ノードに接続されている接続を削除
                 var connectionsToRemove = connections.Values
                     .Where(c => c.InputSocket?.ParentNode?.Id == node.Id || 
@@ -39,6 +61,16 @@ namespace RayTraceVS.WPF.Models
                 }
 
                 nodes.Remove(node.Id);
+                NotifySceneChanged();
+            }
+        }
+
+        private void OnNodePropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            // 位置やIsSelected以外のプロパティが変更されたらシーン変更を通知
+            if (e.PropertyName != nameof(Node.Position) && e.PropertyName != nameof(Node.IsSelected))
+            {
+                NotifySceneChanged();
             }
         }
 
@@ -47,6 +79,7 @@ namespace RayTraceVS.WPF.Models
             if (!connections.ContainsKey(connection.Id))
             {
                 connections[connection.Id] = connection;
+                NotifySceneChanged();
             }
         }
 
@@ -55,29 +88,39 @@ namespace RayTraceVS.WPF.Models
             if (connections.ContainsKey(connection.Id))
             {
                 connections.Remove(connection.Id);
+                NotifySceneChanged();
             }
         }
 
         public Dictionary<Guid, object?> EvaluateGraph()
         {
             var results = new Dictionary<Guid, object?>();
-            var visited = new HashSet<Guid>();
+            var evaluating = new HashSet<Guid>();  // 現在評価中のノード（循環検出用）
 
             foreach (var node in nodes.Values)
             {
-                EvaluateNode(node, results, visited);
+                EvaluateNode(node, results, evaluating);
             }
 
             return results;
         }
 
-        private object? EvaluateNode(Node node, Dictionary<Guid, object?> results, HashSet<Guid> visited)
+        private object? EvaluateNode(Node node, Dictionary<Guid, object?> results, HashSet<Guid> evaluating)
         {
-            // 循環参照チェック
-            if (visited.Contains(node.Id))
-                return null;
+            // 既に評価済みならキャッシュから返す
+            if (results.TryGetValue(node.Id, out var cachedResult))
+            {
+                return cachedResult;
+            }
 
-            visited.Add(node.Id);
+            // 評価中のノードに再突入 → 循環参照
+            if (evaluating.Contains(node.Id))
+            {
+                return null;
+            }
+
+            // 評価開始：評価中としてマーク
+            evaluating.Add(node.Id);
 
             // 入力ソケットの値を収集
             var inputValues = new Dictionary<Guid, object?>();
@@ -90,7 +133,7 @@ namespace RayTraceVS.WPF.Models
                 if (connection?.OutputSocket?.ParentNode != null)
                 {
                     // 依存ノードを先に評価
-                    var inputValue = EvaluateNode(connection.OutputSocket.ParentNode, results, visited);
+                    var inputValue = EvaluateNode(connection.OutputSocket.ParentNode, results, evaluating);
                     inputValues[inputSocket.Id] = inputValue;
                 }
             }
@@ -98,6 +141,9 @@ namespace RayTraceVS.WPF.Models
             // ノードを評価
             var result = node.Evaluate(inputValues);
             results[node.Id] = result;
+
+            // 評価完了：評価中マークを解除
+            evaluating.Remove(node.Id);
 
             return result;
         }

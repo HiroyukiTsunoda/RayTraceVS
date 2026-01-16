@@ -25,7 +25,8 @@ namespace RayTraceVS::DXEngine
         width = w;
         height = h;
 
-        // Create UAV resource
+        // Create UAV resource (R8G8B8A8 for DXR UAV compatibility)
+        // RGBA->BGRA conversion is done in ReadPixels for WPF compatibility
         CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
         CD3DX12_RESOURCE_DESC resourceDesc = CD3DX12_RESOURCE_DESC::Tex2D(
             DXGI_FORMAT_R8G8B8A8_UNORM,

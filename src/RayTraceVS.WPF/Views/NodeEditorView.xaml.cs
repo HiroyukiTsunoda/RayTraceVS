@@ -148,8 +148,9 @@ namespace RayTraceVS.WPF.Views
                 var centerPoint = transform.Transform(new Point(ellipse.ActualWidth / 2, ellipse.ActualHeight / 2));
                 socket.Position = centerPoint;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
+                // TransformToAncestor can fail if the element is not in the visual tree
             }
         }
 

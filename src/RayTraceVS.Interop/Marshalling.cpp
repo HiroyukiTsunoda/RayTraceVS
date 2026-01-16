@@ -38,7 +38,7 @@ namespace RayTraceVS::Interop
     Bridge::PlaneDataNative Marshalling::ToNativePlane(PlaneData managedPlane)
     {
         Bridge::PlaneDataNative native;
-        native.position = { 0.0f, 0.0f, 0.0f }; // Position will be calculated from normal and distance
+        native.position = { managedPlane.Position.X, managedPlane.Position.Y, managedPlane.Position.Z };
         native.normal = { managedPlane.Normal.X, managedPlane.Normal.Y, managedPlane.Normal.Z };
         native.material.color = { managedPlane.Color.X, managedPlane.Color.Y, managedPlane.Color.Z, managedPlane.Color.W };
         native.material.reflectivity = managedPlane.Reflectivity;

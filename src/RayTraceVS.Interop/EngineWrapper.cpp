@@ -24,10 +24,9 @@ namespace RayTraceVS::Interop
 
             // Create DXR pipeline
             nativePipeline = Bridge::CreateDXRPipeline(nativeContext);
-            if (!Bridge::InitializeDXRPipeline(nativePipeline))
-            {
-                throw gcnew System::Exception("Failed to initialize DXR pipeline");
-            }
+            // Pipeline initialization is optional - continue even if it fails
+            // (will fall back to error color rendering)
+            Bridge::InitializeDXRPipeline(nativePipeline);
 
             // Create scene
             nativeScene = Bridge::CreateScene();
