@@ -38,6 +38,9 @@ namespace RayTraceVS.WPF.Models
                 // ノードのプロパティ変更を監視
                 node.PropertyChanged += OnNodePropertyChanged;
                 
+                // Dirty変更イベントを監視して下流ノードに伝播
+                node.DirtyChanged += OnNodeDirtyChanged;
+                
                 NotifySceneChanged();
             }
         }
@@ -48,6 +51,7 @@ namespace RayTraceVS.WPF.Models
             {
                 // ノードのプロパティ変更監視を解除
                 node.PropertyChanged -= OnNodePropertyChanged;
+                node.DirtyChanged -= OnNodeDirtyChanged;
                 
                 // ノードに接続されている接続を削除
                 var connectionsToRemove = connections.Values
@@ -67,11 +71,87 @@ namespace RayTraceVS.WPF.Models
 
         private void OnNodePropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
-            // 位置やIsSelected以外のプロパティが変更されたらシーン変更を通知
-            if (e.PropertyName != nameof(Node.Position) && e.PropertyName != nameof(Node.IsSelected))
+            // 位置やIsSelected、IsDirty以外のプロパティが変更されたらシーン変更を通知
+            if (e.PropertyName != nameof(Node.Position) && 
+                e.PropertyName != nameof(Node.IsSelected) &&
+                e.PropertyName != nameof(Node.IsDirty))
             {
+                if (sender is Node node)
+                {
+                    // ノードをDirty状態にする（これにより下流ノードも自動的にDirtyになる）
+                    node.MarkDirty();
+                }
                 NotifySceneChanged();
             }
+        }
+
+        /// <summary>
+        /// ノードがDirtyになったときに下流ノードに伝播する
+        /// </summary>
+        private void OnNodeDirtyChanged(object? sender, EventArgs e)
+        {
+            if (sender is Node dirtyNode)
+            {
+                PropagrateDirtyToDownstream(dirtyNode);
+            }
+        }
+
+        /// <summary>
+        /// 指定ノードの下流ノード（このノードの出力に依存しているノード）をすべてDirtyにする
+        /// </summary>
+        private void PropagrateDirtyToDownstream(Node node)
+        {
+            var downstreamNodes = GetDownstreamNodes(node);
+            foreach (var downstream in downstreamNodes)
+            {
+                downstream.MarkDirty();
+            }
+        }
+
+        /// <summary>
+        /// 指定ノードの直接の下流ノードを取得する
+        /// </summary>
+        public IEnumerable<Node> GetDownstreamNodes(Node node)
+        {
+            // このノードの出力ソケットに接続されている入力ソケットのノードを探す
+            var downstreamNodes = new HashSet<Node>();
+            
+            foreach (var outputSocket in node.OutputSockets)
+            {
+                var outgoingConnections = connections.Values
+                    .Where(c => c.OutputSocket?.Id == outputSocket.Id);
+                
+                foreach (var conn in outgoingConnections)
+                {
+                    if (conn.InputSocket?.ParentNode != null)
+                    {
+                        downstreamNodes.Add(conn.InputSocket.ParentNode);
+                    }
+                }
+            }
+            
+            return downstreamNodes;
+        }
+
+        /// <summary>
+        /// 指定ノードの上流ノード（このノードが依存しているノード）を取得する
+        /// </summary>
+        public IEnumerable<Node> GetUpstreamNodes(Node node)
+        {
+            var upstreamNodes = new HashSet<Node>();
+            
+            foreach (var inputSocket in node.InputSockets)
+            {
+                var incomingConnection = connections.Values
+                    .FirstOrDefault(c => c.InputSocket?.Id == inputSocket.Id);
+                
+                if (incomingConnection?.OutputSocket?.ParentNode != null)
+                {
+                    upstreamNodes.Add(incomingConnection.OutputSocket.ParentNode);
+                }
+            }
+            
+            return upstreamNodes;
         }
 
         public void AddConnection(NodeConnection connection)
@@ -79,6 +159,13 @@ namespace RayTraceVS.WPF.Models
             if (!connections.ContainsKey(connection.Id))
             {
                 connections[connection.Id] = connection;
+                
+                // 接続が追加されたら、入力側のノードをDirtyにする
+                if (connection.InputSocket?.ParentNode != null)
+                {
+                    connection.InputSocket.ParentNode.MarkDirty();
+                }
+                
                 NotifySceneChanged();
             }
         }
@@ -87,15 +174,41 @@ namespace RayTraceVS.WPF.Models
         {
             if (connections.ContainsKey(connection.Id))
             {
+                // 接続が削除される前に、入力側のノードをDirtyにする
+                if (connection.InputSocket?.ParentNode != null)
+                {
+                    connection.InputSocket.ParentNode.MarkDirty();
+                }
+                
                 connections.Remove(connection.Id);
                 NotifySceneChanged();
             }
         }
 
+        /// <summary>
+        /// すべてのノードをDirtyにする（完全再評価が必要な場合）
+        /// </summary>
+        public void MarkAllNodesDirty()
+        {
+            foreach (var node in nodes.Values)
+            {
+                node.InvalidateCache();
+            }
+        }
+
+        /// <summary>
+        /// グラフを評価する（増分評価対応）
+        /// Dirtyなノードのみ再評価し、それ以外はキャッシュを使用
+        /// </summary>
         public Dictionary<Guid, object?> EvaluateGraph()
         {
             var results = new Dictionary<Guid, object?>();
             var evaluating = new HashSet<Guid>();  // 現在評価中のノード（循環検出用）
+
+            // Dirtyなノードの数をカウント（デバッグ用）
+            int dirtyCount = nodes.Values.Count(n => n.IsDirty);
+            int cachedCount = nodes.Values.Count(n => !n.IsDirty);
+            System.Diagnostics.Debug.WriteLine($"[NodeGraph] EvaluateGraph: {dirtyCount} dirty, {cachedCount} cached");
 
             foreach (var node in nodes.Values)
             {
@@ -105,18 +218,35 @@ namespace RayTraceVS.WPF.Models
             return results;
         }
 
+        /// <summary>
+        /// グラフを完全に再評価する（すべてのキャッシュを無効化）
+        /// </summary>
+        public Dictionary<Guid, object?> EvaluateGraphFull()
+        {
+            MarkAllNodesDirty();
+            return EvaluateGraph();
+        }
+
         private object? EvaluateNode(Node node, Dictionary<Guid, object?> results, HashSet<Guid> evaluating)
         {
-            // 既に評価済みならキャッシュから返す
-            if (results.TryGetValue(node.Id, out var cachedResult))
+            // 既にこの評価サイクルで処理済みならresultsから返す
+            if (results.TryGetValue(node.Id, out var sessionResult))
             {
-                return cachedResult;
+                return sessionResult;
             }
 
             // 評価中のノードに再突入 → 循環参照
             if (evaluating.Contains(node.Id))
             {
                 return null;
+            }
+
+            // ノードがDirtyでなければ、キャッシュを使用
+            if (!node.IsDirty && node.CachedResult != null)
+            {
+                results[node.Id] = node.CachedResult;
+                System.Diagnostics.Debug.WriteLine($"[NodeGraph] Using cached result for {node.Title} ({node.Id})");
+                return node.CachedResult;
             }
 
             // 評価開始：評価中としてマーク
@@ -139,7 +269,11 @@ namespace RayTraceVS.WPF.Models
             }
 
             // ノードを評価
+            System.Diagnostics.Debug.WriteLine($"[NodeGraph] Evaluating {node.Title} ({node.Id})");
             var result = node.Evaluate(inputValues);
+            
+            // キャッシュに保存してDirtyフラグをクリア
+            node.SetCachedResult(result);
             results[node.Id] = result;
 
             // 評価完了：評価中マークを解除
