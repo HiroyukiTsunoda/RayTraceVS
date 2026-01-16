@@ -4,7 +4,6 @@ using System.Windows.Interop;
 using System.Windows.Threading;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using Microsoft.Win32;
 using RayTraceVS.WPF.Services;
 using RayTraceVS.WPF.Models;
 
@@ -20,8 +19,9 @@ namespace RayTraceVS.WPF.Views
         private bool isRendering = false;
         private bool needsRedraw = false;
         
-        private const int RenderWidth = 1280;
-        private const int RenderHeight = 720;
+        // 解像度を1920x1080に固定
+        private const int RenderWidth = 1920;
+        private const int RenderHeight = 1080;
         
         private SettingsService settingsService;
 
@@ -166,24 +166,20 @@ namespace RayTraceVS.WPF.Views
             settingsService.RenderWindowBounds = bounds;
         }
 
-        private void Start_Click(object sender, RoutedEventArgs e)
+        // MainWindowのツールバーから呼び出されるメソッド
+        public void StartRenderingFromToolbar()
         {
             StartRendering();
         }
-
-        private void Stop_Click(object sender, RoutedEventArgs e)
+        
+        public void StopRenderingFromToolbar()
         {
             StopRendering();
         }
-
-        private void Save_Click(object sender, RoutedEventArgs e)
+        
+        public WriteableBitmap? GetRenderBitmap()
         {
-            SaveImage();
-        }
-
-        private void Resolution_Changed(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
-        {
-            // 解像度変更処理（実装予定）
+            return renderBitmap;
         }
 
         private void StartRendering()
@@ -192,8 +188,6 @@ namespace RayTraceVS.WPF.Views
                 return;
 
             isRendering = true;
-            StartButton.IsEnabled = false;
-            StopButton.IsEnabled = true;
             StatusText.Text = "状態: レンダリング中";
 
             // 一回だけレンダリング
@@ -207,8 +201,6 @@ namespace RayTraceVS.WPF.Views
                 return;
 
             isRendering = false;
-            StartButton.IsEnabled = true;
-            StopButton.IsEnabled = false;
             StatusText.Text = "状態: 停止中";
         }
 
@@ -294,27 +286,5 @@ namespace RayTraceVS.WPF.Views
             }
         }
 
-        private void SaveImage()
-        {
-            try
-            {
-                var dialog = new SaveFileDialog
-                {
-                    Filter = "PNG画像|*.png|JPEG画像|*.jpg|ビットマップ|*.bmp",
-                    DefaultExt = "png",
-                    FileName = $"render_{DateTime.Now:yyyyMMdd_HHmmss}"
-                };
-
-                if (dialog.ShowDialog() == true)
-                {
-                    // レンダリング結果を保存（実装予定）
-                    MessageBox.Show("画像保存機能は実装予定です。", "情報", MessageBoxButton.OK, MessageBoxImage.Information);
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"保存エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
     }
 }
