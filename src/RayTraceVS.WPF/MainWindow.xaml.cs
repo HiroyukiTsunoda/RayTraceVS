@@ -12,6 +12,8 @@ namespace RayTraceVS.WPF
         private MainViewModel? viewModel;
         private RenderWindow? renderWindow;
         private string? currentFilePath;
+        private SettingsService settingsService;
+        private bool hasUnsavedChanges;
 
         public MainWindow()
         {
@@ -19,58 +21,253 @@ namespace RayTraceVS.WPF
             viewModel = new MainViewModel();
             DataContext = viewModel;
             
-            // 起動時にsample_scene.rtvsを自動的に読み込む
-            LoadSampleScene();
+            settingsService = new SettingsService();
             
-            // サンプルシーンが読み込まれたら自動的にレンダリングを開始
+            // ノードと接続の変更を監視
+            viewModel.Nodes.CollectionChanged += OnSceneChanged;
+            viewModel.Connections.CollectionChanged += OnSceneChanged;
+            
+            // ウィンドウの位置とサイズを復元
+            RestoreWindowBounds();
+            
+            // 起動時に前回開いていたファイルを読み込む
+            LoadLastScene();
+            
+            // シーンが読み込まれたら自動的にレンダリングを開始
             this.Loaded += MainWindow_Loaded;
+            
+            // ウィンドウが閉じる際に設定を保存
+            this.Closing += MainWindow_Closing;
+        }
+        
+        private void OnSceneChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+        {
+            if (!hasUnsavedChanges)
+            {
+                hasUnsavedChanges = true;
+                UpdateTitle();
+            }
+        }
+        
+        private void UpdateTitle()
+        {
+            string baseName = "RayTraceVS";
+            string fileName = string.IsNullOrEmpty(currentFilePath) 
+                ? "新規シーン" 
+                : System.IO.Path.GetFileName(currentFilePath);
+            
+            if (hasUnsavedChanges)
+            {
+                Title = $"{baseName}* - {fileName}";
+            }
+            else
+            {
+                Title = $"{baseName} - {fileName}";
+            }
         }
         
         private void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
-            // シーンが読み込まれている場合は自動的にレンダリングウィンドウを開く
+            // UIのレンダリングが完全に完了してから接続線を更新
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                NodeEditor.RefreshConnectionLines();
+                
+                // シーンが読み込まれている場合は自動的にレンダリングウィンドウを開く
+                if (viewModel != null && viewModel.Nodes.Count > 0)
+                {
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        StartRendering_Click(this, new RoutedEventArgs());
+                    }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                }
+            }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        }
+
+        private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
+        {
+            // ノードがある場合、終了確認
             if (viewModel != null && viewModel.Nodes.Count > 0)
             {
-                // 少し遅延させてから開く
-                Dispatcher.BeginInvoke(new Action(() =>
+                var result = MessageBox.Show(
+                    "アプリケーションを終了しますか？\n\n未保存の変更は失われる可能性があります。",
+                    "終了確認",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question);
+
+                if (result != MessageBoxResult.Yes)
                 {
-                    StartRendering_Click(this, new RoutedEventArgs());
-                }), System.Windows.Threading.DispatcherPriority.Loaded);
+                    e.Cancel = true;
+                    return;
+                }
+            }
+
+            // ウィンドウの位置とサイズを保存
+            SaveWindowBounds();
+
+            // 現在のファイルパスを保存
+            if (!string.IsNullOrEmpty(currentFilePath))
+            {
+                settingsService.LastOpenedFilePath = currentFilePath;
             }
         }
         
-        private void LoadSampleScene()
+        private void RestoreWindowBounds()
+        {
+            var bounds = settingsService.MainWindowBounds;
+            if (bounds != null && bounds.Width > 0 && bounds.Height > 0)
+            {
+                // 位置を復元（マルチモニター対応で負の座標も許可）
+                this.Left = bounds.Left;
+                this.Top = bounds.Top;
+                this.Width = bounds.Width;
+                this.Height = bounds.Height;
+                
+                if (bounds.IsMaximized)
+                {
+                    this.WindowState = WindowState.Maximized;
+                }
+            }
+        }
+        
+        private void SaveWindowBounds()
+        {
+            // 最大化状態の場合はRestoreBoundsから位置とサイズを取得
+            var bounds = new Services.WindowBounds();
+            
+            if (this.WindowState == WindowState.Maximized)
+            {
+                bounds.Left = this.RestoreBounds.Left;
+                bounds.Top = this.RestoreBounds.Top;
+                bounds.Width = this.RestoreBounds.Width;
+                bounds.Height = this.RestoreBounds.Height;
+                bounds.IsMaximized = true;
+            }
+            else
+            {
+                bounds.Left = this.Left;
+                bounds.Top = this.Top;
+                bounds.Width = this.Width;
+                bounds.Height = this.Height;
+                bounds.IsMaximized = false;
+            }
+            
+            settingsService.MainWindowBounds = bounds;
+        }
+
+        private void Window_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            // Deleteキーの処理（優先）
+            if (e.Key == System.Windows.Input.Key.Delete)
+            {
+                NodeEditor.DeleteSelectedNodes();
+                e.Handled = true;
+                return;
+            }
+            
+            // キーボードショートカット
+            if (e.KeyboardDevice.Modifiers == System.Windows.Input.ModifierKeys.Control)
+            {
+                switch (e.Key)
+                {
+                    case System.Windows.Input.Key.N:
+                        NewScene_Click(this, new RoutedEventArgs());
+                        e.Handled = true;
+                        break;
+                    case System.Windows.Input.Key.O:
+                        OpenScene_Click(this, new RoutedEventArgs());
+                        e.Handled = true;
+                        break;
+                    case System.Windows.Input.Key.S:
+                        if (e.KeyboardDevice.Modifiers.HasFlag(System.Windows.Input.ModifierKeys.Shift))
+                        {
+                            SaveSceneAs_Click(this, new RoutedEventArgs());
+                        }
+                        else
+                        {
+                            SaveScene_Click(this, new RoutedEventArgs());
+                        }
+                        e.Handled = true;
+                        break;
+                }
+            }
+            else if (e.KeyboardDevice.Modifiers == (System.Windows.Input.ModifierKeys.Control | System.Windows.Input.ModifierKeys.Shift))
+            {
+                if (e.Key == System.Windows.Input.Key.S)
+                {
+                    SaveSceneAs_Click(this, new RoutedEventArgs());
+                    e.Handled = true;
+                }
+            }
+        }
+        
+        private void LoadLastScene()
         {
             try
             {
-                // ワークスペースルートのsample_scene.rtvsを探す
-                var sampleScenePath = @"c:\git\RayTraceVS\sample_scene.rtvs";
+                // 前回開いていたファイルパスを取得
+                var lastFilePath = settingsService.LastOpenedFilePath;
                 
-                if (System.IO.File.Exists(sampleScenePath) && viewModel != null)
+                // ファイルパスが存在し、ファイルが実際に存在する場合は読み込む
+                if (!string.IsNullOrEmpty(lastFilePath) && System.IO.File.Exists(lastFilePath))
                 {
-                    var sceneService = new SceneFileService();
-                    var (nodes, connections) = sceneService.LoadScene(sampleScenePath);
-                    
-                    viewModel.Nodes.Clear();
-                    viewModel.Connections.Clear();
-                    
-                    foreach (var node in nodes)
-                        viewModel.AddNode(node);
-                    
-                    foreach (var connection in connections)
-                        viewModel.AddConnection(connection);
-                    
-                    currentFilePath = sampleScenePath;
-                    Title = $"RayTraceVS - {System.IO.Path.GetFileName(currentFilePath)}";
+                    LoadSceneFromFile(lastFilePath);
+                }
+                // 前回のファイルがない場合は、サンプルシーンを読み込む
+                else
+                {
+                    var sampleScenePath = @"c:\git\RayTraceVS\sample_scene.rtvs";
+                    if (System.IO.File.Exists(sampleScenePath))
+                    {
+                        LoadSceneFromFile(sampleScenePath);
+                    }
                 }
             }
             catch (System.Exception ex)
             {
                 // 起動時のエラーはメッセージボックスで表示
-                MessageBox.Show($"サンプルシーンの読み込みに失敗しました：{ex.Message}", 
+                MessageBox.Show($"シーンの読み込みに失敗しました：{ex.Message}", 
                               "警告", 
                               MessageBoxButton.OK, 
                               MessageBoxImage.Warning);
+            }
+        }
+
+        private void LoadSceneFromFile(string filePath)
+        {
+            if (viewModel != null)
+            {
+                var sceneService = new SceneFileService();
+                var (nodes, connections, viewportState) = sceneService.LoadScene(filePath);
+                
+                viewModel.Nodes.Clear();
+                viewModel.Connections.Clear();
+                
+                foreach (var node in nodes)
+                    viewModel.AddNode(node);
+                
+                foreach (var connection in connections)
+                    viewModel.AddConnection(connection);
+                
+                currentFilePath = filePath;
+                hasUnsavedChanges = false;
+                UpdateTitle();
+                
+                // パネルの開閉状態を復元（シーンファイルから）
+                if (viewportState != null)
+                {
+                    SetPanelVisibility(viewportState.IsLeftPanelVisible, viewportState.IsRightPanelVisible);
+                    
+                    // Expanderの開閉状態を復元
+                    ComponentPalette.SetExpanderStates(viewportState.ExpanderStates);
+                }
+                
+                // UIのレンダリング完了後に接続線とビューポートを更新
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    NodeEditor.RefreshConnectionLines();
+                    NodeEditor.SetViewportState(viewportState);
+                }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
             }
         }
 
@@ -79,18 +276,29 @@ namespace RayTraceVS.WPF
             // 新規シーン作成
             if (viewModel != null)
             {
-                var result = MessageBox.Show("現在のシーンを破棄して新規作成しますか？", 
-                                           "確認", 
-                                           MessageBoxButton.YesNo, 
-                                           MessageBoxImage.Question);
-                
-                if (result == MessageBoxResult.Yes)
+                // ノードがある場合のみ確認ダイアログを表示
+                if (viewModel.Nodes.Count > 0)
                 {
-                    viewModel.Nodes.Clear();
-                    viewModel.Connections.Clear();
-                    currentFilePath = null;
-                    Title = "RayTraceVS - DirectX12 DXR Visual Raytracing";
+                    var result = MessageBox.Show(
+                        "現在のシーンを破棄して新規作成しますか？\n\n未保存の変更は失われます。", 
+                        "新規シーン作成", 
+                        MessageBoxButton.YesNo, 
+                        MessageBoxImage.Warning);
+                    
+                    if (result != MessageBoxResult.Yes)
+                    {
+                        return;
+                    }
                 }
+                
+                viewModel.Nodes.Clear();
+                viewModel.Connections.Clear();
+                currentFilePath = null;
+                hasUnsavedChanges = false;
+                UpdateTitle();
+                
+                // 新規作成時は設定をクリア
+                settingsService.LastOpenedFilePath = null;
             }
         }
 
@@ -100,36 +308,31 @@ namespace RayTraceVS.WPF
             var dialog = new OpenFileDialog
             {
                 Filter = "RayTraceVSシーン|*.rtvs|すべてのファイル|*.*",
-                DefaultExt = "rtvs"
+                DefaultExt = "rtvs",
+                Title = "シーンを開く"
             };
 
             if (dialog.ShowDialog() == true)
             {
                 try
                 {
-                    var sceneService = new SceneFileService();
-                    var (nodes, connections) = sceneService.LoadScene(dialog.FileName);
+                    LoadSceneFromFile(dialog.FileName);
                     
-                    if (viewModel != null)
-                    {
-                        viewModel.Nodes.Clear();
-                        viewModel.Connections.Clear();
-                        
-                        foreach (var node in nodes)
-                            viewModel.AddNode(node);
-                        
-                        foreach (var connection in connections)
-                            viewModel.AddConnection(connection);
-                    }
+                    // 設定を更新
+                    settingsService.LastOpenedFilePath = currentFilePath;
                     
-                    currentFilePath = dialog.FileName;
-                    Title = $"RayTraceVS - {System.IO.Path.GetFileName(currentFilePath)}";
+                    var fileName = System.IO.Path.GetFileName(dialog.FileName);
+                    var nodeCount = viewModel?.Nodes.Count ?? 0;
+                    var connectionCount = viewModel?.Connections.Count ?? 0;
                     
-                    MessageBox.Show("シーンを読み込みました。", "成功", MessageBoxButton.OK, MessageBoxImage.Information);
+                    MessageBox.Show($"シーンを読み込みました。\n\nファイル: {fileName}\nノード数: {nodeCount}\n接続数: {connectionCount}", 
+                                  "読み込み完了", 
+                                  MessageBoxButton.OK, 
+                                  MessageBoxImage.Information);
                 }
                 catch (System.Exception ex)
                 {
-                    MessageBox.Show($"シーンの読み込みに失敗しました：{ex.Message}", 
+                    MessageBox.Show($"シーンの読み込みに失敗しました：\n\n{ex.Message}", 
                                   "エラー", 
                                   MessageBoxButton.OK, 
                                   MessageBoxImage.Error);
@@ -156,14 +359,19 @@ namespace RayTraceVS.WPF
             {
                 Filter = "RayTraceVSシーン|*.rtvs|すべてのファイル|*.*",
                 DefaultExt = "rtvs",
-                FileName = "scene"
+                FileName = string.IsNullOrEmpty(currentFilePath) 
+                    ? "scene" 
+                    : System.IO.Path.GetFileNameWithoutExtension(currentFilePath),
+                Title = "名前を付けて保存"
             };
 
             if (dialog.ShowDialog() == true)
             {
-                SaveSceneToFile(dialog.FileName);
                 currentFilePath = dialog.FileName;
-                Title = $"RayTraceVS - {System.IO.Path.GetFileName(currentFilePath)}";
+                SaveSceneToFile(dialog.FileName);
+                
+                // 設定を更新
+                settingsService.LastOpenedFilePath = currentFilePath;
             }
         }
 
@@ -174,17 +382,62 @@ namespace RayTraceVS.WPF
                 if (viewModel != null)
                 {
                     var sceneService = new SceneFileService();
-                    sceneService.SaveScene(filePath, viewModel.Nodes, viewModel.Connections);
-                    MessageBox.Show("シーンを保存しました。", "成功", MessageBoxButton.OK, MessageBoxImage.Information);
+                    var viewportState = NodeEditor.GetViewportState();
+                    
+                    // パネルの開閉状態も保存（シーンファイルに）
+                    viewportState.IsLeftPanelVisible = LeftPanelBorder.Visibility == Visibility.Visible;
+                    viewportState.IsRightPanelVisible = RightPanelBorder.Visibility == Visibility.Visible;
+                    
+                    // Expanderの開閉状態も保存
+                    viewportState.ExpanderStates = ComponentPalette.GetExpanderStates();
+                    
+                    sceneService.SaveScene(filePath, viewModel.Nodes, viewModel.Connections, viewportState);
+                    
+                    // 保存成功：未保存フラグをリセットしてタイトル更新
+                    hasUnsavedChanges = false;
+                    UpdateTitle();
                 }
             }
             catch (System.Exception ex)
             {
-                MessageBox.Show($"シーンの保存に失敗しました：{ex.Message}", 
+                MessageBox.Show($"シーンの保存に失敗しました：\n\n{ex.Message}", 
                               "エラー", 
                               MessageBoxButton.OK, 
                               MessageBoxImage.Error);
             }
+        }
+        
+        private void SetPanelVisibility(bool isLeftVisible, bool isRightVisible)
+        {
+            // 左パネルの表示/非表示
+            if (isLeftVisible)
+            {
+                LeftPanelColumn.Width = new GridLength(250);
+                LeftPanelBorder.Visibility = Visibility.Visible;
+                LeftSplitter.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                LeftPanelColumn.Width = new GridLength(0);
+                LeftPanelBorder.Visibility = Visibility.Collapsed;
+                LeftSplitter.Visibility = Visibility.Collapsed;
+            }
+            ToggleLeftPanelMenuItem.IsChecked = isLeftVisible;
+            
+            // 右パネルの表示/非表示
+            if (isRightVisible)
+            {
+                RightPanelColumn.Width = new GridLength(300);
+                RightPanelBorder.Visibility = Visibility.Visible;
+                RightSplitter.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                RightPanelColumn.Width = new GridLength(0);
+                RightPanelBorder.Visibility = Visibility.Collapsed;
+                RightSplitter.Visibility = Visibility.Collapsed;
+            }
+            ToggleRightPanelMenuItem.IsChecked = isRightVisible;
         }
 
         private void Exit_Click(object sender, RoutedEventArgs e)
@@ -219,6 +472,40 @@ namespace RayTraceVS.WPF
             {
                 renderWindow.Close();
                 renderWindow = null;
+            }
+        }
+
+        private void ToggleLeftPanel_Click(object sender, RoutedEventArgs e)
+        {
+            bool isVisible = ToggleLeftPanelMenuItem.IsChecked;
+            if (isVisible)
+            {
+                LeftPanelColumn.Width = new GridLength(250);
+                LeftPanelBorder.Visibility = Visibility.Visible;
+                LeftSplitter.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                LeftPanelColumn.Width = new GridLength(0);
+                LeftPanelBorder.Visibility = Visibility.Collapsed;
+                LeftSplitter.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private void ToggleRightPanel_Click(object sender, RoutedEventArgs e)
+        {
+            bool isVisible = ToggleRightPanelMenuItem.IsChecked;
+            if (isVisible)
+            {
+                RightPanelColumn.Width = new GridLength(300);
+                RightPanelBorder.Visibility = Visibility.Visible;
+                RightSplitter.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                RightPanelColumn.Width = new GridLength(0);
+                RightPanelBorder.Visibility = Visibility.Collapsed;
+                RightSplitter.Visibility = Visibility.Collapsed;
             }
         }
     }

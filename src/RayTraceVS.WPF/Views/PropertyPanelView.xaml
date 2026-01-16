@@ -43,21 +43,6 @@
                                    Foreground="{StaticResource TextBrush}"
                                    Margin="0,0,0,10"/>
                         
-                        <!-- 位置 -->
-                        <TextBlock Text="位置" 
-                                   Foreground="{StaticResource TextSecondaryBrush}"
-                                   FontSize="10"
-                                   Margin="0,5,0,2"/>
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="X: " Foreground="{StaticResource TextBrush}"/>
-                            <TextBlock Text="{Binding SelectedNode.Position.X, StringFormat=F0}" 
-                                       Foreground="{StaticResource TextBrush}"
-                                       Margin="0,0,10,0"/>
-                            <TextBlock Text="Y: " Foreground="{StaticResource TextBrush}"/>
-                            <TextBlock Text="{Binding SelectedNode.Position.Y, StringFormat=F0}" 
-                                       Foreground="{StaticResource TextBrush}"/>
-                        </StackPanel>
-                        
                         <!-- 入力ソケット -->
                         <TextBlock Text="入力" 
                                    Foreground="{StaticResource TextSecondaryBrush}"

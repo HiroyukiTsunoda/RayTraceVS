@@ -32,7 +32,16 @@ namespace RayTraceVS.WPF.Models
             id = Guid.NewGuid();
             outputSocket = output;
             inputSocket = input;
-            UpdatePath();
+            
+            // ソケットの位置変更イベントを監視
+            if (outputSocket != null)
+            {
+                outputSocket.PositionChanged += (s, e) => UpdatePath();
+            }
+            if (inputSocket != null)
+            {
+                inputSocket.PositionChanged += (s, e) => UpdatePath();
+            }
         }
 
         public void UpdatePath()
@@ -40,34 +49,20 @@ namespace RayTraceVS.WPF.Models
             if (outputSocket?.ParentNode == null || inputSocket?.ParentNode == null)
                 return;
 
-            // ソケットに保存された実際の位置を使用
+            // ソケットのPositionプロパティから直接位置を取得
             Point startPoint = outputSocket.Position;
             Point endPoint = inputSocket.Position;
 
-            System.Diagnostics.Debug.WriteLine($"UpdatePath - Output position: {startPoint}, Input position: {endPoint}");
-
-            // 位置が設定されていない場合は、概算値を使用
+            // 位置が未設定（0,0）の場合はフォールバックを使用
             if (startPoint.X == 0 && startPoint.Y == 0)
             {
-                var outputNode = outputSocket.ParentNode;
-                double nodeWidth = 150;
-                double headerHeight = 30;
-                double socketSize = 12;
-                int outputIndex = outputNode.OutputSockets.IndexOf(outputSocket);
-                double outputY = outputNode.Position.Y + headerHeight + (outputIndex * 20) + socketSize / 2;
-                startPoint = new Point(outputNode.Position.X + nodeWidth, outputY);
-                System.Diagnostics.Debug.WriteLine($"UpdatePath - Using estimated output position: {startPoint}");
+                startPoint = CalculateSocketPosition(outputSocket, false);
+                System.Diagnostics.Debug.WriteLine($"  Fallback start: ({startPoint.X:F1},{startPoint.Y:F1})");
             }
-
             if (endPoint.X == 0 && endPoint.Y == 0)
             {
-                var inputNode = inputSocket.ParentNode;
-                double headerHeight = 30;
-                double socketSize = 12;
-                int inputIndex = inputNode.InputSockets.IndexOf(inputSocket);
-                double inputY = inputNode.Position.Y + headerHeight + (inputIndex * 20) + socketSize / 2;
-                endPoint = new Point(inputNode.Position.X, inputY);
-                System.Diagnostics.Debug.WriteLine($"UpdatePath - Using estimated input position: {endPoint}");
+                endPoint = CalculateSocketPosition(inputSocket, true);
+                System.Diagnostics.Debug.WriteLine($"  Fallback end: ({endPoint.X:F1},{endPoint.Y:F1})");
             }
 
             // ベジェ曲線のコントロールポイントを計算
@@ -82,6 +77,29 @@ namespace RayTraceVS.WPF.Models
 
             var pathFigure = new PathFigure(startPoint, new[] { bezierSegment }, false);
             PathGeometry = new PathGeometry(new[] { pathFigure });
+        }
+
+        private Point CalculateSocketPosition(NodeSocket socket, bool isInput)
+        {
+            if (socket.ParentNode == null)
+                return new Point(0, 0);
+
+            var node = socket.ParentNode;
+            double nodeWidth = 150;
+            double headerHeight = 30;
+            double socketSize = 12;
+            double socketSpacing = 20;
+
+            int index = isInput 
+                ? node.InputSockets.IndexOf(socket)
+                : node.OutputSockets.IndexOf(socket);
+
+            double x = isInput 
+                ? node.Position.X 
+                : node.Position.X + nodeWidth;
+            double y = node.Position.Y + headerHeight + (index * socketSpacing) + socketSize / 2;
+
+            return new Point(x, y);
         }
     }
 }

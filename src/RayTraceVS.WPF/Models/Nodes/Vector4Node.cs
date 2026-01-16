@@ -5,7 +5,7 @@ using System.Numerics;
 
 namespace RayTraceVS.WPF.Models.Nodes
 {
-    public partial class Vector3Node : Node
+    public partial class Vector4Node : Node
     {
         [ObservableProperty]
         private float _x = 1.0f;
@@ -16,14 +16,18 @@ namespace RayTraceVS.WPF.Models.Nodes
         [ObservableProperty]
         private float _z = 1.0f;
 
-        public override bool HasEditableVector3Inputs => true;
+        [ObservableProperty]
+        private float _w = 1.0f;
 
-        public Vector3Node() : base("Vector3", NodeCategory.Math)
+        public override bool HasEditableVector4Inputs => true;
+
+        public Vector4Node() : base("Vector4", NodeCategory.Math)
         {
             AddInputSocket("X", SocketType.Float);
             AddInputSocket("Y", SocketType.Float);
             AddInputSocket("Z", SocketType.Float);
-            AddOutputSocket("Vector", SocketType.Vector3);
+            AddInputSocket("W", SocketType.Float);
+            AddOutputSocket("Vector", SocketType.Color);  // Vector4はColorタイプとして出力
         }
 
         /// <summary>
@@ -36,6 +40,7 @@ namespace RayTraceVS.WPF.Models.Nodes
                 "X" => X,
                 "Y" => Y,
                 "Z" => Z,
+                "W" => W,
                 _ => 0.0f
             };
         }
@@ -50,6 +55,7 @@ namespace RayTraceVS.WPF.Models.Nodes
                 case "X": X = value; break;
                 case "Y": Y = value; break;
                 case "Z": Z = value; break;
+                case "W": W = value; break;
             }
         }
 
@@ -59,10 +65,12 @@ namespace RayTraceVS.WPF.Models.Nodes
             var xSocket = InputSockets.FirstOrDefault(s => s.Name == "X");
             var ySocket = InputSockets.FirstOrDefault(s => s.Name == "Y");
             var zSocket = InputSockets.FirstOrDefault(s => s.Name == "Z");
+            var wSocket = InputSockets.FirstOrDefault(s => s.Name == "W");
 
             float x = X;
             float y = Y;
             float z = Z;
+            float w = W;
 
             // 接続されている場合は入力値を使用し、プロパティも更新
             if (xSocket != null && inputValues.TryGetValue(xSocket.Id, out var xVal) && xVal is float xFloat)
@@ -80,8 +88,13 @@ namespace RayTraceVS.WPF.Models.Nodes
                 z = zFloat;
                 Z = zFloat; // 値を保持
             }
+            if (wSocket != null && inputValues.TryGetValue(wSocket.Id, out var wVal) && wVal is float wFloat)
+            {
+                w = wFloat;
+                W = wFloat; // 値を保持
+            }
 
-            return new Vector3(x, y, z);
+            return new Vector4(x, y, z, w);
         }
     }
 }

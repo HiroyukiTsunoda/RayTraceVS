@@ -10,6 +10,7 @@ namespace RayTraceVS.WPF.Models
     public enum NodeCategory
     {
         Object,
+        Material,
         Math,
         Camera,
         Light,
@@ -41,13 +42,39 @@ namespace RayTraceVS.WPF.Models
 
         public Brush CategoryColor => category switch
         {
-            NodeCategory.Object => new SolidColorBrush(Color.FromRgb(0x4A, 0x90, 0xE2)),
-            NodeCategory.Math => new SolidColorBrush(Color.FromRgb(0xE2, 0x7A, 0x3F)),
-            NodeCategory.Camera => new SolidColorBrush(Color.FromRgb(0x9B, 0x59, 0xB6)),
-            NodeCategory.Light => new SolidColorBrush(Color.FromRgb(0xF1, 0xC4, 0x0F)),
-            NodeCategory.Scene => new SolidColorBrush(Color.FromRgb(0x2E, 0xCC, 0x71)),
+            NodeCategory.Object => new SolidColorBrush(Color.FromRgb(0x2C, 0x54, 0x87)),   // 青（暗め）
+            NodeCategory.Material => new SolidColorBrush(Color.FromRgb(0xB3, 0x4D, 0x4D)), // 赤（暗め）
+            NodeCategory.Math => new SolidColorBrush(Color.FromRgb(0x87, 0x49, 0x26)),     // オレンジ（暗め）
+            NodeCategory.Camera => new SolidColorBrush(Color.FromRgb(0x5B, 0x35, 0x6C)),   // 紫（暗め）
+            NodeCategory.Light => new SolidColorBrush(Color.FromRgb(0x8F, 0x74, 0x09)),    // 黄色（暗め）
+            NodeCategory.Scene => new SolidColorBrush(Color.FromRgb(0x1B, 0x7A, 0x43)),    // 緑（暗め）
             _ => new SolidColorBrush(Colors.Gray)
         };
+
+        /// <summary>
+        /// float値の直接編集が可能かどうか（FloatNodeでオーバーライド）
+        /// </summary>
+        public virtual bool HasEditableFloat => false;
+        
+        /// <summary>
+        /// 編集可能なfloat値（FloatNodeでオーバーライド）
+        /// </summary>
+        public virtual float EditableFloatValue { get; set; }
+
+        /// <summary>
+        /// Vector3入力の直接編集が可能かどうか（Vector3Nodeでオーバーライド）
+        /// </summary>
+        public virtual bool HasEditableVector3Inputs => false;
+
+        /// <summary>
+        /// Vector4入力の直接編集が可能かどうか（Vector4Nodeでオーバーライド）
+        /// </summary>
+        public virtual bool HasEditableVector4Inputs => false;
+
+        /// <summary>
+        /// Color入力の直接編集が可能かどうか（ColorNodeでオーバーライド）
+        /// </summary>
+        public virtual bool HasEditableColorInputs => false;
 
         protected Node(string title, NodeCategory category)
         {

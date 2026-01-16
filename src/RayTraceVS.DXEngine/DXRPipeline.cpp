@@ -1,9 +1,14 @@
 #include "DXRPipeline.h"
 #include "DXContext.h"
 #include "RenderTarget.h"
+#include "Scene/Scene.h"
+#include "Scene/Objects/Sphere.h"
+#include "Scene/Objects/Plane.h"
+#include "Scene/Objects/Cylinder.h"
 #include <d3dcompiler.h>
 #include <stdexcept>
 #include <DirectXMath.h>
+#include <algorithm>
 
 #pragma comment(lib, "d3dcompiler.lib")
 
@@ -23,7 +28,6 @@ namespace RayTraceVS::DXEngine
     bool DXRPipeline::Initialize()
     {
         // Skip DXR initialization for now (test pattern only)
-        OutputDebugStringA("DXRPipeline::Initialize - Using test pattern mode only\n");
         return true;
     }
 
@@ -69,13 +73,13 @@ namespace RayTraceVS::DXEngine
         return true;
     }
 
-    void DXRPipeline::RenderTestPattern(RenderTarget* renderTarget)
+    void DXRPipeline::RenderTestPattern(RenderTarget* renderTarget, Scene* scene)
     {
         if (!renderTarget || !renderTarget->GetResource())
-        {
-            OutputDebugStringA("RenderTestPattern: Invalid render target\n");
             return;
-        }
+        
+        if (!scene)
+            return;
 
         try
         {
@@ -83,16 +87,11 @@ namespace RayTraceVS::DXEngine
             auto device = dxContext->GetDevice();
             
             if (!commandList || !device)
-            {
-                OutputDebugStringA("RenderTestPattern: Invalid command list or device\n");
                 return;
-            }
             
             // CPU ray tracing
             UINT width = renderTarget->GetWidth();
             UINT height = renderTarget->GetHeight();
-            
-            OutputDebugStringA("RenderTestPattern: Ray tracing sphere\n");
             
             // Calculate rowPitch with 256-byte alignment
             UINT rowPitch = (width * 4 + 255) & ~255;
@@ -101,17 +100,31 @@ namespace RayTraceVS::DXEngine
             // Buffer data for upload
             std::vector<unsigned char> patternData(totalSize, 0);
             
-            // Scene setup
+            // Fixed scene setup
             XMFLOAT3 cameraPos(0.0f, 2.0f, -5.0f);
-            XMFLOAT3 sphereCenter(0.0f, 1.0f, 0.0f);
-            float sphereRadius = 1.0f;
-            XMFLOAT3 lightPos(-3.0f, 5.0f, -3.0f);
-            XMFLOAT3 lightColor(1.0f, 1.0f, 1.0f);
+            XMFLOAT3 lightPos(3.0f, 5.0f, -3.0f);
+            XMFLOAT4 lightColor(1.0f, 1.0f, 1.0f, 1.0f);
             float lightIntensity = 1.5f;
-            XMFLOAT3 sphereColor(1.0f, 0.3f, 0.3f);
+            
+            // Scene objects
+            // Red sphere on left
+            XMFLOAT3 sphereCenter(-2.0f, 1.0f, 0.0f);
+            float sphereRadius = 1.0f;
+            XMFLOAT4 sphereColor(1.0f, 0.3f, 0.3f, 1.0f);
+            
+            // Ground plane with checkerboard
+            XMFLOAT3 planePosition(0.0f, 0.0f, 0.0f);
+            XMFLOAT3 planeNormal(0.0f, 1.0f, 0.0f);
+            
+            // Blue cylinder on right
+            XMFLOAT3 cylinderPosition(2.0f, 0.0f, 0.0f);
+            XMFLOAT3 cylinderAxis(0.0f, 1.0f, 0.0f);
+            float cylinderRadius = 0.5f;
+            float cylinderHeight = 2.5f;
+            XMFLOAT4 cylinderColor(0.3f, 0.5f, 1.0f, 1.0f);
             
             float aspectRatio = (float)width / (float)height;
-            float fovRadians = XM_PI / 3.0f;
+            float fovRadians = 60.0f * XM_PI / 180.0f;
             float tanHalfFov = tanf(fovRadians * 0.5f);
             
             // Ray tracing
@@ -138,64 +151,162 @@ namespace RayTraceVS::DXEngine
                     XMStoreFloat3(&rayDir, rayDirVec);
                     
                     // Background color (sky gradient)
-                    float t = 0.5f * (rayDir.y + 1.0f);
-                    float bgR = 1.0f * (1.0f - t) + 0.5f * t;
-                    float bgG = 1.0f * (1.0f - t) + 0.7f * t;
-                    float bgB = 1.0f * (1.0f - t) + 1.0f * t;
+                    float skyT = 0.5f * (rayDir.y + 1.0f);
+                    float bgR = 1.0f * (1.0f - skyT) + 0.5f * skyT;
+                    float bgG = 1.0f * (1.0f - skyT) + 0.7f * skyT;
+                    float bgB = 1.0f * (1.0f - skyT) + 1.0f * skyT;
                     
-                    // Sphere intersection test
                     XMVECTOR camPosVec = XMLoadFloat3(&cameraPos);
-                    XMVECTOR sphereCenterVec = XMLoadFloat3(&sphereCenter);
-                    XMVECTOR oc = XMVectorSubtract(camPosVec, sphereCenterVec);
                     
-                    float a = XMVectorGetX(XMVector3Dot(rayDirVec, rayDirVec));
-                    float b = 2.0f * XMVectorGetX(XMVector3Dot(oc, rayDirVec));
-                    float c = XMVectorGetX(XMVector3Dot(oc, oc)) - sphereRadius * sphereRadius;
-                    float discriminant = b * b - 4.0f * a * c;
+                    // Find closest intersection with all objects
+                    float closestT = FLT_MAX;
+                    XMVECTOR hitNormal;
+                    XMFLOAT3 hitPosition3;
+                    XMFLOAT4 objColor(bgR, bgG, bgB, 1.0f);
+                    bool hitAnything = false;
+                    
+                    // 1. Sphere intersection
+                    {
+                        XMVECTOR sphereCenterVec = XMLoadFloat3(&sphereCenter);
+                        XMVECTOR oc = XMVectorSubtract(camPosVec, sphereCenterVec);
+                        
+                        float a = XMVectorGetX(XMVector3Dot(rayDirVec, rayDirVec));
+                        float b = 2.0f * XMVectorGetX(XMVector3Dot(oc, rayDirVec));
+                        float c = XMVectorGetX(XMVector3Dot(oc, oc)) - sphereRadius * sphereRadius;
+                        float discriminant = b * b - 4.0f * a * c;
+                        
+                        if (discriminant >= 0.0f)
+                        {
+                            float t = (-b - sqrtf(discriminant)) / (2.0f * a);
+                            
+                            if (t > 0.0f && t < closestT)
+                            {
+                                closestT = t;
+                                XMVECTOR hitPos = XMVectorAdd(camPosVec, XMVectorScale(rayDirVec, t));
+                                hitNormal = XMVector3Normalize(XMVectorSubtract(hitPos, sphereCenterVec));
+                                XMStoreFloat3(&hitPosition3, hitPos);
+                                objColor = sphereColor;
+                                hitAnything = true;
+                            }
+                        }
+                    }
+                    
+                    // 2. Plane intersection
+                    {
+                        XMVECTOR planeNormalVec = XMVector3Normalize(XMLoadFloat3(&planeNormal));
+                        float denom = XMVectorGetX(XMVector3Dot(planeNormalVec, rayDirVec));
+                        
+                        if (fabsf(denom) > 0.0001f)
+                        {
+                            XMVECTOR planePosVec = XMLoadFloat3(&planePosition);
+                            XMVECTOR p0 = XMVectorSubtract(planePosVec, camPosVec);
+                            float t = XMVectorGetX(XMVector3Dot(p0, planeNormalVec)) / denom;
+                            
+                            if (t > 0.0f && t < closestT)
+                            {
+                                closestT = t;
+                                hitNormal = planeNormalVec;
+                                XMVECTOR hitPos = XMVectorAdd(camPosVec, XMVectorScale(rayDirVec, t));
+                                XMStoreFloat3(&hitPosition3, hitPos);
+                                
+                                // Checkerboard pattern
+                                float checkerSize = 1.0f;
+                                int checkX = (int)floorf(hitPosition3.x / checkerSize);
+                                int checkZ = (int)floorf(hitPosition3.z / checkerSize);
+                                bool isWhite = ((checkX + checkZ) % 2) == 0;
+                                
+                                if (isWhite)
+                                    objColor = XMFLOAT4(0.9f, 0.9f, 0.9f, 1.0f);
+                                else
+                                    objColor = XMFLOAT4(0.1f, 0.1f, 0.1f, 1.0f);
+                                
+                                hitAnything = true;
+                            }
+                        }
+                    }
+                    
+                    // 3. Cylinder intersection
+                    {
+                        XMVECTOR cylPosVec = XMLoadFloat3(&cylinderPosition);
+                        XMVECTOR cylAxisVec = XMVector3Normalize(XMLoadFloat3(&cylinderAxis));
+                        XMVECTOR oc = XMVectorSubtract(camPosVec, cylPosVec);
+                        
+                        // Side surface intersection
+                        XMVECTOR dirCrossAxis = XMVector3Cross(rayDirVec, cylAxisVec);
+                        XMVECTOR ocCrossAxis = XMVector3Cross(oc, cylAxisVec);
+                        
+                        float a = XMVectorGetX(XMVector3Dot(dirCrossAxis, dirCrossAxis));
+                        float b = 2.0f * XMVectorGetX(XMVector3Dot(dirCrossAxis, ocCrossAxis));
+                        float c = XMVectorGetX(XMVector3Dot(ocCrossAxis, ocCrossAxis)) - cylinderRadius * cylinderRadius;
+                        
+                        float discriminant = b * b - 4.0f * a * c;
+                        
+                        if (discriminant >= 0.0f && a > 0.0001f)
+                        {
+                            float sqrtDiscriminant = sqrtf(discriminant);
+                            float t1 = (-b - sqrtDiscriminant) / (2.0f * a);
+                            float t2 = (-b + sqrtDiscriminant) / (2.0f * a);
+                            
+                            float tValues[2] = { t1, t2 };
+                            
+                            for (int i = 0; i < 2; i++)
+                            {
+                                float t = tValues[i];
+                                
+                                if (t > 0.0f && t < closestT)
+                                {
+                                    XMVECTOR hitPos = XMVectorAdd(camPosVec, XMVectorScale(rayDirVec, t));
+                                    XMVECTOR localHitPoint = XMVectorSubtract(hitPos, cylPosVec);
+                                    float height = XMVectorGetX(XMVector3Dot(localHitPoint, cylAxisVec));
+                                    
+                                    if (height >= 0.0f && height <= cylinderHeight)
+                                    {
+                                        closestT = t;
+                                        XMVECTOR hitOnAxis = XMVectorAdd(cylPosVec, XMVectorScale(cylAxisVec, height));
+                                        hitNormal = XMVector3Normalize(XMVectorSubtract(hitPos, hitOnAxis));
+                                        XMStoreFloat3(&hitPosition3, hitPos);
+                                        objColor = cylinderColor;
+                                        hitAnything = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
                     
                     float finalR = bgR;
                     float finalG = bgG;
                     float finalB = bgB;
                     
-                    if (discriminant >= 0.0f)
+                    if (hitAnything)
                     {
-                        // Hit sphere
-                        float t = (-b - sqrtf(discriminant)) / (2.0f * a);
+                        XMVECTOR hitPosVec = XMLoadFloat3(&hitPosition3);
                         
-                        if (t > 0.0f)
-                        {
-                            // Hit position
-                            XMVECTOR hitPos = XMVectorAdd(camPosVec, XMVectorScale(rayDirVec, t));
-                            
-                            // Normal
-                            XMVECTOR normal = XMVector3Normalize(XMVectorSubtract(hitPos, sphereCenterVec));
-                            
-                            // Ambient
-                            float ambient = 0.2f;
-                            finalR = sphereColor.x * ambient;
-                            finalG = sphereColor.y * ambient;
-                            finalB = sphereColor.z * ambient;
-                            
-                            // Light direction
-                            XMVECTOR lightPosVec = XMLoadFloat3(&lightPos);
-                            XMVECTOR lightDir = XMVector3Normalize(XMVectorSubtract(lightPosVec, hitPos));
-                            
-                            // Diffuse reflection
-                            float diff = fmaxf(0.0f, XMVectorGetX(XMVector3Dot(normal, lightDir)));
-                            
-                            finalR += sphereColor.x * lightColor.x * lightIntensity * diff;
-                            finalG += sphereColor.y * lightColor.y * lightIntensity * diff;
-                            finalB += sphereColor.z * lightColor.z * lightIntensity * diff;
-                            
-                            // Specular
-                            XMVECTOR viewDir = XMVector3Normalize(XMVectorSubtract(camPosVec, hitPos));
-                            XMVECTOR reflectDir = XMVectorSubtract(XMVectorScale(normal, 2.0f * XMVectorGetX(XMVector3Dot(lightDir, normal))), lightDir);
-                            float spec = powf(fmaxf(0.0f, XMVectorGetX(XMVector3Dot(viewDir, reflectDir))), 32.0f);
-                            
-                            finalR += lightColor.x * lightIntensity * spec * 0.5f;
-                            finalG += lightColor.y * lightIntensity * spec * 0.5f;
-                            finalB += lightColor.z * lightIntensity * spec * 0.5f;
-                        }
+                        // Ambient
+                        float ambient = 0.2f;
+                        finalR = objColor.x * ambient;
+                        finalG = objColor.y * ambient;
+                        finalB = objColor.z * ambient;
+                        
+                        // Light direction
+                        XMVECTOR lightPosVec = XMLoadFloat3(&lightPos);
+                        XMVECTOR lightDir = XMVector3Normalize(XMVectorSubtract(lightPosVec, hitPosVec));
+                        
+                        // Diffuse reflection
+                        float diff = fmaxf(0.0f, XMVectorGetX(XMVector3Dot(hitNormal, lightDir)));
+                        
+                        finalR += objColor.x * lightColor.x * lightIntensity * diff;
+                        finalG += objColor.y * lightColor.y * lightIntensity * diff;
+                        finalB += objColor.z * lightColor.z * lightIntensity * diff;
+                        
+                        // Specular
+                        XMVECTOR viewDir = XMVector3Normalize(XMVectorSubtract(camPosVec, hitPosVec));
+                        XMVECTOR reflectDir = XMVectorSubtract(XMVectorScale(hitNormal, 2.0f * XMVectorGetX(XMVector3Dot(lightDir, hitNormal))), lightDir);
+                        float spec = powf(fmaxf(0.0f, XMVectorGetX(XMVector3Dot(viewDir, reflectDir))), 32.0f);
+                        
+                        finalR += lightColor.x * lightIntensity * spec * 0.5f;
+                        finalG += lightColor.y * lightIntensity * spec * 0.5f;
+                        finalB += lightColor.z * lightIntensity * spec * 0.5f;
                     }
                     
                     // Clamp
@@ -224,19 +335,13 @@ namespace RayTraceVS::DXEngine
                 IID_PPV_ARGS(&uploadBuffer));
                 
             if (FAILED(hr))
-            {
-                OutputDebugStringA("RenderTestPattern: Failed to create upload buffer\n");
                 return;
-            }
             
             // Copy data to upload buffer
             void* mappedData = nullptr;
             hr = uploadBuffer->Map(0, nullptr, &mappedData);
             if (FAILED(hr))
-            {
-                OutputDebugStringA("RenderTestPattern: Failed to map upload buffer\n");
                 return;
-            }
             
             memcpy(mappedData, patternData.data(), totalSize);
             uploadBuffer->Unmap(0, nullptr);
@@ -272,12 +377,10 @@ namespace RayTraceVS::DXEngine
                 D3D12_RESOURCE_STATE_COPY_DEST,
                 D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
             commandList->ResourceBarrier(1, &barrier);
-            
-            OutputDebugStringA("RenderTestPattern: Success\n");
         }
         catch (...)
         {
-            OutputDebugStringA("RenderTestPattern: Exception caught\n");
+            // Silently handle exceptions
         }
     }
 }

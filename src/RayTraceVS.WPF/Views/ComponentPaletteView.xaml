@@ -13,67 +13,111 @@
                        Margin="0,0,0,10"/>
 
             <!-- オブジェクトカテゴリ -->
-            <Expander Header="◆ オブジェクト" IsExpanded="True"
+            <Expander x:Name="ObjectExpander" Header="◆ オブジェクト" IsExpanded="True"
                       Foreground="{StaticResource TextBrush}"
                       Background="{StaticResource PanelBrush}">
                 <StackPanel Margin="10,5">
-                    <Button Content="球" Click="AddSphere_Click" 
+                    <Button Content="Sphere" Click="AddSphere_Click" 
                             Margin="0,2" HorizontalAlignment="Stretch"
                             Background="{StaticResource NodeObjectBrush}"/>
-                    <Button Content="平面" Click="AddPlane_Click" 
+                    <Button Content="Plane" Click="AddPlane_Click" 
                             Margin="0,2" HorizontalAlignment="Stretch"
                             Background="{StaticResource NodeObjectBrush}"/>
-                    <Button Content="円柱" Click="AddCylinder_Click" 
+                    <Button Content="Cylinder" Click="AddCylinder_Click" 
                             Margin="0,2" HorizontalAlignment="Stretch"
                             Background="{StaticResource NodeObjectBrush}"/>
                 </StackPanel>
             </Expander>
 
-            <!-- 数学カテゴリ -->
-            <Expander Header="◆ 数学" Margin="0,5"
+            <!-- マテリアルカテゴリ -->
+            <Expander x:Name="MaterialExpander" Header="◆ マテリアル" Margin="0,5"
                       Foreground="{StaticResource TextBrush}"
                       Background="{StaticResource PanelBrush}">
                 <StackPanel Margin="10,5">
+                    <Button Content="Color" Click="AddColor_Click" 
+                            Margin="0,2" HorizontalAlignment="Stretch"
+                            Background="{StaticResource NodeMaterialBrush}"/>
+                    <Button Content="Diffuse" Click="AddDiffuse_Click" 
+                            Margin="0,2" HorizontalAlignment="Stretch"
+                            Background="{StaticResource NodeMaterialBrush}"/>
+                    <Button Content="Metal" Click="AddMetal_Click" 
+                            Margin="0,2" HorizontalAlignment="Stretch"
+                            Background="{StaticResource NodeMaterialBrush}"/>
+                    <Button Content="Glass" Click="AddGlass_Click" 
+                            Margin="0,2" HorizontalAlignment="Stretch"
+                            Background="{StaticResource NodeMaterialBrush}"/>
+                    <Button Content="Emission" Click="AddEmission_Click" 
+                            Margin="0,2" HorizontalAlignment="Stretch"
+                            Background="{StaticResource NodeMaterialBrush}"/>
+                    <Button Content="Material BSDF" Click="AddMaterialBSDF_Click" 
+                            Margin="0,2" HorizontalAlignment="Stretch"
+                            Background="{StaticResource NodeMaterialBrush}"/>
+                </StackPanel>
+            </Expander>
+
+            <!-- 数学カテゴリ -->
+            <Expander x:Name="MathExpander" Header="◆ 数学" Margin="0,5"
+                      Foreground="{StaticResource TextBrush}"
+                      Background="{StaticResource PanelBrush}">
+                <StackPanel Margin="10,5">
+                    <Button Content="Float" Click="AddFloat_Click" 
+                            Margin="0,2" HorizontalAlignment="Stretch"
+                            Background="{StaticResource NodeMathBrush}"/>
                     <Button Content="Vector3" Click="AddVector3_Click" 
                             Margin="0,2" HorizontalAlignment="Stretch"
                             Background="{StaticResource NodeMathBrush}"/>
-                    <Button Content="加算" Click="AddMath_Click" 
+                    <Button Content="Vector4" Click="AddVector4_Click" 
                             Margin="0,2" HorizontalAlignment="Stretch"
                             Background="{StaticResource NodeMathBrush}"/>
-                    <Button Content="乗算" Click="AddMultiply_Click" 
+                    <Button Content="Add" Click="AddMath_Click" 
+                            Margin="0,2" HorizontalAlignment="Stretch"
+                            Background="{StaticResource NodeMathBrush}"/>
+                    <Button Content="Sub" Click="AddSub_Click" 
+                            Margin="0,2" HorizontalAlignment="Stretch"
+                            Background="{StaticResource NodeMathBrush}"/>
+                    <Button Content="Mul" Click="AddMultiply_Click" 
+                            Margin="0,2" HorizontalAlignment="Stretch"
+                            Background="{StaticResource NodeMathBrush}"/>
+                    <Button Content="Div" Click="AddDiv_Click" 
                             Margin="0,2" HorizontalAlignment="Stretch"
                             Background="{StaticResource NodeMathBrush}"/>
                 </StackPanel>
             </Expander>
 
             <!-- カメラカテゴリ -->
-            <Expander Header="◆ カメラ" Margin="0,5"
+            <Expander x:Name="CameraExpander" Header="◆ カメラ" Margin="0,5"
                       Foreground="{StaticResource TextBrush}"
                       Background="{StaticResource PanelBrush}">
                 <StackPanel Margin="10,5">
-                    <Button Content="カメラ" Click="AddCamera_Click" 
+                    <Button Content="Camera" Click="AddCamera_Click" 
                             Margin="0,2" HorizontalAlignment="Stretch"
                             Background="{StaticResource NodeCameraBrush}"/>
                 </StackPanel>
             </Expander>
 
             <!-- ライトカテゴリ -->
-            <Expander Header="◆ ライト" Margin="0,5"
+            <Expander x:Name="LightExpander" Header="◆ ライト" Margin="0,5"
                       Foreground="{StaticResource TextBrush}"
                       Background="{StaticResource PanelBrush}">
                 <StackPanel Margin="10,5">
-                    <Button Content="ポイントライト" Click="AddLight_Click" 
+                    <Button Content="Ambient Light" Click="AddAmbientLight_Click" 
+                            Margin="0,2" HorizontalAlignment="Stretch"
+                            Background="{StaticResource NodeLightBrush}"/>
+                    <Button Content="Directional Light" Click="AddDirectionalLight_Click" 
+                            Margin="0,2" HorizontalAlignment="Stretch"
+                            Background="{StaticResource NodeLightBrush}"/>
+                    <Button Content="Point Light" Click="AddLight_Click" 
                             Margin="0,2" HorizontalAlignment="Stretch"
                             Background="{StaticResource NodeLightBrush}"/>
                 </StackPanel>
             </Expander>
 
             <!-- シーンカテゴリ -->
-            <Expander Header="◆ シーン" Margin="0,5"
+            <Expander x:Name="SceneExpander" Header="◆ シーン" Margin="0,5"
                       Foreground="{StaticResource TextBrush}"
                       Background="{StaticResource PanelBrush}">
                 <StackPanel Margin="10,5">
-                    <Button Content="シーン出力" Click="AddScene_Click" 
+                    <Button Content="Scene" Click="AddScene_Click" 
                             Margin="0,2" HorizontalAlignment="Stretch"
                             Background="{StaticResource NodeSceneBrush}"/>
                 </StackPanel>

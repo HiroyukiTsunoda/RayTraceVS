@@ -77,10 +77,9 @@ namespace RayTraceVS::DXEngine
 
             return true;
         }
-        catch (const std::exception& e)
+        catch (const std::exception&)
         {
             // Error handling
-            OutputDebugStringA(e.what());
             return false;
         }
     }
@@ -252,34 +251,18 @@ namespace RayTraceVS::DXEngine
         try
         {
             if (!commandAllocator || !commandList)
-            {
-                OutputDebugStringA("ResetCommandList: Invalid allocator or list\n");
                 return;
-            }
             
             HRESULT hr = commandAllocator->Reset();
             if (FAILED(hr))
-            {
-                char buffer[256];
-                sprintf_s(buffer, "Failed to reset command allocator: 0x%08X\n", hr);
-                OutputDebugStringA(buffer);
                 throw std::runtime_error("Failed to reset command allocator");
-            }
 
             hr = commandList->Reset(commandAllocator.Get(), nullptr);
             if (FAILED(hr))
-            {
-                char buffer[256];
-                sprintf_s(buffer, "Failed to reset command list: 0x%08X\n", hr);
-                OutputDebugStringA(buffer);
                 throw std::runtime_error("Failed to reset command list");
-            }
-            
-            OutputDebugStringA("ResetCommandList: Success\n");
         }
-        catch (const std::exception& e)
+        catch (const std::exception&)
         {
-            OutputDebugStringA(e.what());
             throw;
         }
     }

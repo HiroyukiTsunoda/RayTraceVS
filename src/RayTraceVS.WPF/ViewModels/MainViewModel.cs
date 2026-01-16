@@ -14,21 +14,6 @@ namespace RayTraceVS.WPF.ViewModels
         [ObservableProperty]
         private Node? selectedNode;
 
-        partial void OnSelectedNodeChanged(Node? value)
-        {
-            Debug.WriteLine($"SelectedNode changed to: {value?.Title ?? "null"}");
-            
-            // すべてのノードの情報を表示
-            if (value != null)
-            {
-                Debug.WriteLine($"All nodes:");
-                foreach (var node in Nodes)
-                {
-                    Debug.WriteLine($"  - {node.Title}: Position=({node.Position.X}, {node.Position.Y})");
-                }
-            }
-        }
-
         [ObservableProperty]
         private ObservableCollection<Node> nodes;
 
@@ -69,12 +54,73 @@ namespace RayTraceVS.WPF.ViewModels
         {
             connections.Add(connection);
             nodeGraph.AddConnection(connection);
+            
+            // 入力ソケットの接続状態を更新
+            if (connection.InputSocket != null)
+            {
+                connection.InputSocket.IsConnected = true;
+            }
         }
 
         public void RemoveConnection(NodeConnection connection)
         {
+            // 入力ソケットの接続状態を更新（削除前に取得）
+            var inputSocket = connection.InputSocket;
+            
             connections.Remove(connection);
             nodeGraph.RemoveConnection(connection);
+            
+            // 入力ソケットの接続状態を更新
+            if (inputSocket != null)
+            {
+                // 同じソケットへの他の接続がないか確認
+                inputSocket.IsConnected = connections.Any(c => c.InputSocket == inputSocket);
+            }
+            
+            // シーンノードの場合、未使用のソケットを削除（最後の1つは残す）
+            if (inputSocket?.ParentNode is Models.Nodes.SceneNode sceneNode)
+            {
+                CleanupSceneNodeSockets(sceneNode);
+            }
+        }
+        
+        private void CleanupSceneNodeSockets(Models.Nodes.SceneNode sceneNode)
+        {
+            // オブジェクトソケットをクリーンアップ（最低1つは残す）
+            var objectSockets = sceneNode.InputSockets
+                .Where(s => s.SocketType == Models.SocketType.Object)
+                .ToList();
+            
+            if (objectSockets.Count > 1)
+            {
+                var emptyObjectSockets = objectSockets
+                    .Where(s => !connections.Any(c => c.InputSocket == s))
+                    .Skip(1) // 最初の空ソケットは残す
+                    .ToList();
+                
+                foreach (var socket in emptyObjectSockets)
+                {
+                    sceneNode.RemoveSocket(socket.Name);
+                }
+            }
+            
+            // ライトソケットをクリーンアップ（最低1つは残す）
+            var lightSockets = sceneNode.InputSockets
+                .Where(s => s.SocketType == Models.SocketType.Light)
+                .ToList();
+            
+            if (lightSockets.Count > 1)
+            {
+                var emptyLightSockets = lightSockets
+                    .Where(s => !connections.Any(c => c.InputSocket == s))
+                    .Skip(1) // 最初の空ソケットは残す
+                    .ToList();
+                
+                foreach (var socket in emptyLightSockets)
+                {
+                    sceneNode.RemoveSocket(socket.Name);
+                }
+            }
         }
     }
 }

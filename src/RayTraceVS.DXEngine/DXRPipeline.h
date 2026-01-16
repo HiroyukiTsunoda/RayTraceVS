@@ -11,7 +11,7 @@ namespace RayTraceVS::DXEngine
 {
     class DXContext;
     class AccelerationStructure;
-
+    class Scene;
     class RenderTarget;
 
     class DXRPipeline
@@ -29,7 +29,7 @@ namespace RayTraceVS::DXEngine
         void DispatchRays(UINT width, UINT height);
         
         // Test pattern rendering (for verification before DXR implementation)
-        void RenderTestPattern(RenderTarget* renderTarget);
+        void RenderTestPattern(RenderTarget* renderTarget, Scene* scene);
 
     private:
         DXContext* dxContext;

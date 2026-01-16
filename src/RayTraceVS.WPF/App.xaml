@@ -6,8 +6,12 @@
     <Application.Resources>
         <!-- Converters -->
         <converters:BoolToSelectionBrushConverter x:Key="BoolToSelectionBrushConverter"/>
+        <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+        <converters:ConnectedToBackgroundConverter x:Key="ConnectedToBackgroundConverter"/>
+        <converters:InverseBoolConverter x:Key="InverseBoolConverter"/>
         <converters:NullToVisibilityConverter x:Key="NullToVisibilityConverter"/>
         <converters:NotNullToVisibilityConverter x:Key="NotNullToVisibilityConverter"/>
+        <converters:SocketCountToHeightConverter x:Key="SocketCountToHeightConverter"/>
         
         <!-- Dark Theme Color Palette -->
         <SolidColorBrush x:Key="BackgroundBrush" Color="#1E1E1E"/>
@@ -19,6 +23,7 @@
         
         <!-- Node Colors -->
         <SolidColorBrush x:Key="NodeObjectBrush" Color="#4A90E2"/>
+        <SolidColorBrush x:Key="NodeMaterialBrush" Color="#E25D5D"/>
         <SolidColorBrush x:Key="NodeMathBrush" Color="#E27A3F"/>
         <SolidColorBrush x:Key="NodeCameraBrush" Color="#9B59B6"/>
         <SolidColorBrush x:Key="NodeLightBrush" Color="#F1C40F"/>

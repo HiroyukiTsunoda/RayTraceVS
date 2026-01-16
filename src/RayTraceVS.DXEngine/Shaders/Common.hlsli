@@ -44,6 +44,17 @@ struct PlaneData
     float reflectivity;
 };
 
+// 円柱データ
+struct CylinderData
+{
+    float3 position;
+    float3 axis;
+    float radius;
+    float height;
+    float4 color;
+    float reflectivity;
+};
+
 // ライトデータ
 struct LightData
 {

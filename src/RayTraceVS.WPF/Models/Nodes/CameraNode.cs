@@ -5,32 +5,36 @@ namespace RayTraceVS.WPF.Models.Nodes
 {
     public class CameraNode : Node
     {
-        public Vector3 ObjectPosition { get; set; } = new Vector3(0, 2, -5);
+        public Vector3 CameraPosition { get; set; } = new Vector3(0, 2, -5);
         public Vector3 LookAt { get; set; } = Vector3.Zero;
         public Vector3 Up { get; set; } = Vector3.UnitY;
         public float FieldOfView { get; set; } = 60.0f;
+        public float Near { get; set; } = 0.1f;
+        public float Far { get; set; } = 1000.0f;
 
-        public CameraNode() : base("カメラ", NodeCategory.Camera)
+        public CameraNode() : base("Camera", NodeCategory.Camera)
         {
-            AddInputSocket("位置", SocketType.Vector3);
-            AddInputSocket("注視点", SocketType.Vector3);
-            AddOutputSocket("カメラ", SocketType.Camera);
+            AddInputSocket("Position", SocketType.Vector3);
+            AddInputSocket("Look At", SocketType.Vector3);
+            AddOutputSocket("Camera", SocketType.Camera);
         }
 
         public override object? Evaluate(Dictionary<System.Guid, object?> inputValues)
         {
-            var positionInput = GetInputValue<Vector3>("位置", inputValues);
-            var lookAtInput = GetInputValue<Vector3>("注視点", inputValues);
+            var positionInput = GetInputValue<Vector3?>("Position", inputValues);
+            var lookAtInput = GetInputValue<Vector3?>("Look At", inputValues);
             
-            var position = positionInput != null ? (Vector3)positionInput : ObjectPosition;
-            var lookAt = lookAtInput != null ? (Vector3)lookAtInput : LookAt;
+            var position = positionInput ?? CameraPosition;
+            var lookAt = lookAtInput ?? LookAt;
 
             return new CameraData
             {
                 Position = position,
                 LookAt = lookAt,
                 Up = Up,
-                FieldOfView = FieldOfView
+                FieldOfView = FieldOfView,
+                Near = Near,
+                Far = Far
             };
         }
     }
@@ -41,5 +45,7 @@ namespace RayTraceVS.WPF.Models.Nodes
         public Vector3 LookAt;
         public Vector3 Up;
         public float FieldOfView;
+        public float Near;
+        public float Far;
     }
 }
