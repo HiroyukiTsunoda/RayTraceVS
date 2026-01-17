@@ -57,10 +57,15 @@ namespace RayTraceVS::DXEngine
                 throw std::runtime_error("Failed to create D3D12 device");
             }
 
-            // Check DXR support
-            if (!CheckDXRSupport())
+            // Check DXR support (fallback to compute shader if not supported)
+            CheckDXRSupport();
+            if (!isDXRSupported)
             {
-                throw std::runtime_error("DXR is not supported on this device");
+                OutputDebugStringA("DXR not supported - falling back to Compute Shader pipeline\n");
+            }
+            else
+            {
+                OutputDebugStringA("DXR supported - using hardware ray tracing\n");
             }
 
             // Create command queue
@@ -100,10 +105,20 @@ namespace RayTraceVS::DXEngine
         D3D12_FEATURE_DATA_D3D12_OPTIONS5 options5 = {};
         if (FAILED(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS5, &options5, sizeof(options5))))
         {
+            raytracingTier = D3D12_RAYTRACING_TIER_NOT_SUPPORTED;
+            isDXRSupported = false;
             return false;
         }
 
-        isDXRSupported = (options5.RaytracingTier >= D3D12_RAYTRACING_TIER_1_0);
+        raytracingTier = options5.RaytracingTier;
+        isDXRSupported = (raytracingTier >= D3D12_RAYTRACING_TIER_1_0);
+        
+        // Log raytracing tier
+        char buf[128];
+        sprintf_s(buf, "Raytracing Tier: %d (1.0=%d, 1.1=%d)\n", 
+            raytracingTier, D3D12_RAYTRACING_TIER_1_0, D3D12_RAYTRACING_TIER_1_1);
+        OutputDebugStringA(buf);
+        
         return isDXRSupported;
     }
 

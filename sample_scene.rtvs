@@ -127,8 +127,8 @@
       "Id": "d38ae94a-cab2-47e9-b086-7e48c9b4bdf0",
       "Type": "CylinderNode",
       "Title": "Cylinder",
-      "PositionX": 1025.4000000000005,
-      "PositionY": 743.5,
+      "PositionX": 1038.2000000000005,
+      "PositionY": 738.7,
       "Properties": {
         "Transform": {
           "Position": {
@@ -170,7 +170,7 @@
       "PositionX": 756.8571428571431,
       "PositionY": 530.7857142857144,
       "Properties": {
-        "Value": 1.0
+        "Value": 0.8
       }
     },
     {
@@ -252,7 +252,7 @@
       "PositionY": 906.636363636364,
       "Properties": {
         "X": 0.0,
-        "Y": 2.0,
+        "Y": 3.0,
         "Z": -5.0
       }
     },
@@ -488,8 +488,8 @@
       "Id": "7d58b3ea-9fdf-41f0-b6a7-44d8d539696d",
       "Type": "GlassMaterialNode",
       "Title": "Glass",
-      "PositionX": 767.4000000000001,
-      "PositionY": 777.6,
+      "PositionX": 753.0,
+      "PositionY": 759.2000000000002,
       "Properties": {
         "Color": {
           "X": 1.0,
@@ -543,6 +543,16 @@
       "PositionY": 823.2,
       "Properties": {
         "Value": 0.5
+      }
+    },
+    {
+      "Id": "995cb861-b8de-468f-acf3-1eb199c3d809",
+      "Type": "FloatNode",
+      "Title": "Float",
+      "PositionX": 866.5999999999999,
+      "PositionY": 767.0,
+      "Properties": {
+        "Value": 1.8
       }
     }
   ],
@@ -756,11 +766,17 @@
       "OutputSocketName": "Value",
       "InputNodeId": "7d58b3ea-9fdf-41f0-b6a7-44d8d539696d",
       "InputSocketName": "Transparency"
+    },
+    {
+      "OutputNodeId": "995cb861-b8de-468f-acf3-1eb199c3d809",
+      "OutputSocketName": "Value",
+      "InputNodeId": "d38ae94a-cab2-47e9-b086-7e48c9b4bdf0",
+      "InputSocketName": "Height"
     }
   ],
   "Viewport": {
-    "PanX": -97.99022113909405,
-    "PanY": -132.04785678717943,
+    "PanX": -81.19022113909409,
+    "PanY": -124.84785678717938,
     "Zoom": 1.0,
     "IsLeftPanelVisible": true,
     "IsRightPanelVisible": true,
