@@ -8,7 +8,7 @@
 #include "Scene/Scene.h"
 #include "Scene/Objects/Sphere.h"
 #include "Scene/Objects/Plane.h"
-#include "Scene/Objects/Cylinder.h"
+#include "Scene/Objects/Box.h"
 #include <stdexcept>
 #include <algorithm>
 #include <cmath>
@@ -77,33 +77,16 @@ namespace RayTraceVS::DXEngine
         return aabb;
     }
 
-    AABB AccelerationStructure::CalculateCylinderAABB(const XMFLOAT3& position, const XMFLOAT3& axis, float radius, float height)
+    AABB AccelerationStructure::CalculateBoxAABB(const XMFLOAT3& center, const XMFLOAT3& size)
     {
-        // Normalize axis
-        XMVECTOR axisVec = XMVector3Normalize(XMLoadFloat3(&axis));
-        XMFLOAT3 normalizedAxis;
-        XMStoreFloat3(&normalizedAxis, axisVec);
-
-        // Calculate the top center of the cylinder
-        XMFLOAT3 topCenter;
-        topCenter.x = position.x + normalizedAxis.x * height;
-        topCenter.y = position.y + normalizedAxis.y * height;
-        topCenter.z = position.z + normalizedAxis.z * height;
-
-        // Calculate the extent in each axis direction
-        // For a cylinder, the extent depends on the axis orientation
-        float extentX = std::sqrt(1.0f - normalizedAxis.x * normalizedAxis.x) * radius;
-        float extentY = std::sqrt(1.0f - normalizedAxis.y * normalizedAxis.y) * radius;
-        float extentZ = std::sqrt(1.0f - normalizedAxis.z * normalizedAxis.z) * radius;
-
-        // AABB is the union of bottom and top circles
+        // size contains half-extents
         AABB aabb;
-        aabb.MinX = (std::min)(position.x - extentX, topCenter.x - extentX);
-        aabb.MinY = (std::min)(position.y - extentY, topCenter.y - extentY);
-        aabb.MinZ = (std::min)(position.z - extentZ, topCenter.z - extentZ);
-        aabb.MaxX = (std::max)(position.x + extentX, topCenter.x + extentX);
-        aabb.MaxY = (std::max)(position.y + extentY, topCenter.y + extentY);
-        aabb.MaxZ = (std::max)(position.z + extentZ, topCenter.z + extentZ);
+        aabb.MinX = center.x - size.x;
+        aabb.MinY = center.y - size.y;
+        aabb.MinZ = center.z - size.z;
+        aabb.MaxX = center.x + size.x;
+        aabb.MaxY = center.y + size.y;
+        aabb.MaxZ = center.z + size.z;
 
         return aabb;
     }
@@ -125,7 +108,7 @@ namespace RayTraceVS::DXEngine
         std::vector<AABB> aabbs;
         instanceInfo.clear();
 
-        UINT sphereIndex = 0, planeIndex = 0, cylinderIndex = 0;
+        UINT sphereIndex = 0, planeIndex = 0, boxIndex = 0;
 
         for (const auto& obj : objects)
         {
@@ -144,11 +127,11 @@ namespace RayTraceVS::DXEngine
                 info.type = ObjectType::Plane;
                 info.objectIndex = planeIndex++;
             }
-            else if (auto cyl = dynamic_cast<Cylinder*>(obj.get()))
+            else if (auto box = dynamic_cast<Box*>(obj.get()))
             {
-                aabb = CalculateCylinderAABB(cyl->GetPosition(), cyl->GetAxis(), cyl->GetRadius(), cyl->GetHeight());
-                info.type = ObjectType::Cylinder;
-                info.objectIndex = cylinderIndex++;
+                aabb = CalculateBoxAABB(box->GetCenter(), box->GetSize());
+                info.type = ObjectType::Box;
+                info.objectIndex = boxIndex++;
             }
             else
             {

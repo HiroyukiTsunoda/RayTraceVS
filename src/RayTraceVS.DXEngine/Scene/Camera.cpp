@@ -7,6 +7,8 @@ namespace RayTraceVS::DXEngine
         , lookAt(0.0f, 0.0f, 0.0f)
         , upVector(0.0f, 1.0f, 0.0f)
         , fieldOfView(60.0f)
+        , apertureSize(0.0f)
+        , focusDistance(5.0f)
     {
     }
 
@@ -15,6 +17,8 @@ namespace RayTraceVS::DXEngine
         , lookAt(target)
         , upVector(up)
         , fieldOfView(fov)
+        , apertureSize(0.0f)
+        , focusDistance(5.0f)
     {
     }
 

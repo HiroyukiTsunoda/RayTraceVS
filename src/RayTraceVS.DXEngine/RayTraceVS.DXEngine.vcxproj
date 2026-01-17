@@ -53,20 +53,32 @@
     <OutDir>$(SolutionDir)bin\$(Configuration)\</OutDir>
     <IntDir>$(SolutionDir)obj\$(ProjectName)\$(Configuration)\</IntDir>
   </PropertyGroup>
+  <!-- NRD SDK Path -->
+  <PropertyGroup>
+    <NRD_SDK_PATH>C:\ProgramData\NVIDIA Corporation\SDKs\RTX_Kit_2025.4_Windows\RealTimeDenoiser</NRD_SDK_PATH>
+    <NRD_LIB_PATH>$(NRD_SDK_PATH)\_Build</NRD_LIB_PATH>
+  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;DXENGINE_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;DXENGINE_EXPORTS;_WINDOWS;_USRDLL;NRD_ENABLED=1;NRD_NORMAL_ENCODING=2;NRD_ROUGHNESS_ENCODING=1;NRD_SUPPORTS_VIEWPORT_OFFSET=0;NRD_SUPPORTS_HISTORY_CONFIDENCE=1;NRD_SUPPORTS_DISOCCLUSION_THRESHOLD_MIX=1;NRD_SUPPORTS_BASECOLOR_METALNESS=1;NRD_SUPPORTS_ANTIFIREFLY=1;NRD_SUPPORTS_CHECKERBOARD=1;NRD_EMBEDS_DXBC_SHADERS=0;NRD_EMBEDS_DXIL_SHADERS=1;NRD_EMBEDS_SPIRV_SHADERS=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(NRD_SDK_PATH)\_NRD_SDK\Include;$(NRD_SDK_PATH)\_NRD_SDK\Integration;$(NRD_SDK_PATH)\Shaders\Include;$(NRD_SDK_PATH)\..\MathLib;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>d3d12.lib;dxgi.lib;dxguid.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(NRD_LIB_PATH);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>NRD.lib;d3d12.lib;dxgi.lib;dxguid.lib;d3dcompiler.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <PostBuildEvent>
+      <Command>xcopy /Y /D "$(NRD_LIB_PATH)\NRD.dll" "$(OutDir)"</Command>
+    </PostBuildEvent>
+    <FxCompile>
+      <PreprocessorDefinitions>ENABLE_NRD_GBUFFER=1;NRD_NORMAL_ENCODING=2;NRD_ROUGHNESS_ENCODING=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </FxCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -74,18 +86,25 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;DXENGINE_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;DXENGINE_EXPORTS;_WINDOWS;_USRDLL;NRD_ENABLED=1;NRD_NORMAL_ENCODING=2;NRD_ROUGHNESS_ENCODING=1;NRD_SUPPORTS_VIEWPORT_OFFSET=0;NRD_SUPPORTS_HISTORY_CONFIDENCE=1;NRD_SUPPORTS_DISOCCLUSION_THRESHOLD_MIX=1;NRD_SUPPORTS_BASECOLOR_METALNESS=1;NRD_SUPPORTS_ANTIFIREFLY=1;NRD_SUPPORTS_CHECKERBOARD=1;NRD_EMBEDS_DXBC_SHADERS=0;NRD_EMBEDS_DXIL_SHADERS=1;NRD_EMBEDS_SPIRV_SHADERS=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(NRD_SDK_PATH)\_NRD_SDK\Include;$(NRD_SDK_PATH)\_NRD_SDK\Integration;$(NRD_SDK_PATH)\Shaders\Include;$(NRD_SDK_PATH)\..\MathLib;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>d3d12.lib;dxgi.lib;dxguid.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(NRD_LIB_PATH);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>NRD.lib;d3d12.lib;dxgi.lib;dxguid.lib;d3dcompiler.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <PostBuildEvent>
+      <Command>xcopy /Y /D "$(NRD_LIB_PATH)\NRD.dll" "$(OutDir)"</Command>
+    </PostBuildEvent>
+    <FxCompile>
+      <PreprocessorDefinitions>ENABLE_NRD_GBUFFER=1;NRD_NORMAL_ENCODING=2;NRD_ROUGHNESS_ENCODING=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </FxCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="DXContext.h" />
@@ -93,13 +112,19 @@
     <ClInclude Include="AccelerationStructure.h" />
     <ClInclude Include="RenderTarget.h" />
     <ClInclude Include="NativeBridge.h" />
+    <ClInclude Include="Denoiser\NRDDenoiser.h" />
     <ClInclude Include="Scene\Scene.h" />
     <ClInclude Include="Scene\Camera.h" />
     <ClInclude Include="Scene\Light.h" />
     <ClInclude Include="Scene\Objects\RayTracingObject.h" />
     <ClInclude Include="Scene\Objects\Sphere.h" />
     <ClInclude Include="Scene\Objects\Plane.h" />
-    <ClInclude Include="Scene\Objects\Cylinder.h" />
+    <ClInclude Include="Scene\Objects\Box.h" />
+    <!-- NRD SDK Headers - Uncomment when NRD_ENABLED=1
+    <ClInclude Include="$(NRD_SDK_PATH)\Include\NRD.h" />
+    <ClInclude Include="$(NRD_SDK_PATH)\Include\NRDDescs.h" />
+    <ClInclude Include="$(NRD_SDK_PATH)\Include\NRDSettings.h" />
+    -->
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="DXContext.cpp" />
@@ -107,12 +132,22 @@
     <ClCompile Include="AccelerationStructure.cpp" />
     <ClCompile Include="RenderTarget.cpp" />
     <ClCompile Include="NativeBridge.cpp" />
+    <ClCompile Include="Denoiser\NRDDenoiser.cpp" />
     <ClCompile Include="Scene\Scene.cpp" />
     <ClCompile Include="Scene\Camera.cpp" />
     <ClCompile Include="Scene\Light.cpp" />
     <ClCompile Include="Scene\Objects\Sphere.cpp" />
     <ClCompile Include="Scene\Objects\Plane.cpp" />
-    <ClCompile Include="Scene\Objects\Cylinder.cpp" />
+    <ClCompile Include="Scene\Objects\Box.cpp" />
+    <!-- NRD SDK Sources - Comment out for now, need to build NRD separately with CMake
+    <ClCompile Include="$(NRD_SDK_PATH)\Source\InstanceImpl.cpp" />
+    <ClCompile Include="$(NRD_SDK_PATH)\Source\Reblur.cpp" />
+    <ClCompile Include="$(NRD_SDK_PATH)\Source\Relax.cpp" />
+    <ClCompile Include="$(NRD_SDK_PATH)\Source\Sigma.cpp" />
+    <ClCompile Include="$(NRD_SDK_PATH)\Source\Reference.cpp" />
+    <ClCompile Include="$(NRD_SDK_PATH)\Source\Wrapper.cpp" />
+    <ClCompile Include="$(NRD_SDK_PATH)\Source\Timer.cpp" />
+    -->
   </ItemGroup>
   <ItemGroup>
     <!-- DXR Shaders (lib_6_3) - compiled with DXC -->
@@ -140,27 +175,25 @@
       <ObjectFileOutput>$(OutDir)%(Filename).cso</ObjectFileOutput>
       <AdditionalIncludeDirectories>$(ProjectDir)Shaders</AdditionalIncludeDirectories>
     </FxCompile>
-    <!-- Material-specific Closest Hit Shaders -->
-    <FxCompile Include="Shaders\ClosestHit_Diffuse.hlsl">
-      <ShaderType>Library</ShaderType>
-      <ShaderModel>6.3</ShaderModel>
-      <ObjectFileOutput>$(OutDir)%(Filename).cso</ObjectFileOutput>
-      <AdditionalIncludeDirectories>$(ProjectDir)Shaders</AdditionalIncludeDirectories>
-    </FxCompile>
-    <FxCompile Include="Shaders\ClosestHit_Glass.hlsl">
-      <ShaderType>Library</ShaderType>
-      <ShaderModel>6.3</ShaderModel>
-      <ObjectFileOutput>$(OutDir)%(Filename).cso</ObjectFileOutput>
-      <AdditionalIncludeDirectories>$(ProjectDir)Shaders</AdditionalIncludeDirectories>
-    </FxCompile>
-    <FxCompile Include="Shaders\ClosestHit_Metal.hlsl">
-      <ShaderType>Library</ShaderType>
-      <ShaderModel>6.3</ShaderModel>
-      <ObjectFileOutput>$(OutDir)%(Filename).cso</ObjectFileOutput>
-      <AdditionalIncludeDirectories>$(ProjectDir)Shaders</AdditionalIncludeDirectories>
-    </FxCompile>
+    <!-- Material-specific Closest Hit Shaders (DISABLED - need NRD fields) -->
+    <None Include="Shaders\ClosestHit_Diffuse.hlsl" />
+    <None Include="Shaders\ClosestHit_Glass.hlsl" />
+    <None Include="Shaders\ClosestHit_Metal.hlsl" />
     <!-- Shadow Any-Hit Shader -->
     <FxCompile Include="Shaders\AnyHit_Shadow.hlsl">
+      <ShaderType>Library</ShaderType>
+      <ShaderModel>6.3</ShaderModel>
+      <ObjectFileOutput>$(OutDir)%(Filename).cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(ProjectDir)Shaders</AdditionalIncludeDirectories>
+    </FxCompile>
+    <!-- Photon Mapping Shaders (for Caustics) -->
+    <FxCompile Include="Shaders\PhotonEmit.hlsl">
+      <ShaderType>Library</ShaderType>
+      <ShaderModel>6.3</ShaderModel>
+      <ObjectFileOutput>$(OutDir)%(Filename).cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(ProjectDir)Shaders</AdditionalIncludeDirectories>
+    </FxCompile>
+    <FxCompile Include="Shaders\PhotonTrace.hlsl">
       <ShaderType>Library</ShaderType>
       <ShaderModel>6.3</ShaderModel>
       <ObjectFileOutput>$(OutDir)%(Filename).cso</ObjectFileOutput>
@@ -173,9 +206,17 @@
       <EntryPointName>CSMain</EntryPointName>
       <ObjectFileOutput>$(OutDir)%(Filename).cso</ObjectFileOutput>
     </FxCompile>
+    <!-- Composite Shader for NRD output (cs_5_1) -->
+    <FxCompile Include="Shaders\Composite.hlsl">
+      <ShaderType>Compute</ShaderType>
+      <ShaderModel>5.1</ShaderModel>
+      <EntryPointName>CSMain</EntryPointName>
+      <ObjectFileOutput>$(OutDir)%(Filename).cso</ObjectFileOutput>
+    </FxCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\Common.hlsli" />
+    <None Include="Shaders\NRDEncoding.hlsli" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

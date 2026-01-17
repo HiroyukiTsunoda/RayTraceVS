@@ -17,6 +17,7 @@ namespace RayTraceVS::DXEngine
     class AccelerationStructure;
     class Scene;
     class RenderTarget;
+    class NRDDenoiser;
 
     // Scene constants for compute shader
     struct alignas(256) SceneConstants
@@ -34,7 +35,7 @@ namespace RayTraceVS::DXEngine
         XMFLOAT4 LightColor;
         UINT NumSpheres;
         UINT NumPlanes;
-        UINT NumCylinders;
+        UINT NumBoxes;
         UINT NumLights;
         UINT ScreenWidth;
         UINT ScreenHeight;
@@ -42,8 +43,25 @@ namespace RayTraceVS::DXEngine
         float TanHalfFov;
         UINT SamplesPerPixel;
         UINT MaxBounces;
-        float Padding1;
-        float Padding2;
+        // Photon mapping parameters
+        UINT NumPhotons;            // Number of photons to emit
+        UINT PhotonMapSize;         // Current photon map size
+        float PhotonRadius;         // Search radius for gathering
+        float CausticIntensity;     // Intensity multiplier
+        // DoF (Depth of Field) parameters
+        float ApertureSize;         // 0.0 = DoF disabled, larger = stronger bokeh
+        float FocusDistance;        // Distance to the focal plane
+    };
+
+    // Photon structure for caustics (must match HLSL)
+    struct alignas(16) GPUPhoton
+    {
+        XMFLOAT3 Position;      // Hit position on diffuse surface
+        float Power;            // Photon power/energy
+        XMFLOAT3 Direction;     // Incoming direction
+        UINT Flags;             // Flags: 0=empty, 1=valid caustic photon
+        XMFLOAT3 Color;         // Photon color
+        float Padding;
     };
 
     // ============================================
@@ -76,13 +94,13 @@ namespace RayTraceVS::DXEngine
         float Padding2;
     };
 
-    // GPU cylinder data (with PBR material)
-    struct alignas(16) GPUCylinder
+    // GPU box data (with PBR material)
+    struct alignas(16) GPUBox
     {
-        XMFLOAT3 Position;
-        float Radius;
-        XMFLOAT3 Axis;
-        float Height;
+        XMFLOAT3 Center;
+        float Padding1;
+        XMFLOAT3 Size;       // half-extents
+        float Padding2;
         XMFLOAT4 Color;
         float Metallic;
         float Roughness;
@@ -110,12 +128,12 @@ namespace RayTraceVS::DXEngine
         float Padding2;
     };
 
-    struct alignas(16) CylinderGeometry
+    struct alignas(16) BoxGeometry
     {
-        XMFLOAT3 Position;
-        float Radius;
-        XMFLOAT3 Axis;
-        float Height;
+        XMFLOAT3 Center;
+        float Padding1;
+        XMFLOAT3 Size;
+        float Padding2;
     };
 
     // Material data (only read after intersection is confirmed)
@@ -171,6 +189,16 @@ namespace RayTraceVS::DXEngine
         
         // Check if DXR pipeline is ready
         bool IsDXRReady() const { return dxrPipelineReady; }
+        
+        // Check if denoiser is enabled and ready
+        bool IsDenoiserReady() const { return denoiserEnabled && denoiser != nullptr; }
+        
+        // Enable/disable denoiser
+        void SetDenoiserEnabled(bool enabled) { denoiserEnabled = enabled; }
+        bool GetDenoiserEnabled() const { return denoiserEnabled; }
+        
+        // Get denoiser for direct access (if needed)
+        NRDDenoiser* GetDenoiser() const { return denoiser.get(); }
 
     private:
         DXContext* dxContext;
@@ -192,13 +220,13 @@ namespace RayTraceVS::DXEngine
         // AoS Object buffers (for Compute Shader fallback)
         ComPtr<ID3D12Resource> sphereBuffer;
         ComPtr<ID3D12Resource> planeBuffer;
-        ComPtr<ID3D12Resource> cylinderBuffer;
+        ComPtr<ID3D12Resource> boxBuffer;
         ComPtr<ID3D12Resource> lightBuffer;
 
         // Upload buffers (for dynamic updates)
         ComPtr<ID3D12Resource> sphereUploadBuffer;
         ComPtr<ID3D12Resource> planeUploadBuffer;
-        ComPtr<ID3D12Resource> cylinderUploadBuffer;
+        ComPtr<ID3D12Resource> boxUploadBuffer;
         ComPtr<ID3D12Resource> lightUploadBuffer;
 
         // ============================================
@@ -208,7 +236,7 @@ namespace RayTraceVS::DXEngine
         // Geometry buffers (minimal data for intersection tests)
         ComPtr<ID3D12Resource> sphereGeometryBuffer;
         ComPtr<ID3D12Resource> planeGeometryBuffer;
-        ComPtr<ID3D12Resource> cylinderGeometryBuffer;
+        ComPtr<ID3D12Resource> boxGeometryBuffer;
         
         // Material buffer (shared by all object types)
         ComPtr<ID3D12Resource> materialBuffer;
@@ -216,7 +244,7 @@ namespace RayTraceVS::DXEngine
         // Upload buffers for SoA
         ComPtr<ID3D12Resource> sphereGeometryUploadBuffer;
         ComPtr<ID3D12Resource> planeGeometryUploadBuffer;
-        ComPtr<ID3D12Resource> cylinderGeometryUploadBuffer;
+        ComPtr<ID3D12Resource> boxGeometryUploadBuffer;
         ComPtr<ID3D12Resource> materialUploadBuffer;
         
         bool useSoABuffers = false;
@@ -253,9 +281,58 @@ namespace RayTraceVS::DXEngine
         ComPtr<ID3DBlob> missShader;
         ComPtr<ID3DBlob> intersectionShader;
         
+        // ============================================
+        // Photon Mapping Resources (for Caustics)
+        // ============================================
+        
+        // Photon map buffer
+        ComPtr<ID3D12Resource> photonMapBuffer;
+        ComPtr<ID3D12Resource> photonCounterBuffer;
+        ComPtr<ID3D12Resource> photonCounterResetBuffer;  // For resetting counter to 0
+        
+        // Photon mapping shaders
+        ComPtr<ID3DBlob> photonEmitShader;
+        ComPtr<ID3DBlob> photonTraceClosestHitShader;
+        ComPtr<ID3DBlob> photonTraceMissShader;
+        
+        // Photon tracing state object and tables
+        ComPtr<ID3D12StateObject> photonStateObject;
+        ComPtr<ID3D12StateObjectProperties> photonStateObjectProperties;
+        ComPtr<ID3D12Resource> photonRayGenShaderTable;
+        ComPtr<ID3D12Resource> photonMissShaderTable;
+        ComPtr<ID3D12Resource> photonHitGroupShaderTable;
+        
+        // Photon descriptor heap (separate from main rendering)
+        ComPtr<ID3D12DescriptorHeap> photonSrvUavHeap;
+        
+        // Photon mapping parameters
+        UINT maxPhotons = 262144;   // 256K photons
+        float photonRadius = 0.5f;
+        float causticIntensity = 2.0f;
+        UINT photonsPerLight = 65536;
+        bool causticsEnabled = true;
+        
         // Cached scene pointer for acceleration structure rebuild
         Scene* lastScene = nullptr;
         bool needsAccelerationStructureRebuild = true;
+
+        // ============================================
+        // Denoiser (NRD Integration)
+        // ============================================
+        
+        std::unique_ptr<NRDDenoiser> denoiser;
+        bool denoiserEnabled = false;  // NRD denoiser disabled until G-Buffer output is enabled in shaders
+        
+        // Frame tracking for motion vectors
+        UINT frameIndex = 0;
+        XMFLOAT4X4 prevViewMatrix;
+        XMFLOAT4X4 prevProjMatrix;
+        bool isFirstFrame = true;
+        
+        // Composite shader for combining denoised output
+        ComPtr<ID3D12PipelineState> compositePipelineState;
+        ComPtr<ID3D12RootSignature> compositeRootSignature;
+        ComPtr<ID3D12DescriptorHeap> compositeDescriptorHeap;
 
         // ============================================
         // Helper Functions
@@ -280,5 +357,19 @@ namespace RayTraceVS::DXEngine
         bool CreateDXRDescriptorHeap();
         bool BuildAccelerationStructures(Scene* scene);
         void UpdateDXRDescriptors(RenderTarget* renderTarget);
+        
+        // Photon mapping (for caustics)
+        bool CreatePhotonMappingResources();
+        bool CreatePhotonStateObject();
+        bool CreatePhotonShaderTables();
+        void EmitPhotons(Scene* scene);
+        void UpdatePhotonDescriptors();
+        void ClearPhotonMap();
+        
+        // Denoiser (NRD)
+        bool InitializeDenoiser(UINT width, UINT height);
+        void ApplyDenoising(RenderTarget* renderTarget, Scene* scene);
+        bool CreateCompositePipeline();
+        void CompositeOutput(RenderTarget* renderTarget);
     };
 }

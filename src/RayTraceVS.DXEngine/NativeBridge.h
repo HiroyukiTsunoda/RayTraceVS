@@ -18,7 +18,7 @@ namespace RayTraceVS::DXEngine
     class Light;
     class Sphere;
     class Plane;
-    class Cylinder;
+    class Box;
     class RenderTarget;
 }
 
@@ -50,6 +50,8 @@ namespace RayTraceVS::Interop::Bridge
         Vector3Native up;
         float fov;
         float aspectRatio;
+        float apertureSize;   // DoF: 0.0 = disabled, larger = stronger bokeh
+        float focusDistance;  // DoF: distance to the focal plane
     };
 
     struct LightDataNative
@@ -74,12 +76,10 @@ namespace RayTraceVS::Interop::Bridge
         MaterialNative material;
     };
 
-    struct CylinderDataNative
+    struct BoxDataNative
     {
         Vector3Native center;
-        Vector3Native axis;
-        float radius;
-        float height;
+        Vector3Native size;  // half-extents
         MaterialNative material;
     };
 
@@ -102,7 +102,7 @@ namespace RayTraceVS::Interop::Bridge
     DXENGINE_API void SetRenderSettings(RayTraceVS::DXEngine::Scene* scene, int samplesPerPixel, int maxBounces);
     DXENGINE_API void AddSphere(RayTraceVS::DXEngine::Scene* scene, const SphereDataNative& sphere);
     DXENGINE_API void AddPlane(RayTraceVS::DXEngine::Scene* scene, const PlaneDataNative& plane);
-    DXENGINE_API void AddCylinder(RayTraceVS::DXEngine::Scene* scene, const CylinderDataNative& cylinder);
+    DXENGINE_API void AddBox(RayTraceVS::DXEngine::Scene* scene, const BoxDataNative& box);
     DXENGINE_API void AddLight(RayTraceVS::DXEngine::Scene* scene, const LightDataNative& light);
 
     // Render target related

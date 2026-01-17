@@ -60,10 +60,25 @@ float3 CalculateGlassLighting(float3 hitPosition, float3 normal, float3 objectCo
     return finalColor;
 }
 
+// Helper to initialize NRD fields for recursive payloads
+void InitializeNRDPayload(inout RayPayload p)
+{
+    p.diffuseRadiance = float3(0, 0, 0);
+    p.specularRadiance = float3(0, 0, 0);
+    p.hitDistance = 10000.0;
+    p.worldNormal = float3(0, 1, 0);
+    p.roughness = 1.0;
+    p.worldPosition = float3(0, 0, 0);
+    p.viewZ = 10000.0;
+    p.metallic = 0.0;
+    p.albedo = float3(0, 0, 0);
+}
+
 [shader("closesthit")]
 void ClosestHit_Glass(inout RayPayload payload, in ProceduralAttributes attribs)
 {
     float3 hitPosition = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
+    float hitDistance = RayTCurrent();
     float3 normal = attribs.normal;
     uint objectType = attribs.objectType;
     uint objectIndex = attribs.objectIndex;
@@ -71,6 +86,7 @@ void ClosestHit_Glass(inout RayPayload payload, in ProceduralAttributes attribs)
     // Get material properties
     float4 color;
     float transmission, ior;
+    float roughness = 0.0;
     
     if (objectType == OBJECT_TYPE_SPHERE)
     {
@@ -78,6 +94,7 @@ void ClosestHit_Glass(inout RayPayload payload, in ProceduralAttributes attribs)
         color = sphere.color;
         transmission = sphere.transmission;
         ior = sphere.ior;
+        roughness = sphere.roughness;
     }
     else if (objectType == OBJECT_TYPE_PLANE)
     {
@@ -85,17 +102,21 @@ void ClosestHit_Glass(inout RayPayload payload, in ProceduralAttributes attribs)
         color = plane.color;
         transmission = plane.transmission;
         ior = plane.ior;
+        roughness = plane.roughness;
     }
     else
     {
-        CylinderData cyl = Cylinders[objectIndex];
-        color = cyl.color;
-        transmission = cyl.transmission;
-        ior = cyl.ior;
+        BoxData box = Boxes[objectIndex];
+        color = box.color;
+        transmission = box.transmission;
+        ior = box.ior;
+        roughness = box.roughness;
     }
     
     float3 objectColor = color.rgb;
     float3 finalColor = float3(0, 0, 0);
+    float3 specularColor = float3(0, 0, 0);
+    float3 diffuseColor = float3(0, 0, 0);
     
     if (payload.depth < MAX_RECURSION_DEPTH)
     {
@@ -123,6 +144,8 @@ void ClosestHit_Glass(inout RayPayload payload, in ProceduralAttributes attribs)
             refractPayload.color = float3(0, 0, 0);
             refractPayload.depth = payload.depth + 1;
             refractPayload.hit = false;
+            refractPayload.padding = 0.0;
+            InitializeNRDPayload(refractPayload);
             
             TraceRay(SceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, refractRay, refractPayload);
             transmittedColor = refractPayload.color;
@@ -137,6 +160,7 @@ void ClosestHit_Glass(inout RayPayload payload, in ProceduralAttributes attribs)
         // Surface color (opaque contribution)
         // ============================================
         float3 opaqueColor = CalculateGlassLighting(hitPosition, normal, objectColor);
+        diffuseColor = opaqueColor * (1.0 - transmission);
         
         // ============================================
         // Blend based on transparency
@@ -166,11 +190,14 @@ void ClosestHit_Glass(inout RayPayload payload, in ProceduralAttributes attribs)
                 reflectPayload.color = float3(0, 0, 0);
                 reflectPayload.depth = payload.depth + 1;
                 reflectPayload.hit = false;
+                reflectPayload.padding = 0.0;
+                InitializeNRDPayload(reflectPayload);
                 
                 TraceRay(SceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, reflectRay, reflectPayload);
                 
                 // Blend reflection based on Fresnel and transparency
                 float reflectBlend = fresnel * (1.0 - transmission * 0.5);
+                specularColor = reflectPayload.color * reflectBlend;
                 finalColor = lerp(finalColor, reflectPayload.color, reflectBlend);
             }
         }
@@ -178,9 +205,26 @@ void ClosestHit_Glass(inout RayPayload payload, in ProceduralAttributes attribs)
     else
     {
         // Max depth reached - use surface lighting only
-        finalColor = CalculateGlassLighting(hitPosition, normal, objectColor);
+        diffuseColor = CalculateGlassLighting(hitPosition, normal, objectColor);
+        finalColor = diffuseColor;
     }
     
     payload.color = saturate(finalColor);
     payload.hit = true;
+    
+    // NRD-specific outputs (only for primary rays)
+    // Note: Glass is tricky for denoisers - we output the transmitted color as "diffuse"
+    // and the reflected color as "specular"
+    if (payload.depth == 0)
+    {
+        payload.diffuseRadiance = diffuseColor;
+        payload.specularRadiance = specularColor;
+        payload.hitDistance = hitDistance;
+        payload.worldNormal = normal;
+        payload.roughness = roughness;
+        payload.worldPosition = hitPosition;
+        payload.viewZ = hitDistance;
+        payload.metallic = 0.0;
+        payload.albedo = objectColor;
+    }
 }

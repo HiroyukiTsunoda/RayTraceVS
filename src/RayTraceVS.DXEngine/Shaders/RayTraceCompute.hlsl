@@ -64,7 +64,7 @@ cbuffer SceneConstants : register(b0)
     float4 LightColor;
     uint NumSpheres;
     uint NumPlanes;
-    uint NumCylinders;
+    uint NumBoxes;
     uint NumLights;
     uint ScreenWidth;
     uint ScreenHeight;
@@ -102,13 +102,13 @@ struct Plane
     float Padding2;
 };
 
-// Cylinder data (with PBR material)
-struct Cylinder
+// Box data (with PBR material)
+struct Box
 {
-    float3 Position;
-    float Radius;
-    float3 Axis;
-    float Height;
+    float3 Center;
+    float Padding1;
+    float3 Size;       // half-extents
+    float Padding2;
     float4 Color;
     float Metallic;
     float Roughness;
@@ -134,7 +134,7 @@ struct Light
 // Structured buffers
 StructuredBuffer<Sphere> Spheres : register(t0);
 StructuredBuffer<Plane> Planes : register(t1);
-StructuredBuffer<Cylinder> Cylinders : register(t2);
+StructuredBuffer<Box> Boxes : register(t2);
 StructuredBuffer<Light> Lights : register(t3);
 
 // Ray structure
@@ -209,50 +209,50 @@ bool IntersectPlane(Ray ray, Plane plane, inout float t, inout float3 normal)
     return true;
 }
 
-// Intersect ray with cylinder
+// Intersect ray with box (AABB)
 // Using inout instead of out to suppress X4000 warnings - caller must initialize
-bool IntersectCylinder(Ray ray, Cylinder cyl, inout float t, inout float3 normal)
+bool IntersectBox(Ray ray, Box box, inout float t, inout float3 normal)
 {
+    float3 boxMin = box.Center - box.Size;
+    float3 boxMax = box.Center + box.Size;
     
-    float3 axis = normalize(cyl.Axis);
-    float3 oc = ray.Origin - cyl.Position;
+    float3 invDir = 1.0 / ray.Direction;
     
-    // Side surface intersection
-    float3 dirCrossAxis = cross(ray.Direction, axis);
-    float3 ocCrossAxis = cross(oc, axis);
+    float3 t0 = (boxMin - ray.Origin) * invDir;
+    float3 t1 = (boxMax - ray.Origin) * invDir;
     
-    float a = dot(dirCrossAxis, dirCrossAxis);
-    float b = 2.0 * dot(dirCrossAxis, ocCrossAxis);
-    float c = dot(ocCrossAxis, ocCrossAxis) - cyl.Radius * cyl.Radius;
+    float3 tMin = min(t0, t1);
+    float3 tMax = max(t0, t1);
     
-    float discriminant = b * b - 4.0 * a * c;
+    float tNear = max(max(tMin.x, tMin.y), tMin.z);
+    float tFar = min(min(tMax.x, tMax.y), tMax.z);
     
-    if (discriminant >= 0.0 && a > 0.0001)
+    if (tNear <= tFar && tFar > 0.001)
     {
-        float sqrtD = sqrt(discriminant);
-        float t1 = (-b - sqrtD) / (2.0 * a);
-        float t2 = (-b + sqrtD) / (2.0 * a);
-        
-        float tVals[2] = { t1, t2 };
-        
-        for (int i = 0; i < 2; i++)
+        float tHit = tNear > 0.001 ? tNear : tFar;
+        if (tHit > 0.001)
         {
-            float tVal = tVals[i];
+            t = tHit;
             
-            if (tVal > 0.001)
+            // Calculate normal based on which face was hit
+            float3 hitPoint = ray.Origin + ray.Direction * t;
+            float3 localHit = hitPoint - box.Center;
+            float3 absLocal = abs(localHit);
+            
+            // Find the dominant axis
+            if (absLocal.x > absLocal.y && absLocal.x > absLocal.z)
             {
-                float3 hitPos = ray.Origin + ray.Direction * tVal;
-                float3 localHitPoint = hitPos - cyl.Position;
-                float height = dot(localHitPoint, axis);
-                
-                if (height >= 0.0 && height <= cyl.Height)
-                {
-                    t = tVal;
-                    float3 hitOnAxis = cyl.Position + axis * height;
-                    normal = normalize(hitPos - hitOnAxis);
-                    return true;
-                }
+                normal = float3(sign(localHit.x), 0, 0);
             }
+            else if (absLocal.y > absLocal.z)
+            {
+                normal = float3(0, sign(localHit.y), 0);
+            }
+            else
+            {
+                normal = float3(0, 0, sign(localHit.z));
+            }
+            return true;
         }
     }
     
@@ -330,10 +330,10 @@ HitInfo TraceRay(Ray ray)
         }
     }
     
-    // Check cylinders
-    for (uint k = 0; k < NumCylinders; k++)
+    // Check boxes
+    for (uint k = 0; k < NumBoxes; k++)
     {
-        if (IntersectCylinder(ray, Cylinders[k], t, normal))
+        if (IntersectBox(ray, Boxes[k], t, normal))
         {
             if (t < result.T)
             {
@@ -341,11 +341,11 @@ HitInfo TraceRay(Ray ray)
                 result.T = t;
                 result.Position = ray.Origin + ray.Direction * t;
                 result.Normal = normal;
-                result.Color = Cylinders[k].Color;
-                result.Metallic = Cylinders[k].Metallic;
-                result.Roughness = Cylinders[k].Roughness;
-                result.Transmission = Cylinders[k].Transmission;
-                result.IOR = Cylinders[k].IOR;
+                result.Color = Boxes[k].Color;
+                result.Metallic = Boxes[k].Metallic;
+                result.Roughness = Boxes[k].Roughness;
+                result.Transmission = Boxes[k].Transmission;
+                result.IOR = Boxes[k].IOR;
             }
         }
     }

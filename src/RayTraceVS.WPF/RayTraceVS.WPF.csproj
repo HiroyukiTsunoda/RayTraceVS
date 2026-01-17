@@ -27,12 +27,19 @@
     <NativeOutputDir>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\bin\$(Configuration)\'))</NativeOutputDir>
   </PropertyGroup>
 
+  <!-- NRD SDK Path -->
+  <PropertyGroup>
+    <NRD_DLL_PATH>C:\ProgramData\NVIDIA Corporation\SDKs\RTX_Kit_2025.4_Windows\RealTimeDenoiser\_Build\NRD.dll</NRD_DLL_PATH>
+  </PropertyGroup>
+
   <Target Name="CopyNativeDlls" AfterTargets="Build">
     <ItemGroup>
       <!-- DXEngine と Interop の出力DLLを明示的に指定 -->
       <NativeDlls Include="$(NativeOutputDir)RayTraceVS.DXEngine.dll" />
       <NativeDlls Include="$(NativeOutputDir)RayTraceVS.Interop.dll" />
       <NativeDlls Include="$(NativeOutputDir)Ijwhost.dll" Condition="Exists('$(NativeOutputDir)Ijwhost.dll')" />
+      <!-- NRD DLL -->
+      <NativeDlls Include="$(NRD_DLL_PATH)" Condition="Exists('$(NRD_DLL_PATH)')" />
       <!-- シェーダーファイル -->
       <ShaderFiles Include="$(NativeOutputDir)*.cso" />
     </ItemGroup>

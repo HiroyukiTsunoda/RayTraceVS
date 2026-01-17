@@ -1,12 +1,10 @@
-#include "Cylinder.h"
+#include "Box.h"
 
 namespace RayTraceVS::DXEngine
 {
-    Cylinder::Cylinder()
-        : position(0.0f, 0.0f, 0.0f)
-        , axis(0.0f, 1.0f, 0.0f)
-        , radius(0.5f)
-        , height(2.0f)
+    Box::Box()
+        : center(0.0f, 0.0f, 0.0f)
+        , size(0.5f, 0.5f, 0.5f)
     {
         material.color = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
         material.metallic = 0.0f;
@@ -15,11 +13,9 @@ namespace RayTraceVS::DXEngine
         material.ior = 1.0f;
     }
 
-    Cylinder::Cylinder(const XMFLOAT3& position, const XMFLOAT3& axis, float radius, float height)
-        : position(position)
-        , axis(axis)
-        , radius(radius)
-        , height(height)
+    Box::Box(const XMFLOAT3& center, const XMFLOAT3& size)
+        : center(center)
+        , size(size)
     {
         material.color = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
         material.metallic = 0.0f;

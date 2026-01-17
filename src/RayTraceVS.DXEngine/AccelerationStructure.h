@@ -86,6 +86,6 @@ namespace RayTraceVS::DXEngine
         // AABB calculation for each object type
         static AABB CalculateSphereAABB(const XMFLOAT3& center, float radius);
         static AABB CalculatePlaneAABB(const XMFLOAT3& position, const XMFLOAT3& normal);
-        static AABB CalculateCylinderAABB(const XMFLOAT3& position, const XMFLOAT3& axis, float radius, float height);
+        static AABB CalculateBoxAABB(const XMFLOAT3& center, const XMFLOAT3& size);
     };
 }

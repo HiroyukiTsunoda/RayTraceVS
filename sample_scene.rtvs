@@ -97,15 +97,17 @@
         },
         "FieldOfView": 60.0,
         "Near": 0.1,
-        "Far": 1000.0
+        "Far": 1000.0,
+        "ApertureSize": 0.05,
+        "FocusDistance": 5.0
       }
     },
     {
       "Id": "a1b2c3d4-e5f6-7890-abcd-555555555555",
       "Type": "SceneNode",
       "Title": "Scene",
-      "PositionX": 1392.2571428571434,
-      "PositionY": 574.8428571428574,
+      "PositionX": 1391.4571428571435,
+      "PositionY": 572.4428571428574,
       "Properties": {
         "ObjectSocketNames": [
           "Object1",
@@ -119,21 +121,21 @@
           "Light4",
           "Light5"
         ],
-        "SamplesPerPixel": 100,
-        "MaxBounces": 16
+        "SamplesPerPixel": 1,
+        "MaxBounces": 6
       }
     },
     {
       "Id": "d38ae94a-cab2-47e9-b086-7e48c9b4bdf0",
-      "Type": "CylinderNode",
-      "Title": "Cylinder",
+      "Type": "BoxNode",
+      "Title": "Box",
       "PositionX": 1038.2000000000005,
       "PositionY": 738.7,
       "Properties": {
         "Transform": {
           "Position": {
-            "X": 0.0,
-            "Y": 0.0,
+            "X": 2.0,
+            "Y": 1.0,
             "Z": 0.0
           },
           "Rotation": {
@@ -154,13 +156,11 @@
             "Z": 0.0
           }
         },
-        "Axis": {
-          "X": 0.0,
-          "Y": 1.0,
-          "Z": 0.0
-        },
-        "Radius": 0.5,
-        "Height": 2.0
+        "Size": {
+          "X": 1.0,
+          "Y": 2.0,
+          "Z": 1.0
+        }
       }
     },
     {
@@ -177,8 +177,8 @@
       "Id": "67341e98-e5c7-4a90-bc8d-b5d68087067b",
       "Type": "Vector3Node",
       "Title": "Vector3",
-      "PositionX": 282.2077922077922,
-      "PositionY": 591.5311688311693,
+      "PositionX": 367.0077922077922,
+      "PositionY": 541.9311688311692,
       "Properties": {
         "X": 0.0,
         "Y": 1.0,
@@ -252,7 +252,7 @@
       "PositionY": 906.636363636364,
       "Properties": {
         "X": 0.0,
-        "Y": 3.0,
+        "Y": 2.5,
         "Z": -5.0
       }
     },
@@ -460,11 +460,11 @@
       "Id": "13168e80-9ec2-4fa9-b650-2770158530b0",
       "Type": "Vector3Node",
       "Title": "Vector3",
-      "PositionX": 265.7954545454544,
-      "PositionY": 740.3636363636365,
+      "PositionX": 114.74090909090887,
+      "PositionY": 734.6909090909094,
       "Properties": {
         "X": 2.0,
-        "Y": 0.0,
+        "Y": 1.0,
         "Z": 0.0
       }
     },
@@ -506,11 +506,11 @@
       "Id": "e67834c9-dab5-4b3e-986e-4d13b469fa7d",
       "Type": "ColorNode",
       "Title": "Color",
-      "PositionX": 423.4,
-      "PositionY": 724.0000000000001,
+      "PositionX": 275.5454545454545,
+      "PositionY": 730.3636363636365,
       "Properties": {
-        "R": 0.2,
-        "G": 0.2,
+        "R": 0.3,
+        "G": 0.3,
         "B": 1.0,
         "A": 1.0
       }
@@ -546,13 +546,15 @@
       }
     },
     {
-      "Id": "995cb861-b8de-468f-acf3-1eb199c3d809",
-      "Type": "FloatNode",
-      "Title": "Float",
-      "PositionX": 866.5999999999999,
-      "PositionY": 767.0,
+      "Id": "59bc74c6-6e1d-4505-a999-aca4327a50bd",
+      "Type": "Vector3Node",
+      "Title": "Vector3",
+      "PositionX": 443.5636363636364,
+      "PositionY": 731.4545454545454,
       "Properties": {
-        "Value": 1.8
+        "X": 1.0,
+        "Y": 1.0,
+        "Z": 1.0
       }
     }
   ],
@@ -720,12 +722,6 @@
       "InputSocketName": "Scale"
     },
     {
-      "OutputNodeId": "7d58b3ea-9fdf-41f0-b6a7-44d8d539696d",
-      "OutputSocketName": "Material",
-      "InputNodeId": "d38ae94a-cab2-47e9-b086-7e48c9b4bdf0",
-      "InputSocketName": "Material"
-    },
-    {
       "OutputNodeId": "4f85a86b-06e3-4d6a-9935-b192daa4e1ed",
       "OutputSocketName": "Color",
       "InputNodeId": "008d86f0-f452-4931-b3fd-768917502a0e",
@@ -736,12 +732,6 @@
       "OutputSocketName": "Value",
       "InputNodeId": "008d86f0-f452-4931-b3fd-768917502a0e",
       "InputSocketName": "Roughness"
-    },
-    {
-      "OutputNodeId": "008d86f0-f452-4931-b3fd-768917502a0e",
-      "OutputSocketName": "Material",
-      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-111111111111",
-      "InputSocketName": "Material"
     },
     {
       "OutputNodeId": "e67834c9-dab5-4b3e-986e-4d13b469fa7d",
@@ -768,15 +758,27 @@
       "InputSocketName": "Transparency"
     },
     {
-      "OutputNodeId": "995cb861-b8de-468f-acf3-1eb199c3d809",
-      "OutputSocketName": "Value",
+      "OutputNodeId": "008d86f0-f452-4931-b3fd-768917502a0e",
+      "OutputSocketName": "Material",
+      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-111111111111",
+      "InputSocketName": "Material"
+    },
+    {
+      "OutputNodeId": "7d58b3ea-9fdf-41f0-b6a7-44d8d539696d",
+      "OutputSocketName": "Material",
       "InputNodeId": "d38ae94a-cab2-47e9-b086-7e48c9b4bdf0",
-      "InputSocketName": "Height"
+      "InputSocketName": "Material"
+    },
+    {
+      "OutputNodeId": "59bc74c6-6e1d-4505-a999-aca4327a50bd",
+      "OutputSocketName": "Vector",
+      "InputNodeId": "d38ae94a-cab2-47e9-b086-7e48c9b4bdf0",
+      "InputSocketName": "Size"
     }
   ],
   "Viewport": {
-    "PanX": -81.19022113909409,
-    "PanY": -124.84785678717938,
+    "PanX": -55.735675684548596,
+    "PanY": -126.95694769627022,
     "Zoom": 1.0,
     "IsLeftPanelVisible": true,
     "IsRightPanelVisible": true,

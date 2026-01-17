@@ -79,6 +79,7 @@ float3 CalculateMetalLighting(float3 hitPosition, float3 normal, float3 objectCo
 void ClosestHit_Metal(inout RayPayload payload, in ProceduralAttributes attribs)
 {
     float3 hitPosition = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
+    float hitDistance = RayTCurrent();
     float3 normal = attribs.normal;
     uint objectType = attribs.objectType;
     uint objectIndex = attribs.objectIndex;
@@ -101,13 +102,15 @@ void ClosestHit_Metal(inout RayPayload payload, in ProceduralAttributes attribs)
     }
     else
     {
-        CylinderData cyl = Cylinders[objectIndex];
-        color = cyl.color;
-        roughness = cyl.roughness;
+        BoxData box = Boxes[objectIndex];
+        color = box.color;
+        roughness = box.roughness;
     }
     
     float3 objectColor = color.rgb;
     float3 finalColor = float3(0, 0, 0);
+    float3 specularColor = float3(0, 0, 0);
+    float3 diffuseColor = float3(0, 0, 0);
     
     if (payload.depth < MAX_RECURSION_DEPTH)
     {
@@ -133,26 +136,53 @@ void ClosestHit_Metal(inout RayPayload payload, in ProceduralAttributes attribs)
         reflectPayload.color = float3(0, 0, 0);
         reflectPayload.depth = payload.depth + 1;
         reflectPayload.hit = false;
+        reflectPayload.padding = 0.0;
+        // Initialize NRD fields
+        reflectPayload.diffuseRadiance = float3(0, 0, 0);
+        reflectPayload.specularRadiance = float3(0, 0, 0);
+        reflectPayload.hitDistance = 10000.0;
+        reflectPayload.worldNormal = float3(0, 1, 0);
+        reflectPayload.roughness = 1.0;
+        reflectPayload.worldPosition = float3(0, 0, 0);
+        reflectPayload.viewZ = 10000.0;
+        reflectPayload.metallic = 0.0;
+        reflectPayload.albedo = float3(0, 0, 0);
         
         TraceRay(SceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, reflectRay, reflectPayload);
         
         // Metal reflection tinted by base color
-        finalColor = reflectPayload.color * fresnel;
+        specularColor = reflectPayload.color * fresnel;
+        finalColor = specularColor;
         
         // Blend with diffuse for rough metals
         if (roughness > 0.1)
         {
-            float3 diffuse = CalculateMetalLighting(hitPosition, normal, objectColor);
+            diffuseColor = CalculateMetalLighting(hitPosition, normal, objectColor);
             float diffuseBlend = roughness * roughness;
-            finalColor = lerp(finalColor, diffuse * objectColor, diffuseBlend * 0.5);
+            finalColor = lerp(finalColor, diffuseColor * objectColor, diffuseBlend * 0.5);
         }
     }
     else
     {
         // Max depth reached - use diffuse lighting
-        finalColor = CalculateMetalLighting(hitPosition, normal, objectColor);
+        diffuseColor = CalculateMetalLighting(hitPosition, normal, objectColor);
+        finalColor = diffuseColor;
     }
     
     payload.color = saturate(finalColor);
     payload.hit = true;
+    
+    // NRD-specific outputs (only for primary rays)
+    if (payload.depth == 0)
+    {
+        payload.diffuseRadiance = diffuseColor;
+        payload.specularRadiance = specularColor;
+        payload.hitDistance = hitDistance;
+        payload.worldNormal = normal;
+        payload.roughness = roughness;
+        payload.worldPosition = hitPosition;
+        payload.viewZ = hitDistance;
+        payload.metallic = 1.0;  // Metal surfaces
+        payload.albedo = objectColor;
+    }
 }

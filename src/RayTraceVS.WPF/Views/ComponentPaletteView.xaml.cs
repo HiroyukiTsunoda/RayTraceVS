@@ -84,12 +84,12 @@ namespace RayTraceVS.WPF.Views
             }
         }
 
-        private void AddCylinder_Click(object sender, RoutedEventArgs e)
+        private void AddBox_Click(object sender, RoutedEventArgs e)
         {
             var viewModel = GetViewModel();
             if (viewModel != null)
             {
-                var node = new CylinderNode();
+                var node = new BoxNode();
                 ((Node)node).Position = GetRandomPosition();
                 viewModel.AddNode(node);
             }

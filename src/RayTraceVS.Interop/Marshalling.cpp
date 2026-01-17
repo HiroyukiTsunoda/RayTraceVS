@@ -10,6 +10,8 @@ namespace RayTraceVS::Interop
         native.up = { managedCamera.Up.X, managedCamera.Up.Y, managedCamera.Up.Z };
         native.fov = managedCamera.FieldOfView;
         native.aspectRatio = managedCamera.AspectRatio;
+        native.apertureSize = managedCamera.ApertureSize;
+        native.focusDistance = managedCamera.FocusDistance;
         return native;
     }
 
@@ -49,18 +51,16 @@ namespace RayTraceVS::Interop
         return native;
     }
 
-    Bridge::CylinderDataNative Marshalling::ToNativeCylinder(CylinderData managedCylinder)
+    Bridge::BoxDataNative Marshalling::ToNativeBox(BoxData managedBox)
     {
-        Bridge::CylinderDataNative native;
-        native.center = { managedCylinder.Position.X, managedCylinder.Position.Y, managedCylinder.Position.Z };
-        native.axis = { managedCylinder.Axis.X, managedCylinder.Axis.Y, managedCylinder.Axis.Z };
-        native.radius = managedCylinder.Radius;
-        native.height = managedCylinder.Height;
-        native.material.color = { managedCylinder.Color.X, managedCylinder.Color.Y, managedCylinder.Color.Z, managedCylinder.Color.W };
-        native.material.metallic = managedCylinder.Metallic;
-        native.material.roughness = managedCylinder.Roughness;
-        native.material.transmission = managedCylinder.Transmission;
-        native.material.ior = managedCylinder.IOR;
+        Bridge::BoxDataNative native;
+        native.center = { managedBox.Center.X, managedBox.Center.Y, managedBox.Center.Z };
+        native.size = { managedBox.Size.X, managedBox.Size.Y, managedBox.Size.Z };
+        native.material.color = { managedBox.Color.X, managedBox.Color.Y, managedBox.Color.Z, managedBox.Color.W };
+        native.material.metallic = managedBox.Metallic;
+        native.material.roughness = managedBox.Roughness;
+        native.material.transmission = managedBox.Transmission;
+        native.material.ior = managedBox.IOR;
         return native;
     }
 }

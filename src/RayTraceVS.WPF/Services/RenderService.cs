@@ -26,7 +26,7 @@ namespace RayTraceVS.WPF.Services
         public void UpdateScene(
             SphereData[] spheres,
             PlaneData[] planes,
-            CylinderData[] cylinders,
+            BoxData[] boxes,
             CameraData camera,
             LightData[] lights,
             int samplesPerPixel = 1,
@@ -37,7 +37,7 @@ namespace RayTraceVS.WPF.Services
 
             try
             {
-                engineWrapper.UpdateScene(spheres, planes, cylinders, camera, lights, samplesPerPixel, maxBounces);
+                engineWrapper.UpdateScene(spheres, planes, boxes, camera, lights, samplesPerPixel, maxBounces);
             }
             catch
             {
