@@ -54,14 +54,12 @@ namespace RayTraceVS::Interop
         float IOR;
     };
 
-    // Cylinder data (with PBR material)
+    // Box data (with PBR material)
     [StructLayout(LayoutKind::Sequential)]
-    public value struct CylinderData
+    public value struct BoxData
     {
-        Vector3 Position;
-        Vector3 Axis;
-        float Radius;
-        float Height;
+        Vector3 Center;
+        Vector3 Size;      // half-extents (width/2, height/2, depth/2)
         Vector4 Color;
         float Metallic;
         float Roughness;
@@ -80,6 +78,8 @@ namespace RayTraceVS::Interop
         float AspectRatio;
         float Near;
         float Far;
+        float ApertureSize;   // DoF: 0.0 = disabled, larger = stronger bokeh
+        float FocusDistance;  // DoF: distance to the focal plane
     };
 
     // Light type enumeration

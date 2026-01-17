@@ -23,7 +23,7 @@
                     <Button Content="Plane" Click="AddPlane_Click" 
                             Margin="0,2" HorizontalAlignment="Stretch"
                             Background="{StaticResource NodeObjectBrush}"/>
-                    <Button Content="Cylinder" Click="AddCylinder_Click" 
+                    <Button Content="Box" Click="AddBox_Click" 
                             Margin="0,2" HorizontalAlignment="Stretch"
                             Background="{StaticResource NodeObjectBrush}"/>
                 </StackPanel>

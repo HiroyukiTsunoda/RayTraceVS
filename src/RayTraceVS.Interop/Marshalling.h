@@ -13,6 +13,6 @@ namespace RayTraceVS::Interop
         static Bridge::LightDataNative ToNativeLight(LightData managedLight);
         static Bridge::SphereDataNative ToNativeSphere(SphereData managedSphere);
         static Bridge::PlaneDataNative ToNativePlane(PlaneData managedPlane);
-        static Bridge::CylinderDataNative ToNativeCylinder(CylinderData managedCylinder);
+        static Bridge::BoxDataNative ToNativeBox(BoxData managedBox);
     };
 }

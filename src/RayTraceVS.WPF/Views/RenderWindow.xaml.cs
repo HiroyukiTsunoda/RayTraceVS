@@ -169,10 +169,10 @@ namespace RayTraceVS.WPF.Views
             try
             {
                 // ノードグラフからシーンデータを評価
-                var (spheres, planes, cylinders, camera, lights, samplesPerPixel, maxBounces) = sceneEvaluator.EvaluateScene(nodeGraph);
+                var (spheres, planes, boxes, camera, lights, samplesPerPixel, maxBounces) = sceneEvaluator.EvaluateScene(nodeGraph);
                 
                 // シーン更新
-                renderService.UpdateScene(spheres, planes, cylinders, camera, lights, samplesPerPixel, maxBounces);
+                renderService.UpdateScene(spheres, planes, boxes, camera, lights, samplesPerPixel, maxBounces);
                 
                 // レンダリング
                 renderService.Render();

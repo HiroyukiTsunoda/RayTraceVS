@@ -6,7 +6,7 @@ using RayTraceVS.WPF.Models;
 using RayTraceVS.WPF.Models.Nodes;
 using InteropSphereData = RayTraceVS.Interop.SphereData;
 using InteropPlaneData = RayTraceVS.Interop.PlaneData;
-using InteropCylinderData = RayTraceVS.Interop.CylinderData;
+using InteropBoxData = RayTraceVS.Interop.BoxData;
 using InteropCameraData = RayTraceVS.Interop.CameraData;
 using InteropLightData = RayTraceVS.Interop.LightData;
 using InteropVector3 = RayTraceVS.Interop.Vector3;
@@ -17,11 +17,11 @@ namespace RayTraceVS.WPF.Services
 {
     public class SceneEvaluator
     {
-        public (InteropSphereData[], InteropPlaneData[], InteropCylinderData[], InteropCameraData, InteropLightData[], int SamplesPerPixel, int MaxBounces) EvaluateScene(NodeGraph nodeGraph)
+        public (InteropSphereData[], InteropPlaneData[], InteropBoxData[], InteropCameraData, InteropLightData[], int SamplesPerPixel, int MaxBounces) EvaluateScene(NodeGraph nodeGraph)
         {
             var spheres = new List<InteropSphereData>();
             var planes = new List<InteropPlaneData>();
-            var cylinders = new List<InteropCylinderData>();
+            var boxes = new List<InteropBoxData>();
             var lights = new List<InteropLightData>();
             int samplesPerPixel = 1;
             int maxBounces = 4;
@@ -66,9 +66,9 @@ namespace RayTraceVS.WPF.Services
                         {
                             planes.Add(ConvertPlaneData(pd));
                         }
-                        else if (obj is Models.Nodes.CylinderData cd && cd.Radius > 0 && cd.Height > 0)
+                        else if (obj is Models.Nodes.BoxData bd)
                         {
-                            cylinders.Add(ConvertCylinderData(cd));
+                            boxes.Add(ConvertBoxData(bd));
                         }
                     }
                     
@@ -82,7 +82,7 @@ namespace RayTraceVS.WPF.Services
                     samplesPerPixel = sceneData.SamplesPerPixel > 0 ? sceneData.SamplesPerPixel : 1;
                     maxBounces = sceneData.MaxBounces > 0 ? sceneData.MaxBounces : 4;
                     
-                    System.Diagnostics.Debug.WriteLine($"[SceneEvaluator] SceneNode経由: Spheres={spheres.Count}, Planes={planes.Count}, Cylinders={cylinders.Count}, Lights={lights.Count}, Samples={samplesPerPixel}, Bounces={maxBounces}");
+                    System.Diagnostics.Debug.WriteLine($"[SceneEvaluator] SceneNode経由: Spheres={spheres.Count}, Planes={planes.Count}, Boxes={boxes.Count}, Lights={lights.Count}, Samples={samplesPerPixel}, Bounces={maxBounces}");
                     
                     // デバッグ：詳細情報を出力
                     foreach (var s in spheres)
@@ -146,28 +146,23 @@ namespace RayTraceVS.WPF.Services
                         }
                         planes.Add(ConvertPlaneData(planeData));
                     }
-                    else if (node is Models.Nodes.CylinderNode cylinderNode)
+                    else if (node is Models.Nodes.BoxNode boxNode)
                     {
-                        Models.Nodes.CylinderData cylinderData;
-                        if (results != null && results.TryGetValue(cylinderNode.Id, out var evalResult) && evalResult is Models.Nodes.CylinderData cd)
+                        Models.Nodes.BoxData boxData;
+                        if (results != null && results.TryGetValue(boxNode.Id, out var evalResult) && evalResult is Models.Nodes.BoxData bd)
                         {
-                            cylinderData = cd;
+                            boxData = bd;
                         }
                         else
                         {
-                            cylinderData = new Models.Nodes.CylinderData
+                            boxData = new Models.Nodes.BoxData
                             {
-                                Position = cylinderNode.ObjectTransform.Position,
-                                Axis = cylinderNode.Axis,
-                                Radius = cylinderNode.Radius,
-                                Height = cylinderNode.Height,
+                                Center = boxNode.ObjectTransform.Position,
+                                Size = boxNode.Size * 0.5f,  // half-extents
                                 Material = Models.Nodes.MaterialData.Default
                             };
                         }
-                        if (cylinderData.Radius > 0 && cylinderData.Height > 0)
-                        {
-                            cylinders.Add(ConvertCylinderData(cylinderData));
-                        }
+                        boxes.Add(ConvertBoxData(boxData));
                     }
                     else if (node is Models.Nodes.CameraNode cameraNode)
                     {
@@ -185,7 +180,9 @@ namespace RayTraceVS.WPF.Services
                                 Up = cameraNode.Up,
                                 FieldOfView = cameraNode.FieldOfView,
                                 Near = cameraNode.Near,
-                                Far = cameraNode.Far
+                                Far = cameraNode.Far,
+                                ApertureSize = cameraNode.ApertureSize,
+                                FocusDistance = cameraNode.FocusDistance
                             };
                         }
                         camera = ConvertCameraData(cameraData);
@@ -231,10 +228,10 @@ namespace RayTraceVS.WPF.Services
                     }
                 }
                 
-                System.Diagnostics.Debug.WriteLine($"[SceneEvaluator] フォールバック: Spheres={spheres.Count}, Planes={planes.Count}, Cylinders={cylinders.Count}, Lights={lights.Count}");
+                System.Diagnostics.Debug.WriteLine($"[SceneEvaluator] フォールバック: Spheres={spheres.Count}, Planes={planes.Count}, Boxes={boxes.Count}, Lights={lights.Count}");
             }
 
-            return (spheres.ToArray(), planes.ToArray(), cylinders.ToArray(), camera, lights.ToArray(), samplesPerPixel, maxBounces);
+            return (spheres.ToArray(), planes.ToArray(), boxes.ToArray(), camera, lights.ToArray(), samplesPerPixel, maxBounces);
         }
 
         private InteropSphereData ConvertSphereData(Models.Nodes.SphereData data)
@@ -291,18 +288,16 @@ namespace RayTraceVS.WPF.Services
             };
         }
 
-        private InteropCylinderData ConvertCylinderData(Models.Nodes.CylinderData data)
+        private InteropBoxData ConvertBoxData(Models.Nodes.BoxData data)
         {
             var material = data.Material;
             
-            System.Diagnostics.Debug.WriteLine($"[SceneEvaluator] Cylinder Material: Color=({material.BaseColor.X:F2},{material.BaseColor.Y:F2},{material.BaseColor.Z:F2}), Metallic={material.Metallic:F2}, Roughness={material.Roughness:F2}, Transmission={material.Transmission:F2}, IOR={material.IOR:F2}");
+            System.Diagnostics.Debug.WriteLine($"[SceneEvaluator] Box Material: Color=({material.BaseColor.X:F2},{material.BaseColor.Y:F2},{material.BaseColor.Z:F2}), Metallic={material.Metallic:F2}, Roughness={material.Roughness:F2}, Transmission={material.Transmission:F2}, IOR={material.IOR:F2}");
             
-            return new InteropCylinderData
+            return new InteropBoxData
             {
-                Position = new InteropVector3(data.Position.X, data.Position.Y, data.Position.Z),
-                Axis = new InteropVector3(data.Axis.X, data.Axis.Y, data.Axis.Z),
-                Radius = data.Radius,
-                Height = data.Height,
+                Center = new InteropVector3(data.Center.X, data.Center.Y, data.Center.Z),
+                Size = new InteropVector3(data.Size.X, data.Size.Y, data.Size.Z),
                 Color = new InteropVector4(material.BaseColor.X, material.BaseColor.Y, material.BaseColor.Z, material.BaseColor.W),
                 Metallic = material.Metallic,
                 Roughness = material.Roughness,
@@ -321,7 +316,9 @@ namespace RayTraceVS.WPF.Services
                 FieldOfView = data.FieldOfView,
                 AspectRatio = 16.0f / 9.0f,
                 Near = data.Near,
-                Far = data.Far
+                Far = data.Far,
+                ApertureSize = data.ApertureSize,
+                FocusDistance = data.FocusDistance
             };
         }
 

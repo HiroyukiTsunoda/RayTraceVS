@@ -2,12 +2,13 @@
 #include "DXContext.h"
 #include "RenderTarget.h"
 #include "AccelerationStructure.h"
+#include "Denoiser/NRDDenoiser.h"
 #include "Scene/Scene.h"
 #include "Scene/Camera.h"
 #include "Scene/Light.h"
 #include "Scene/Objects/Sphere.h"
 #include "Scene/Objects/Plane.h"
-#include "Scene/Objects/Cylinder.h"
+#include "Scene/Objects/Box.h"
 #include <d3dcompiler.h>
 #include <dxcapi.h>
 #include <stdexcept>
@@ -185,14 +186,14 @@ namespace RayTraceVS::DXEngine
         // 1: UAV - Output texture
         // 2: SRV - Spheres buffer
         // 3: SRV - Planes buffer
-        // 4: SRV - Cylinders buffer
+        // 4: SRV - Boxes buffer
         // 5: SRV - Lights buffer
         CD3DX12_DESCRIPTOR_RANGE1 ranges[6];
         ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0);  // b0
         ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);  // u0
         ranges[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);  // t0 - Spheres
         ranges[3].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);  // t1 - Planes
-        ranges[4].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2);  // t2 - Cylinders
+        ranges[4].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2);  // t2 - Boxes
         ranges[5].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 3);  // t3 - Lights
 
         CD3DX12_ROOT_PARAMETER1 rootParameters[6];
@@ -304,7 +305,7 @@ namespace RayTraceVS::DXEngine
 
         const UINT maxSpheres = 32;
         const UINT maxPlanes = 32;
-        const UINT maxCylinders = 32;
+        const UINT maxBoxes = 32;
         const UINT maxLights = 8;
 
         CD3DX12_HEAP_PROPERTIES defaultHeapProps(D3D12_HEAP_TYPE_DEFAULT);
@@ -328,14 +329,14 @@ namespace RayTraceVS::DXEngine
         device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &planeDesc,
             D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&planeUploadBuffer));
 
-        // Create cylinder buffer
-        UINT64 cylinderBufferSize = sizeof(GPUCylinder) * maxCylinders;
-        CD3DX12_RESOURCE_DESC cylinderDesc = CD3DX12_RESOURCE_DESC::Buffer(cylinderBufferSize);
+        // Create box buffer
+        UINT64 boxBufferSize = sizeof(GPUBox) * maxBoxes;
+        CD3DX12_RESOURCE_DESC boxDesc = CD3DX12_RESOURCE_DESC::Buffer(boxBufferSize);
         
-        device->CreateCommittedResource(&defaultHeapProps, D3D12_HEAP_FLAG_NONE, &cylinderDesc,
-            D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&cylinderBuffer));
-        device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &cylinderDesc,
-            D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&cylinderUploadBuffer));
+        device->CreateCommittedResource(&defaultHeapProps, D3D12_HEAP_FLAG_NONE, &boxDesc,
+            D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&boxBuffer));
+        device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &boxDesc,
+            D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&boxUploadBuffer));
 
         // Create light buffer
         UINT64 lightBufferSize = sizeof(GPULight) * maxLights;
@@ -398,6 +399,10 @@ namespace RayTraceVS::DXEngine
         mappedConstantData->TanHalfFov = tanf(camera.GetFieldOfView() * 0.5f * 3.14159265f / 180.0f);
         mappedConstantData->SamplesPerPixel = scene->GetSamplesPerPixel();
         mappedConstantData->MaxBounces = scene->GetMaxBounces();
+        
+        // DoF parameters
+        mappedConstantData->ApertureSize = camera.GetApertureSize();
+        mappedConstantData->FocusDistance = camera.GetFocusDistance();
 
         // Get objects from scene
         const auto& objects = scene->GetObjects();
@@ -405,7 +410,7 @@ namespace RayTraceVS::DXEngine
 
         std::vector<GPUSphere> spheres;
         std::vector<GPUPlane> planes;
-        std::vector<GPUCylinder> cylinders;
+        std::vector<GPUBox> Boxes;
         std::vector<GPULight> gpuLights;
 
         for (const auto& obj : objects)
@@ -438,20 +443,20 @@ namespace RayTraceVS::DXEngine
                 gp.Padding2 = 0;
                 planes.push_back(gp);
             }
-            else if (auto cyl = dynamic_cast<Cylinder*>(obj.get()))
+            else if (auto box = dynamic_cast<Box*>(obj.get()))
             {
-                GPUCylinder gc;
-                gc.Position = cyl->GetPosition();
-                gc.Radius = cyl->GetRadius();
-                gc.Axis = cyl->GetAxis();
-                gc.Height = cyl->GetHeight();
-                const Material& mat = cyl->GetMaterial();
-                gc.Color = mat.color;
-                gc.Metallic = mat.metallic;
-                gc.Roughness = mat.roughness;
-                gc.Transmission = mat.transmission;
-                gc.IOR = mat.ior;
-                cylinders.push_back(gc);
+                GPUBox gb;
+                gb.Center = box->GetCenter();
+                gb.Padding1 = 0;
+                gb.Size = box->GetSize();
+                gb.Padding2 = 0;
+                const Material& mat = box->GetMaterial();
+                gb.Color = mat.color;
+                gb.Metallic = mat.metallic;
+                gb.Roughness = mat.roughness;
+                gb.Transmission = mat.transmission;
+                gb.IOR = mat.ior;
+                Boxes.push_back(gb);
             }
         }
 
@@ -489,7 +494,7 @@ namespace RayTraceVS::DXEngine
 
         mappedConstantData->NumSpheres = (UINT)spheres.size();
         mappedConstantData->NumPlanes = (UINT)planes.size();
-        mappedConstantData->NumCylinders = (UINT)cylinders.size();
+        mappedConstantData->NumBoxes = (UINT)Boxes.size();
         mappedConstantData->NumLights = (UINT)gpuLights.size();
 
 
@@ -514,14 +519,14 @@ namespace RayTraceVS::DXEngine
             commandList->CopyResource(planeBuffer.Get(), planeUploadBuffer.Get());
         }
 
-        if (!cylinders.empty() && cylinderUploadBuffer)
+        if (!Boxes.empty() && boxUploadBuffer)
         {
             void* mapped = nullptr;
-            cylinderUploadBuffer->Map(0, nullptr, &mapped);
-            memcpy(mapped, cylinders.data(), sizeof(GPUCylinder) * cylinders.size());
-            cylinderUploadBuffer->Unmap(0, nullptr);
+            boxUploadBuffer->Map(0, nullptr, &mapped);
+            memcpy(mapped, Boxes.data(), sizeof(GPUBox) * Boxes.size());
+            boxUploadBuffer->Unmap(0, nullptr);
 
-            commandList->CopyResource(cylinderBuffer.Get(), cylinderUploadBuffer.Get());
+            commandList->CopyResource(boxBuffer.Get(), boxUploadBuffer.Get());
         }
 
         if (!gpuLights.empty() && lightUploadBuffer)
@@ -606,10 +611,10 @@ namespace RayTraceVS::DXEngine
         device->CreateShaderResourceView(planeBuffer.Get(), &srvDesc, cpuHandle);
         cpuHandle.Offset(1, srvUavDescriptorSize);
 
-        // SRV for cylinders
+        // SRV for Boxes
         srvDesc.Buffer.NumElements = 32;
-        srvDesc.Buffer.StructureByteStride = sizeof(GPUCylinder);
-        device->CreateShaderResourceView(cylinderBuffer.Get(), &srvDesc, cpuHandle);
+        srvDesc.Buffer.StructureByteStride = sizeof(GPUBox);
+        device->CreateShaderResourceView(boxBuffer.Get(), &srvDesc, cpuHandle);
         cpuHandle.Offset(1, srvUavDescriptorSize);
 
         // SRV for lights
@@ -635,7 +640,7 @@ namespace RayTraceVS::DXEngine
         gpuHandle.Offset(1, srvUavDescriptorSize);
         commandList->SetComputeRootDescriptorTable(3, gpuHandle);  // Planes
         gpuHandle.Offset(1, srvUavDescriptorSize);
-        commandList->SetComputeRootDescriptorTable(4, gpuHandle);  // Cylinders
+        commandList->SetComputeRootDescriptorTable(4, gpuHandle);  // Boxes
         gpuHandle.Offset(1, srvUavDescriptorSize);
         commandList->SetComputeRootDescriptorTable(5, gpuHandle);  // Lights
 
@@ -780,6 +785,16 @@ namespace RayTraceVS::DXEngine
         // Create acceleration structure object
         accelerationStructure = std::make_unique<AccelerationStructure>(dxContext);
         
+        // Initialize photon mapping for caustics
+        if (CreatePhotonMappingResources())
+        {
+            if (CreatePhotonStateObject())
+            {
+                CreatePhotonShaderTables();
+                LogToFile("Photon mapping (caustics) initialized successfully");
+            }
+        }
+        
         LogToFile("CreateDXRPipeline completed successfully");
         return true;
     }
@@ -794,20 +809,31 @@ namespace RayTraceVS::DXEngine
         // [2] CBV - Scene constants (b0)
         // [3] SRV - Spheres buffer (t1)
         // [4] SRV - Planes buffer (t2)
-        // [5] SRV - Cylinders buffer (t3)
+        // [5] SRV - Boxes buffer (t3)
         // [6] SRV - Lights buffer (t4)
+        // [7] UAV - Photon map buffer (u1)
+        // [8] UAV - Photon counter (u2)
+        // [9-13] UAV - G-Buffer for NRD (u3-u7)
         
-        CD3DX12_DESCRIPTOR_RANGE1 ranges[7];
+        CD3DX12_DESCRIPTOR_RANGE1 ranges[14];
         ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);  // u0 - Output
         ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);  // t0 - TLAS
         ranges[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0);  // b0 - Constants
         ranges[3].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);  // t1 - Spheres
         ranges[4].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2);  // t2 - Planes
-        ranges[5].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 3);  // t3 - Cylinders
+        ranges[5].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 3);  // t3 - Boxes
         ranges[6].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 4);  // t4 - Lights
+        ranges[7].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 1);  // u1 - Photon map
+        ranges[8].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 2);  // u2 - Photon counter
+        // G-Buffer UAVs for NRD denoiser
+        ranges[9].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 3);   // u3 - DiffuseRadianceHitDist
+        ranges[10].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 4);  // u4 - SpecularRadianceHitDist
+        ranges[11].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 5);  // u5 - NormalRoughness
+        ranges[12].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 6);  // u6 - ViewZ
+        ranges[13].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 7);  // u7 - MotionVectors
 
-        CD3DX12_ROOT_PARAMETER1 rootParameters[7];
-        for (int i = 0; i < 7; i++)
+        CD3DX12_ROOT_PARAMETER1 rootParameters[14];
+        for (int i = 0; i < 14; i++)
         {
             rootParameters[i].InitAsDescriptorTable(1, &ranges[i]);
         }
@@ -980,8 +1006,15 @@ namespace RayTraceVS::DXEngine
         
         // Shader config
         auto shaderConfig = stateObjectDesc.CreateSubobject<CD3DX12_RAYTRACING_SHADER_CONFIG_SUBOBJECT>();
-        // RayPayload: float3 color (12) + uint depth (4) + bool hit (4 in HLSL) = 20 bytes
-        UINT payloadSize = 12 + 4 + 4;  // 20 bytes
+        // RayPayload (with NRD fields):
+        //   Basic: float3 color (12) + uint depth (4) + uint hit (4) + float padding (4) = 24 bytes
+        //   NRD: float3 diffuseRadiance (12) + float hitDistance (4) = 16 bytes
+        //   NRD: float3 specularRadiance (12) + float roughness (4) = 16 bytes
+        //   NRD: float3 worldNormal (12) + float viewZ (4) = 16 bytes
+        //   NRD: float3 worldPosition (12) + float metallic (4) = 16 bytes
+        //   NRD: float3 albedo (12) + float padding2 (4) = 16 bytes
+        //   Total: 104 bytes, use 112 for alignment
+        UINT payloadSize = 112;
         // ProceduralAttributes: float3 normal (12) + uint objectType (4) + uint objectIndex (4) = 20 bytes
         UINT attribSize = 12 + 4 + 4;   // 20 bytes
         shaderConfig->Config(payloadSize, attribSize);
@@ -992,7 +1025,7 @@ namespace RayTraceVS::DXEngine
         
         // Pipeline config
         auto pipelineConfig = stateObjectDesc.CreateSubobject<CD3DX12_RAYTRACING_PIPELINE_CONFIG_SUBOBJECT>();
-        pipelineConfig->Config(31);  // Max recursion depth (hardware maximum for quality)
+        pipelineConfig->Config(8);  // Max recursion depth (reduced for compatibility)
         
         // Create state object
         HRESULT hr = device->CreateStateObject(stateObjectDesc, IID_PPV_ARGS(&stateObject));
@@ -1017,9 +1050,15 @@ namespace RayTraceVS::DXEngine
     {
         auto device = dxContext->GetDevice();
         
-        // Need descriptors for: UAV, TLAS SRV, CBV, 4 SRVs (spheres, planes, cylinders, lights)
+        // Need descriptors for:
+        // [0] UAV output (u0)
+        // [1] TLAS SRV (t0)
+        // [2] CBV (b0)
+        // [3-6] SRVs: spheres, planes, Boxes, lights (t1-t4)
+        // [7-8] UAVs: photon map, photon counter (u1-u2)
+        // [9-13] UAVs: G-Buffer for NRD (u3-u7)
         D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
-        heapDesc.NumDescriptors = 7;
+        heapDesc.NumDescriptors = 14;  // 9 + 5 for G-Buffer
         heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
         heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
@@ -1161,15 +1200,73 @@ namespace RayTraceVS::DXEngine
         device->CreateShaderResourceView(planeBuffer.Get(), &bufferSrvDesc, cpuHandle);
         cpuHandle.Offset(1, dxrDescriptorSize);
         
-        // Cylinders
-        bufferSrvDesc.Buffer.StructureByteStride = sizeof(GPUCylinder);
-        device->CreateShaderResourceView(cylinderBuffer.Get(), &bufferSrvDesc, cpuHandle);
+        // Boxes
+        bufferSrvDesc.Buffer.StructureByteStride = sizeof(GPUBox);
+        device->CreateShaderResourceView(boxBuffer.Get(), &bufferSrvDesc, cpuHandle);
         cpuHandle.Offset(1, dxrDescriptorSize);
         
         // Lights
         bufferSrvDesc.Buffer.NumElements = 8;
         bufferSrvDesc.Buffer.StructureByteStride = sizeof(GPULight);
         device->CreateShaderResourceView(lightBuffer.Get(), &bufferSrvDesc, cpuHandle);
+        cpuHandle.Offset(1, dxrDescriptorSize);
+        
+        // [7] UAV for photon map
+        if (photonMapBuffer)
+        {
+            D3D12_UNORDERED_ACCESS_VIEW_DESC photonUavDesc = {};
+            photonUavDesc.Format = DXGI_FORMAT_UNKNOWN;
+            photonUavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+            photonUavDesc.Buffer.FirstElement = 0;
+            photonUavDesc.Buffer.NumElements = maxPhotons;
+            photonUavDesc.Buffer.StructureByteStride = sizeof(GPUPhoton);
+            device->CreateUnorderedAccessView(photonMapBuffer.Get(), nullptr, &photonUavDesc, cpuHandle);
+        }
+        cpuHandle.Offset(1, dxrDescriptorSize);
+        
+        // [8] UAV for photon counter
+        if (photonCounterBuffer)
+        {
+            D3D12_UNORDERED_ACCESS_VIEW_DESC counterUavDesc = {};
+            counterUavDesc.Format = DXGI_FORMAT_R32_UINT;
+            counterUavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+            counterUavDesc.Buffer.FirstElement = 0;
+            counterUavDesc.Buffer.NumElements = 1;
+            device->CreateUnorderedAccessView(photonCounterBuffer.Get(), nullptr, &counterUavDesc, cpuHandle);
+        }
+        cpuHandle.Offset(1, dxrDescriptorSize);
+        
+        // [9-13] UAVs for G-Buffer (NRD denoiser)
+        if (denoiser && denoiser->IsReady())
+        {
+            auto& gBuffer = denoiser->GetGBuffer();
+            D3D12_UNORDERED_ACCESS_VIEW_DESC gbufferUavDesc = {};
+            gbufferUavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+            gbufferUavDesc.Texture2D.MipSlice = 0;
+            
+            // [9] u3: DiffuseRadianceHitDist (RGBA16F)
+            gbufferUavDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+            device->CreateUnorderedAccessView(gBuffer.DiffuseRadianceHitDist.Get(), nullptr, &gbufferUavDesc, cpuHandle);
+            cpuHandle.Offset(1, dxrDescriptorSize);
+            
+            // [10] u4: SpecularRadianceHitDist (RGBA16F)
+            device->CreateUnorderedAccessView(gBuffer.SpecularRadianceHitDist.Get(), nullptr, &gbufferUavDesc, cpuHandle);
+            cpuHandle.Offset(1, dxrDescriptorSize);
+            
+            // [11] u5: NormalRoughness (RGBA8)
+            gbufferUavDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+            device->CreateUnorderedAccessView(gBuffer.NormalRoughness.Get(), nullptr, &gbufferUavDesc, cpuHandle);
+            cpuHandle.Offset(1, dxrDescriptorSize);
+            
+            // [12] u6: ViewZ (R32F)
+            gbufferUavDesc.Format = DXGI_FORMAT_R32_FLOAT;
+            device->CreateUnorderedAccessView(gBuffer.ViewZ.Get(), nullptr, &gbufferUavDesc, cpuHandle);
+            cpuHandle.Offset(1, dxrDescriptorSize);
+            
+            // [13] u7: MotionVectors (RG16F)
+            gbufferUavDesc.Format = DXGI_FORMAT_R16G16_FLOAT;
+            device->CreateUnorderedAccessView(gBuffer.MotionVectors.Get(), nullptr, &gbufferUavDesc, cpuHandle);
+        }
     }
 
     void DXRPipeline::RenderWithDXR(RenderTarget* renderTarget, Scene* scene)
@@ -1200,6 +1297,19 @@ namespace RayTraceVS::DXEngine
             }
         }
         
+        // Initialize denoiser if enabled and not yet initialized
+        // Note: Denoiser is currently in stub mode (NRD_ENABLED=0)
+        // When NRD is properly built and linked, set denoiserEnabled = true
+        if (denoiserEnabled && !denoiser)
+        {
+            LogToFile("RenderWithDXR: initializing denoiser");
+            if (!InitializeDenoiser(width, height))
+            {
+                LogToFile("RenderWithDXR: InitializeDenoiser failed, continuing without denoising");
+                denoiserEnabled = false;
+            }
+        }
+        
         // Update scene data
         LogToFile("RenderWithDXR: updating scene data");
         UpdateSceneData(scene, width, height);
@@ -1217,6 +1327,24 @@ namespace RayTraceVS::DXEngine
             LogToFile("RenderWithDXR: acceleration structures built");
         }
         
+        // ============================================
+        // Pass 1: Photon Emission (for Caustics)
+        // ============================================
+        if (causticsEnabled && photonStateObject)
+        {
+            LogToFile("RenderWithDXR: emitting photons for caustics");
+            EmitPhotons(scene);
+        }
+        else
+        {
+            // No caustics - set photon map size to 0
+            mappedConstantData->PhotonMapSize = 0;
+        }
+        
+        // ============================================
+        // Pass 2: Main Rendering
+        // ============================================
+        
         // Update descriptors
         LogToFile("RenderWithDXR: updating descriptors");
         UpdateDXRDescriptors(renderTarget);
@@ -1230,10 +1358,10 @@ namespace RayTraceVS::DXEngine
         LogToFile("RenderWithDXR: setting root signature");
         commandList->SetComputeRootSignature(globalRootSignature.Get());
         
-        // Set root descriptor tables
+        // Set root descriptor tables (including photon map UAVs and G-Buffer UAVs)
         LogToFile("RenderWithDXR: setting descriptor tables");
         CD3DX12_GPU_DESCRIPTOR_HANDLE gpuHandle(dxrSrvUavHeap->GetGPUDescriptorHandleForHeapStart());
-        for (int i = 0; i < 7; i++)
+        for (int i = 0; i < 14; i++)
         {
             commandList->SetComputeRootDescriptorTable(i, gpuHandle);
             gpuHandle.Offset(1, dxrDescriptorSize);
@@ -1262,6 +1390,28 @@ namespace RayTraceVS::DXEngine
         commandList->SetPipelineState1(stateObject.Get());
         commandList->DispatchRays(&dispatchDesc);
         LogToFile("RenderWithDXR: dispatch complete");
+        
+        // ============================================
+        // Pass 3: Denoising (NRD)
+        // ============================================
+        if (denoiserEnabled && denoiser && denoiser->IsReady())
+        {
+            LogToFile("RenderWithDXR: applying denoising");
+            
+            // UAV barrier to ensure ray tracing is complete
+            D3D12_RESOURCE_BARRIER uavBarrier = {};
+            uavBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+            uavBarrier.UAV.pResource = nullptr;  // Barrier on all UAVs
+            commandList->ResourceBarrier(1, &uavBarrier);
+            
+            // Apply NRD denoising
+            ApplyDenoising(renderTarget, scene);
+            
+            // Composite denoised output to final render target
+            CompositeOutput(renderTarget);
+            
+            LogToFile("RenderWithDXR: denoising complete");
+        }
     }
 
     // ============================================
@@ -1306,4 +1456,734 @@ namespace RayTraceVS::DXEngine
         }
         return true;
     }
+
+    // ============================================
+    // Photon Mapping Implementation (for Caustics)
+    // ============================================
+
+    bool DXRPipeline::CreatePhotonMappingResources()
+    {
+        LogToFile("CreatePhotonMappingResources started");
+        
+        auto device = dxContext->GetDevice();
+        if (!device)
+            return false;
+        
+        // Create photon map buffer (UAV)
+        UINT64 photonBufferSize = sizeof(GPUPhoton) * maxPhotons;
+        
+        CD3DX12_HEAP_PROPERTIES defaultHeapProps(D3D12_HEAP_TYPE_DEFAULT);
+        CD3DX12_RESOURCE_DESC photonBufferDesc = CD3DX12_RESOURCE_DESC::Buffer(
+            photonBufferSize, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+        
+        HRESULT hr = device->CreateCommittedResource(
+            &defaultHeapProps,
+            D3D12_HEAP_FLAG_NONE,
+            &photonBufferDesc,
+            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+            nullptr,
+            IID_PPV_ARGS(&photonMapBuffer));
+        
+        if (FAILED(hr))
+        {
+            LogToFile("Failed to create photon map buffer", hr);
+            return false;
+        }
+        
+        // Create photon counter buffer (UAV with single UINT)
+        CD3DX12_RESOURCE_DESC counterBufferDesc = CD3DX12_RESOURCE_DESC::Buffer(
+            sizeof(UINT), D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+        
+        hr = device->CreateCommittedResource(
+            &defaultHeapProps,
+            D3D12_HEAP_FLAG_NONE,
+            &counterBufferDesc,
+            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+            nullptr,
+            IID_PPV_ARGS(&photonCounterBuffer));
+        
+        if (FAILED(hr))
+        {
+            LogToFile("Failed to create photon counter buffer", hr);
+            return false;
+        }
+        
+        // Create upload buffer for resetting counter
+        CD3DX12_HEAP_PROPERTIES uploadHeapProps(D3D12_HEAP_TYPE_UPLOAD);
+        CD3DX12_RESOURCE_DESC resetBufferDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(UINT));
+        
+        hr = device->CreateCommittedResource(
+            &uploadHeapProps,
+            D3D12_HEAP_FLAG_NONE,
+            &resetBufferDesc,
+            D3D12_RESOURCE_STATE_GENERIC_READ,
+            nullptr,
+            IID_PPV_ARGS(&photonCounterResetBuffer));
+        
+        if (FAILED(hr))
+        {
+            LogToFile("Failed to create photon counter reset buffer", hr);
+            return false;
+        }
+        
+        // Initialize reset buffer to 0
+        void* mapped = nullptr;
+        photonCounterResetBuffer->Map(0, nullptr, &mapped);
+        *static_cast<UINT*>(mapped) = 0;
+        photonCounterResetBuffer->Unmap(0, nullptr);
+        
+        // Create photon descriptor heap
+        D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
+        heapDesc.NumDescriptors = 10;  // UAV output, TLAS, CBV, object SRVs, photon UAVs
+        heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+        heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+        
+        hr = device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&photonSrvUavHeap));
+        if (FAILED(hr))
+        {
+            LogToFile("Failed to create photon descriptor heap", hr);
+            return false;
+        }
+        
+        LogToFile("CreatePhotonMappingResources completed successfully");
+        return true;
+    }
+
+    bool DXRPipeline::CreatePhotonStateObject()
+    {
+        LogToFile("CreatePhotonStateObject started");
+        
+        auto device = dxContext->GetDevice();
+        
+        // Get executable directory
+        wchar_t exePath[MAX_PATH];
+        GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+        std::wstring exeDir(exePath);
+        size_t lastSlash = exeDir.find_last_of(L"\\/");
+        if (lastSlash != std::wstring::npos)
+            exeDir = exeDir.substr(0, lastSlash + 1);
+        
+        // Load photon shaders
+        std::wstring shaderPaths[] = { exeDir, L"", L"..\\..\\..\\bin\\Debug\\", L"..\\..\\..\\bin\\Release\\" };
+        
+        bool shadersLoaded = false;
+        for (const auto& path : shaderPaths)
+        {
+            if (LoadPrecompiledShader(path + L"PhotonEmit.cso", &photonEmitShader) &&
+                LoadPrecompiledShader(path + L"PhotonTrace.cso", &photonTraceClosestHitShader))
+            {
+                shadersLoaded = true;
+                LogToFile("Successfully loaded photon shaders");
+                break;
+            }
+            
+            photonEmitShader.Reset();
+            photonTraceClosestHitShader.Reset();
+        }
+        
+        if (!shadersLoaded)
+        {
+            LogToFile("Failed to load photon shaders - caustics disabled");
+            causticsEnabled = false;
+            return false;
+        }
+        
+        // Build photon state object
+        CD3DX12_STATE_OBJECT_DESC stateObjectDesc(D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE);
+        
+        // Add DXIL libraries
+        auto AddLibrary = [&](ID3DBlob* shader, const wchar_t* exportName) {
+            auto lib = stateObjectDesc.CreateSubobject<CD3DX12_DXIL_LIBRARY_SUBOBJECT>();
+            D3D12_SHADER_BYTECODE bc = { shader->GetBufferPointer(), shader->GetBufferSize() };
+            lib->SetDXILLibrary(&bc);
+            lib->DefineExport(exportName);
+        };
+        
+        AddLibrary(photonEmitShader.Get(), L"PhotonEmit");
+        AddLibrary(photonTraceClosestHitShader.Get(), L"PhotonTraceClosestHit");
+        AddLibrary(photonTraceClosestHitShader.Get(), L"PhotonTraceMiss");
+        
+        // Also need intersection shader from main pipeline
+        AddLibrary(intersectionShader.Get(), L"SphereIntersection");
+        
+        // Photon hit group
+        auto hitGroup = stateObjectDesc.CreateSubobject<CD3DX12_HIT_GROUP_SUBOBJECT>();
+        hitGroup->SetHitGroupExport(L"PhotonHitGroup");
+        hitGroup->SetClosestHitShaderImport(L"PhotonTraceClosestHit");
+        hitGroup->SetIntersectionShaderImport(L"SphereIntersection");
+        hitGroup->SetHitGroupType(D3D12_HIT_GROUP_TYPE_PROCEDURAL_PRIMITIVE);
+        
+        // Shader config
+        auto shaderConfig = stateObjectDesc.CreateSubobject<CD3DX12_RAYTRACING_SHADER_CONFIG_SUBOBJECT>();
+        // PhotonPayload: float3 color (12) + float power (4) + uint depth (4) + bool isCaustic (4) + bool terminated (4) = 28 bytes
+        UINT payloadSize = 28;
+        UINT attribSize = 20;  // Same as main pipeline
+        shaderConfig->Config(payloadSize, attribSize);
+        
+        // Global root signature (reuse from main pipeline)
+        auto globalRS = stateObjectDesc.CreateSubobject<CD3DX12_GLOBAL_ROOT_SIGNATURE_SUBOBJECT>();
+        globalRS->SetRootSignature(globalRootSignature.Get());
+        
+        // Pipeline config
+        auto pipelineConfig = stateObjectDesc.CreateSubobject<CD3DX12_RAYTRACING_PIPELINE_CONFIG_SUBOBJECT>();
+        pipelineConfig->Config(8);  // Reduced for compatibility
+        
+        // Create state object
+        HRESULT hr = device->CreateStateObject(stateObjectDesc, IID_PPV_ARGS(&photonStateObject));
+        if (FAILED(hr))
+        {
+            LogToFile("Failed to create photon state object", hr);
+            causticsEnabled = false;
+            return false;
+        }
+        
+        hr = photonStateObject->QueryInterface(IID_PPV_ARGS(&photonStateObjectProperties));
+        if (FAILED(hr))
+        {
+            LogToFile("Failed to get photon state object properties", hr);
+            causticsEnabled = false;
+            return false;
+        }
+        
+        LogToFile("CreatePhotonStateObject completed successfully");
+        return true;
+    }
+
+    bool DXRPipeline::CreatePhotonShaderTables()
+    {
+        LogToFile("CreatePhotonShaderTables started");
+        
+        auto device = dxContext->GetDevice();
+        
+        void* photonEmitId = photonStateObjectProperties->GetShaderIdentifier(L"PhotonEmit");
+        void* photonMissId = photonStateObjectProperties->GetShaderIdentifier(L"PhotonTraceMiss");
+        void* photonHitGroupId = photonStateObjectProperties->GetShaderIdentifier(L"PhotonHitGroup");
+        
+        if (!photonEmitId || !photonMissId || !photonHitGroupId)
+        {
+            LogToFile("Failed to get photon shader identifiers");
+            return false;
+        }
+        
+        UINT shaderIdSize = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
+        CD3DX12_HEAP_PROPERTIES uploadHeapProps(D3D12_HEAP_TYPE_UPLOAD);
+        
+        // Ray generation shader table
+        {
+            CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(shaderTableRecordSize);
+            device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &desc,
+                D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&photonRayGenShaderTable));
+            
+            void* mapped = nullptr;
+            photonRayGenShaderTable->Map(0, nullptr, &mapped);
+            memcpy(mapped, photonEmitId, shaderIdSize);
+            photonRayGenShaderTable->Unmap(0, nullptr);
+        }
+        
+        // Miss shader table
+        {
+            CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(shaderTableRecordSize);
+            device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &desc,
+                D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&photonMissShaderTable));
+            
+            void* mapped = nullptr;
+            photonMissShaderTable->Map(0, nullptr, &mapped);
+            memcpy(mapped, photonMissId, shaderIdSize);
+            photonMissShaderTable->Unmap(0, nullptr);
+        }
+        
+        // Hit group shader table
+        {
+            CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(shaderTableRecordSize);
+            device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &desc,
+                D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&photonHitGroupShaderTable));
+            
+            void* mapped = nullptr;
+            photonHitGroupShaderTable->Map(0, nullptr, &mapped);
+            memcpy(mapped, photonHitGroupId, shaderIdSize);
+            photonHitGroupShaderTable->Unmap(0, nullptr);
+        }
+        
+        LogToFile("CreatePhotonShaderTables completed successfully");
+        return true;
+    }
+
+    void DXRPipeline::ClearPhotonMap()
+    {
+        auto commandList = dxContext->GetCommandList();
+        
+        // Transition counter to copy dest
+        CD3DX12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+            photonCounterBuffer.Get(),
+            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+            D3D12_RESOURCE_STATE_COPY_DEST);
+        commandList->ResourceBarrier(1, &barrier);
+        
+        // Copy 0 to counter
+        commandList->CopyResource(photonCounterBuffer.Get(), photonCounterResetBuffer.Get());
+        
+        // Transition back
+        barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+            photonCounterBuffer.Get(),
+            D3D12_RESOURCE_STATE_COPY_DEST,
+            D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        commandList->ResourceBarrier(1, &barrier);
+    }
+
+    void DXRPipeline::UpdatePhotonDescriptors()
+    {
+        auto device = dxContext->GetDevice();
+        CD3DX12_CPU_DESCRIPTOR_HANDLE cpuHandle(photonSrvUavHeap->GetCPUDescriptorHandleForHeapStart());
+        
+        // [0] UAV for output (not used in photon pass, but keep layout consistent)
+        // Skip this slot
+        cpuHandle.Offset(1, dxrDescriptorSize);
+        
+        // [1] SRV for TLAS
+        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+        srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
+        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        srvDesc.RaytracingAccelerationStructure.Location = accelerationStructure->GetTLAS()->GetGPUVirtualAddress();
+        device->CreateShaderResourceView(nullptr, &srvDesc, cpuHandle);
+        cpuHandle.Offset(1, dxrDescriptorSize);
+        
+        // [2] CBV for constants
+        D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
+        cbvDesc.BufferLocation = constantBuffer->GetGPUVirtualAddress();
+        cbvDesc.SizeInBytes = sizeof(SceneConstants);
+        device->CreateConstantBufferView(&cbvDesc, cpuHandle);
+        cpuHandle.Offset(1, dxrDescriptorSize);
+        
+        // [3-6] Object SRVs
+        D3D12_SHADER_RESOURCE_VIEW_DESC bufferSrvDesc = {};
+        bufferSrvDesc.Format = DXGI_FORMAT_UNKNOWN;
+        bufferSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+        bufferSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        bufferSrvDesc.Buffer.FirstElement = 0;
+        
+        bufferSrvDesc.Buffer.NumElements = 32;
+        bufferSrvDesc.Buffer.StructureByteStride = sizeof(GPUSphere);
+        device->CreateShaderResourceView(sphereBuffer.Get(), &bufferSrvDesc, cpuHandle);
+        cpuHandle.Offset(1, dxrDescriptorSize);
+        
+        bufferSrvDesc.Buffer.StructureByteStride = sizeof(GPUPlane);
+        device->CreateShaderResourceView(planeBuffer.Get(), &bufferSrvDesc, cpuHandle);
+        cpuHandle.Offset(1, dxrDescriptorSize);
+        
+        bufferSrvDesc.Buffer.StructureByteStride = sizeof(GPUBox);
+        device->CreateShaderResourceView(boxBuffer.Get(), &bufferSrvDesc, cpuHandle);
+        cpuHandle.Offset(1, dxrDescriptorSize);
+        
+        bufferSrvDesc.Buffer.NumElements = 8;
+        bufferSrvDesc.Buffer.StructureByteStride = sizeof(GPULight);
+        device->CreateShaderResourceView(lightBuffer.Get(), &bufferSrvDesc, cpuHandle);
+        cpuHandle.Offset(1, dxrDescriptorSize);
+        
+        // [7] UAV for photon map
+        D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+        uavDesc.Format = DXGI_FORMAT_UNKNOWN;
+        uavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+        uavDesc.Buffer.FirstElement = 0;
+        uavDesc.Buffer.NumElements = maxPhotons;
+        uavDesc.Buffer.StructureByteStride = sizeof(GPUPhoton);
+        device->CreateUnorderedAccessView(photonMapBuffer.Get(), nullptr, &uavDesc, cpuHandle);
+        cpuHandle.Offset(1, dxrDescriptorSize);
+        
+        // [8] UAV for photon counter
+        D3D12_UNORDERED_ACCESS_VIEW_DESC counterUavDesc = {};
+        counterUavDesc.Format = DXGI_FORMAT_R32_UINT;
+        counterUavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+        counterUavDesc.Buffer.FirstElement = 0;
+        counterUavDesc.Buffer.NumElements = 1;
+        device->CreateUnorderedAccessView(photonCounterBuffer.Get(), nullptr, &counterUavDesc, cpuHandle);
+    }
+
+    void DXRPipeline::EmitPhotons(Scene* scene)
+    {
+        if (!causticsEnabled || !photonStateObject)
+            return;
+        
+        LogToFile("EmitPhotons started");
+        
+        auto commandList = dxContext->GetCommandList();
+        
+        // Clear the photon map
+        ClearPhotonMap();
+        
+        // Update photon descriptors
+        UpdatePhotonDescriptors();
+        
+        // Set descriptor heap
+        ID3D12DescriptorHeap* heaps[] = { photonSrvUavHeap.Get() };
+        commandList->SetDescriptorHeaps(1, heaps);
+        
+        // Set root signature
+        commandList->SetComputeRootSignature(globalRootSignature.Get());
+        
+        // Set descriptor tables
+        CD3DX12_GPU_DESCRIPTOR_HANDLE gpuHandle(photonSrvUavHeap->GetGPUDescriptorHandleForHeapStart());
+        for (int i = 0; i < 9; i++)
+        {
+            commandList->SetComputeRootDescriptorTable(i, gpuHandle);
+            gpuHandle.Offset(1, dxrDescriptorSize);
+        }
+        
+        // Calculate number of photons to emit
+        UINT totalPhotons = photonsPerLight * scene->GetLights().size();
+        totalPhotons = min(totalPhotons, maxPhotons);
+        
+        // Dispatch photon rays
+        D3D12_DISPATCH_RAYS_DESC dispatchDesc = {};
+        
+        dispatchDesc.RayGenerationShaderRecord.StartAddress = photonRayGenShaderTable->GetGPUVirtualAddress();
+        dispatchDesc.RayGenerationShaderRecord.SizeInBytes = shaderTableRecordSize;
+        
+        dispatchDesc.MissShaderTable.StartAddress = photonMissShaderTable->GetGPUVirtualAddress();
+        dispatchDesc.MissShaderTable.SizeInBytes = shaderTableRecordSize;
+        dispatchDesc.MissShaderTable.StrideInBytes = shaderTableRecordSize;
+        
+        dispatchDesc.HitGroupTable.StartAddress = photonHitGroupShaderTable->GetGPUVirtualAddress();
+        dispatchDesc.HitGroupTable.SizeInBytes = shaderTableRecordSize;
+        dispatchDesc.HitGroupTable.StrideInBytes = shaderTableRecordSize;
+        
+        dispatchDesc.Width = totalPhotons;
+        dispatchDesc.Height = 1;
+        dispatchDesc.Depth = 1;
+        
+        commandList->SetPipelineState1(photonStateObject.Get());
+        commandList->DispatchRays(&dispatchDesc);
+        
+        // UAV barrier to ensure photons are written before reading
+        CD3DX12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::UAV(photonMapBuffer.Get());
+        commandList->ResourceBarrier(1, &barrier);
+        
+        // Update scene constants with photon info
+        mappedConstantData->NumPhotons = totalPhotons;
+        mappedConstantData->PhotonMapSize = totalPhotons;
+        mappedConstantData->PhotonRadius = photonRadius;
+        mappedConstantData->CausticIntensity = causticIntensity;
+        
+        LogToFile("EmitPhotons completed");
+    }
+
+    // ============================================
+    // NRD Denoiser Integration
+    // ============================================
+
+    bool DXRPipeline::InitializeDenoiser(UINT width, UINT height)
+    {
+        LogToFile("Initializing NRD Denoiser...");
+        
+        // Create denoiser if not already created
+        if (!denoiser)
+        {
+            denoiser = std::make_unique<NRDDenoiser>(dxContext);
+        }
+        
+        // Initialize or resize
+        if (!denoiser->IsReady())
+        {
+            if (!denoiser->Initialize(width, height))
+            {
+                LogToFile("Failed to initialize NRD Denoiser");
+                return false;
+            }
+        }
+        else
+        {
+            if (!denoiser->Resize(width, height))
+            {
+                LogToFile("Failed to resize NRD Denoiser");
+                return false;
+            }
+        }
+        
+        // Initialize frame tracking
+        XMStoreFloat4x4(&prevViewMatrix, XMMatrixIdentity());
+        XMStoreFloat4x4(&prevProjMatrix, XMMatrixIdentity());
+        isFirstFrame = true;
+        frameIndex = 0;
+        
+        LogToFile("NRD Denoiser initialized successfully");
+        return true;
+    }
+
+    void DXRPipeline::ApplyDenoising(RenderTarget* renderTarget, Scene* scene)
+    {
+        if (!denoiser || !denoiser->IsReady())
+            return;
+        
+        auto commandList = dxContext->GetCommandList();
+        auto camera = scene->GetCamera();
+        
+        // Build frame settings for denoiser
+        DenoiserFrameSettings settings = {};
+        
+        // Get current view/projection matrices
+        XMMATRIX viewMatrix = camera.GetViewMatrix();
+        UINT width = denoiser ? denoiser->GetWidth() : 1920;
+        UINT height = denoiser ? denoiser->GetHeight() : 1080;
+        float aspectRatio = static_cast<float>(width) / static_cast<float>(height);
+        XMMATRIX projMatrix = camera.GetProjectionMatrix(aspectRatio);
+        
+        XMStoreFloat4x4(&settings.ViewMatrix, viewMatrix);
+        XMStoreFloat4x4(&settings.ProjMatrix, projMatrix);
+        XMStoreFloat4x4(&settings.WorldToViewMatrix, viewMatrix);
+        
+        // Previous frame matrices
+        settings.ViewMatrixPrev = prevViewMatrix;
+        settings.ProjMatrixPrev = prevProjMatrix;
+        settings.WorldToViewMatrixPrev = prevViewMatrix;
+        
+        // Jitter (for TAA-like accumulation) - no jitter for now
+        settings.JitterOffset = XMFLOAT2(0.0f, 0.0f);
+        settings.JitterOffsetPrev = XMFLOAT2(0.0f, 0.0f);
+        
+        // Motion vector scale (screen space)
+        settings.MotionVectorScale = XMFLOAT2(
+            static_cast<float>(renderTarget->GetWidth()),
+            static_cast<float>(renderTarget->GetHeight())
+        );
+        
+        // Camera settings
+        settings.CameraNear = 0.1f;
+        settings.CameraFar = 10000.0f;
+        settings.IsFirstFrame = isFirstFrame;
+        settings.EnableValidation = false;
+        
+        // Apply denoising
+        denoiser->Denoise(commandList, settings);
+        
+        // Update previous frame data
+        XMStoreFloat4x4(&prevViewMatrix, viewMatrix);
+        XMStoreFloat4x4(&prevProjMatrix, projMatrix);
+        isFirstFrame = false;
+        frameIndex++;
+    }
+
+    bool DXRPipeline::CreateCompositePipeline()
+    {
+        LogToFile("CreateCompositePipeline: creating composite compute pipeline");
+        
+        auto device = dxContext->GetDevice();
+        
+        // Load composite shader
+        ComPtr<ID3DBlob> compositeShader;
+        if (!LoadPrecompiledShader(L"Composite.cso", &compositeShader))
+        {
+            LogToFile("CreateCompositePipeline: failed to load Composite.cso");
+            return false;
+        }
+        
+        // Create root signature for composite pass
+        // Inputs: t0-t7 = DenoisedDiffuse, DenoisedSpecular, Albedo, GBuffer textures
+        // Output: u0 = FinalOutput
+        // Constants: b0 = CompositeConstants (6 values)
+        
+        CD3DX12_DESCRIPTOR_RANGE1 srvRange;
+        srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 8, 0); // t0-t7
+        
+        CD3DX12_DESCRIPTOR_RANGE1 uavRange;
+        uavRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0); // u0
+        
+        // Use static sampler instead of descriptor table
+        D3D12_STATIC_SAMPLER_DESC staticSampler = {};
+        staticSampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+        staticSampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+        staticSampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+        staticSampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+        staticSampler.MaxLOD = D3D12_FLOAT32_MAX;
+        staticSampler.ShaderRegister = 0;
+        staticSampler.RegisterSpace = 0;
+        staticSampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+        
+        CD3DX12_ROOT_PARAMETER1 rootParams[3];
+        rootParams[0].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_ALL);
+        rootParams[1].InitAsDescriptorTable(1, &uavRange, D3D12_SHADER_VISIBILITY_ALL);
+        rootParams[2].InitAsConstants(6, 0); // b0: OutputSize (2), ExposureValue, ToneMapOperator, DebugMode, DebugTileScale
+        
+        CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSigDesc;
+        rootSigDesc.Init_1_1(_countof(rootParams), rootParams, 1, &staticSampler,
+            D3D12_ROOT_SIGNATURE_FLAG_NONE);
+        
+        ComPtr<ID3DBlob> serializedRootSig;
+        ComPtr<ID3DBlob> errorBlob;
+        HRESULT hr = D3DX12SerializeVersionedRootSignature(&rootSigDesc,
+            D3D_ROOT_SIGNATURE_VERSION_1_1, &serializedRootSig, &errorBlob);
+        
+        if (FAILED(hr))
+        {
+            if (errorBlob)
+                LogToFile((char*)errorBlob->GetBufferPointer());
+            LogToFile("CreateCompositePipeline: failed to serialize root signature", hr);
+            return false;
+        }
+        
+        hr = device->CreateRootSignature(0, serializedRootSig->GetBufferPointer(),
+            serializedRootSig->GetBufferSize(), IID_PPV_ARGS(&compositeRootSignature));
+        
+        if (FAILED(hr))
+        {
+            LogToFile("CreateCompositePipeline: failed to create root signature", hr);
+            return false;
+        }
+        
+        // Create compute pipeline state
+        D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc = {};
+        psoDesc.pRootSignature = compositeRootSignature.Get();
+        psoDesc.CS = { compositeShader->GetBufferPointer(), compositeShader->GetBufferSize() };
+        
+        hr = device->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&compositePipelineState));
+        
+        if (FAILED(hr))
+        {
+            LogToFile("CreateCompositePipeline: failed to create pipeline state", hr);
+            return false;
+        }
+        
+        LogToFile("CreateCompositePipeline: success");
+        return true;
+    }
+
+    void DXRPipeline::CompositeOutput(RenderTarget* renderTarget)
+    {
+        if (!denoiser || !denoiser->IsReady())
+            return;
+        
+        if (!compositePipelineState)
+        {
+            // Lazy initialization of composite pipeline
+            if (!CreateCompositePipeline())
+            {
+                LogToFile("CompositeOutput: failed to create composite pipeline");
+                return;
+            }
+        }
+        
+        // Create composite descriptor heap if not exists
+        if (!compositeDescriptorHeap)
+        {
+            auto device = dxContext->GetDevice();
+            D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
+            heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+            heapDesc.NumDescriptors = 16; // 8 SRVs + 1 UAV + some extra
+            heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+            
+            HRESULT hr = device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&compositeDescriptorHeap));
+            if (FAILED(hr))
+            {
+                LogToFile("CompositeOutput: failed to create descriptor heap", hr);
+                return;
+            }
+        }
+        
+        auto commandList = dxContext->GetCommandList();
+        auto device = dxContext->GetDevice();
+        
+        UINT width = renderTarget->GetWidth();
+        UINT height = renderTarget->GetHeight();
+        
+        // Get descriptor size
+        UINT descriptorSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+        
+        // Set up descriptors
+        CD3DX12_CPU_DESCRIPTOR_HANDLE cpuHandle(compositeDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
+        CD3DX12_GPU_DESCRIPTOR_HANDLE gpuHandle(compositeDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+        
+        auto& gBuffer = denoiser->GetGBuffer();
+        auto& output = denoiser->GetOutput();
+        
+        // Create SRVs for all input textures
+        // t0: DenoisedDiffuse (use output.DiffuseRadiance)
+        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        srvDesc.Texture2D.MipLevels = 1;
+        
+        // t0: DenoisedDiffuse - For now use input (since NRD may not be working)
+        srvDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+        device->CreateShaderResourceView(gBuffer.DiffuseRadianceHitDist.Get(), &srvDesc, cpuHandle);
+        cpuHandle.Offset(descriptorSize);
+        
+        // t1: DenoisedSpecular  
+        device->CreateShaderResourceView(gBuffer.SpecularRadianceHitDist.Get(), &srvDesc, cpuHandle);
+        cpuHandle.Offset(descriptorSize);
+        
+        // t2: Albedo (use nullptr for now - optional)
+        device->CreateShaderResourceView(nullptr, &srvDesc, cpuHandle);
+        cpuHandle.Offset(descriptorSize);
+        
+        // t3: GBuffer_DiffuseIn (before denoise)
+        device->CreateShaderResourceView(gBuffer.DiffuseRadianceHitDist.Get(), &srvDesc, cpuHandle);
+        cpuHandle.Offset(descriptorSize);
+        
+        // t4: GBuffer_SpecularIn
+        device->CreateShaderResourceView(gBuffer.SpecularRadianceHitDist.Get(), &srvDesc, cpuHandle);
+        cpuHandle.Offset(descriptorSize);
+        
+        // t5: GBuffer_NormalRoughness
+        srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        device->CreateShaderResourceView(gBuffer.NormalRoughness.Get(), &srvDesc, cpuHandle);
+        cpuHandle.Offset(descriptorSize);
+        
+        // t6: GBuffer_ViewZ
+        srvDesc.Format = DXGI_FORMAT_R32_FLOAT;
+        device->CreateShaderResourceView(gBuffer.ViewZ.Get(), &srvDesc, cpuHandle);
+        cpuHandle.Offset(descriptorSize);
+        
+        // t7: GBuffer_MotionVectors
+        srvDesc.Format = DXGI_FORMAT_R16G16_FLOAT;
+        device->CreateShaderResourceView(gBuffer.MotionVectors.Get(), &srvDesc, cpuHandle);
+        cpuHandle.Offset(descriptorSize);
+        
+        // Store SRV table GPU handle
+        CD3DX12_GPU_DESCRIPTOR_HANDLE srvTableHandle = gpuHandle;
+        gpuHandle.Offset(8, descriptorSize); // Move past 8 SRVs
+        cpuHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(compositeDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
+        cpuHandle.Offset(8, descriptorSize);
+        
+        // u0: Output UAV (render target)
+        D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+        uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+        uavDesc.Texture2D.MipSlice = 0;
+        uavDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; // Render target format
+        device->CreateUnorderedAccessView(renderTarget->GetResource(), nullptr, &uavDesc, cpuHandle);
+        
+        CD3DX12_GPU_DESCRIPTOR_HANDLE uavTableHandle(compositeDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+        uavTableHandle.Offset(8, descriptorSize);
+        
+        // Set pipeline state
+        commandList->SetPipelineState(compositePipelineState.Get());
+        commandList->SetComputeRootSignature(compositeRootSignature.Get());
+        
+        // Set descriptor heap
+        ID3D12DescriptorHeap* heaps[] = { compositeDescriptorHeap.Get() };
+        commandList->SetDescriptorHeaps(1, heaps);
+        
+        // Set root parameters
+        commandList->SetComputeRootDescriptorTable(0, srvTableHandle);  // SRVs
+        commandList->SetComputeRootDescriptorTable(1, uavTableHandle);  // UAV
+        
+        // Set constants: OutputSize (2 uints), ExposureValue, ToneMapOperator, DebugMode, DebugTileScale
+        struct CompositeConstants {
+            UINT width;
+            UINT height;
+            float exposureValue;
+            float toneMapOperator;
+            UINT debugMode;
+            float debugTileScale;
+        } constants = { width, height, 1.0f, 2.0f, 1, 0.15f }; // Debug mode ON, 15% tile size
+        
+        commandList->SetComputeRoot32BitConstants(2, sizeof(constants) / 4, &constants, 0);
+        
+        // Dispatch composite shader
+        UINT dispatchX = (width + 7) / 8;
+        UINT dispatchY = (height + 7) / 8;
+        
+        commandList->Dispatch(dispatchX, dispatchY, 1);
+        
+        LogToFile("CompositeOutput: dispatched composite shader with debug tiles");
+    }
 }
+

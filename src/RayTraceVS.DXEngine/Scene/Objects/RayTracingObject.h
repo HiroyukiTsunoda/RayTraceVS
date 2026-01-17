@@ -10,7 +10,7 @@ namespace RayTraceVS::DXEngine
     {
         Sphere,
         Plane,
-        Cylinder
+        Box
     };
 
     struct Material

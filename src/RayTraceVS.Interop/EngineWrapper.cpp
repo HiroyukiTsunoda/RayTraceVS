@@ -82,7 +82,7 @@ namespace RayTraceVS::Interop
     void EngineWrapper::UpdateScene(
         array<SphereData>^ spheres,
         array<PlaneData>^ planes,
-        array<CylinderData>^ cylinders,
+        array<BoxData>^ boxes,
         CameraData camera,
         array<LightData>^ lights,
         int samplesPerPixel,
@@ -121,13 +121,13 @@ namespace RayTraceVS::Interop
             }
         }
 
-        // Add cylinders
-        if (cylinders != nullptr)
+        // Add boxes
+        if (boxes != nullptr)
         {
-            for each (CylinderData cylinder in cylinders)
+            for each (BoxData box in boxes)
             {
-                auto nativeCylinder = Marshalling::ToNativeCylinder(cylinder);
-                Bridge::AddCylinder(nativeScene, nativeCylinder);
+                auto nativeBox = Marshalling::ToNativeBox(box);
+                Bridge::AddBox(nativeScene, nativeBox);
             }
         }
 

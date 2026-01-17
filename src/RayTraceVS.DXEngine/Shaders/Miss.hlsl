@@ -1,15 +1,17 @@
+// Miss shader - simple sky gradient
 #include "Common.hlsli"
 
 [shader("miss")]
 void Miss(inout RayPayload payload)
 {
-    // 背景色（グラデーション空）
-    float3 rayDir = WorldRayDirection();
-    float t = 0.5 * (rayDir.y + 1.0);
+    float3 rayDir = normalize(WorldRayDirection());
     
-    float3 skyColorTop = float3(0.5, 0.7, 1.0);    // 明るい青
-    float3 skyColorBottom = float3(1.0, 1.0, 1.0); // 白
+    // Simple sky gradient based on Y direction
+    float t = 0.5 * (rayDir.y + 1.0);  // Map from [-1,1] to [0,1]
     
-    payload.color = lerp(skyColorBottom, skyColorTop, t);
-    payload.hit = false;
+    // Lerp between horizon color and sky color
+    float3 horizonColor = float3(0.8, 0.85, 0.9);  // Light gray/white horizon
+    float3 skyColor = float3(0.4, 0.6, 0.9);       // Blue sky
+    
+    payload.color = lerp(horizonColor, skyColor, t);
 }

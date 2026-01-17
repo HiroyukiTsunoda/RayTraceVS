@@ -1,16 +1,35 @@
 using System.Collections.Generic;
 using System.Numerics;
+using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace RayTraceVS.WPF.Models.Nodes
 {
-    public class CameraNode : Node
+    public partial class CameraNode : Node
     {
-        public Vector3 CameraPosition { get; set; } = new Vector3(0, 2, -5);
-        public Vector3 LookAt { get; set; } = Vector3.Zero;
-        public Vector3 Up { get; set; } = Vector3.UnitY;
-        public float FieldOfView { get; set; } = 60.0f;
-        public float Near { get; set; } = 0.1f;
-        public float Far { get; set; } = 1000.0f;
+        [ObservableProperty]
+        private Vector3 cameraPosition = new Vector3(0, 2, -5);
+        
+        [ObservableProperty]
+        private Vector3 lookAt = Vector3.Zero;
+        
+        [ObservableProperty]
+        private Vector3 up = Vector3.UnitY;
+        
+        [ObservableProperty]
+        private float fieldOfView = 60.0f;
+        
+        [ObservableProperty]
+        private float near = 0.1f;
+        
+        [ObservableProperty]
+        private float far = 1000.0f;
+        
+        // DoF (Depth of Field) parameters
+        [ObservableProperty]
+        private float apertureSize = 0.0f;  // 0.0 = DoF disabled, larger = stronger bokeh
+        
+        [ObservableProperty]
+        private float focusDistance = 5.0f; // Distance to the focal plane
 
         public CameraNode() : base("Camera", NodeCategory.Camera)
         {
@@ -34,7 +53,9 @@ namespace RayTraceVS.WPF.Models.Nodes
                 Up = Up,
                 FieldOfView = FieldOfView,
                 Near = Near,
-                Far = Far
+                Far = Far,
+                ApertureSize = ApertureSize,
+                FocusDistance = FocusDistance
             };
         }
     }
@@ -47,5 +68,7 @@ namespace RayTraceVS.WPF.Models.Nodes
         public float FieldOfView;
         public float Near;
         public float Far;
+        public float ApertureSize;
+        public float FocusDistance;
     }
 }

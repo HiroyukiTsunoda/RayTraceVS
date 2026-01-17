@@ -23,7 +23,7 @@ namespace RayTraceVS::Interop
         void UpdateScene(
             array<SphereData>^ spheres,
             array<PlaneData>^ planes,
-            array<CylinderData>^ cylinders,
+            array<BoxData>^ boxes,
             CameraData camera,
             array<LightData>^ lights,
             int samplesPerPixel,

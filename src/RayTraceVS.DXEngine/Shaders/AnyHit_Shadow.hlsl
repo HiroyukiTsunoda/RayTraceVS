@@ -25,9 +25,9 @@ void AnyHit_Shadow(inout RayPayload payload, in ProceduralAttributes attribs)
     {
         transmission = Planes[objectIndex].transmission;
     }
-    else // OBJECT_TYPE_CYLINDER
+    else // OBJECT_TYPE_BOX
     {
-        transmission = Cylinders[objectIndex].transmission;
+        transmission = Boxes[objectIndex].transmission;
     }
     
     // If the object is highly transparent (glass), ignore it for shadow

@@ -105,7 +105,7 @@ namespace RayTraceVS.WPF.Services
             {
                 nameof(SphereNode) => new SphereNode(),
                 nameof(PlaneNode) => new PlaneNode(),
-                nameof(CylinderNode) => new CylinderNode(),
+                nameof(BoxNode) => new BoxNode(),
                 nameof(CameraNode) => new CameraNode(),
                 "LightNode" => new PointLightNode(),  // 旧LightNodeはPointLightNodeとして読み込む
                 nameof(PointLightNode) => new PointLightNode(),
@@ -157,11 +157,9 @@ namespace RayTraceVS.WPF.Services
                     properties["Normal"] = plane.Normal;
                     break;
 
-                case CylinderNode cylinder:
-                    properties["Transform"] = cylinder.ObjectTransform;
-                    properties["Axis"] = cylinder.Axis;
-                    properties["Radius"] = cylinder.Radius;
-                    properties["Height"] = cylinder.Height;
+                case BoxNode box:
+                    properties["Transform"] = box.ObjectTransform;
+                    properties["Size"] = box.Size;
                     break;
 
                 case CameraNode camera:
@@ -171,6 +169,8 @@ namespace RayTraceVS.WPF.Services
                     properties["FieldOfView"] = camera.FieldOfView;
                     properties["Near"] = camera.Near;
                     properties["Far"] = camera.Far;
+                    properties["ApertureSize"] = camera.ApertureSize;
+                    properties["FocusDistance"] = camera.FocusDistance;
                     break;
 
                 case PointLightNode pointLight:
@@ -319,22 +319,17 @@ namespace RayTraceVS.WPF.Services
                         plane.Normal = ConvertToVector3(normal);
                     break;
 
-                case CylinderNode cylinder:
-                    if (properties.TryGetValue("Transform", out var cylTransform))
-                        cylinder.ObjectTransform = ConvertToTransform(cylTransform);
-                    // 後方互換性
-                    else if (properties.TryGetValue("Position", out var cylPos))
+                case BoxNode box:
+                    if (properties.TryGetValue("Transform", out var boxTransform))
+                        box.ObjectTransform = ConvertToTransform(boxTransform);
+                    else if (properties.TryGetValue("Position", out var boxPos))
                     {
                         var transform = Transform.Identity;
-                        transform.Position = ConvertToVector3(cylPos);
-                        cylinder.ObjectTransform = transform;
+                        transform.Position = ConvertToVector3(boxPos);
+                        box.ObjectTransform = transform;
                     }
-                    if (properties.TryGetValue("Axis", out var axis))
-                        cylinder.Axis = ConvertToVector3(axis);
-                    if (properties.TryGetValue("Radius", out var cylRadius))
-                        cylinder.Radius = Convert.ToSingle(cylRadius);
-                    if (properties.TryGetValue("Height", out var height))
-                        cylinder.Height = Convert.ToSingle(height);
+                    if (properties.TryGetValue("Size", out var size))
+                        box.Size = ConvertToVector3(size);
                     break;
 
                 case CameraNode camera:
@@ -355,6 +350,10 @@ namespace RayTraceVS.WPF.Services
                         camera.Near = Convert.ToSingle(near);
                     if (properties.TryGetValue("Far", out var far))
                         camera.Far = Convert.ToSingle(far);
+                    if (properties.TryGetValue("ApertureSize", out var aperture))
+                        camera.ApertureSize = Convert.ToSingle(aperture);
+                    if (properties.TryGetValue("FocusDistance", out var focusDist))
+                        camera.FocusDistance = Convert.ToSingle(focusDist);
                     break;
 
                 case PointLightNode pointLight:
