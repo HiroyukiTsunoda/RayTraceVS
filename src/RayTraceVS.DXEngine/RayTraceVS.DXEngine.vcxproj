@@ -115,22 +115,58 @@
     <ClCompile Include="Scene\Objects\Cylinder.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <!-- DXR Shaders (lib_6_3) - compiled with DXC -->
     <FxCompile Include="Shaders\RayGen.hlsl">
       <ShaderType>Library</ShaderType>
       <ShaderModel>6.3</ShaderModel>
+      <ObjectFileOutput>$(OutDir)%(Filename).cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(ProjectDir)Shaders</AdditionalIncludeDirectories>
     </FxCompile>
     <FxCompile Include="Shaders\ClosestHit.hlsl">
       <ShaderType>Library</ShaderType>
       <ShaderModel>6.3</ShaderModel>
+      <ObjectFileOutput>$(OutDir)%(Filename).cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(ProjectDir)Shaders</AdditionalIncludeDirectories>
     </FxCompile>
     <FxCompile Include="Shaders\Miss.hlsl">
       <ShaderType>Library</ShaderType>
       <ShaderModel>6.3</ShaderModel>
+      <ObjectFileOutput>$(OutDir)%(Filename).cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(ProjectDir)Shaders</AdditionalIncludeDirectories>
     </FxCompile>
     <FxCompile Include="Shaders\Intersection.hlsl">
       <ShaderType>Library</ShaderType>
       <ShaderModel>6.3</ShaderModel>
+      <ObjectFileOutput>$(OutDir)%(Filename).cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(ProjectDir)Shaders</AdditionalIncludeDirectories>
     </FxCompile>
+    <!-- Material-specific Closest Hit Shaders -->
+    <FxCompile Include="Shaders\ClosestHit_Diffuse.hlsl">
+      <ShaderType>Library</ShaderType>
+      <ShaderModel>6.3</ShaderModel>
+      <ObjectFileOutput>$(OutDir)%(Filename).cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(ProjectDir)Shaders</AdditionalIncludeDirectories>
+    </FxCompile>
+    <FxCompile Include="Shaders\ClosestHit_Glass.hlsl">
+      <ShaderType>Library</ShaderType>
+      <ShaderModel>6.3</ShaderModel>
+      <ObjectFileOutput>$(OutDir)%(Filename).cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(ProjectDir)Shaders</AdditionalIncludeDirectories>
+    </FxCompile>
+    <FxCompile Include="Shaders\ClosestHit_Metal.hlsl">
+      <ShaderType>Library</ShaderType>
+      <ShaderModel>6.3</ShaderModel>
+      <ObjectFileOutput>$(OutDir)%(Filename).cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(ProjectDir)Shaders</AdditionalIncludeDirectories>
+    </FxCompile>
+    <!-- Shadow Any-Hit Shader -->
+    <FxCompile Include="Shaders\AnyHit_Shadow.hlsl">
+      <ShaderType>Library</ShaderType>
+      <ShaderModel>6.3</ShaderModel>
+      <ObjectFileOutput>$(OutDir)%(Filename).cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(ProjectDir)Shaders</AdditionalIncludeDirectories>
+    </FxCompile>
+    <!-- Compute Shader fallback (cs_5_1) -->
     <FxCompile Include="Shaders\RayTraceCompute.hlsl">
       <ShaderType>Compute</ShaderType>
       <ShaderModel>5.1</ShaderModel>

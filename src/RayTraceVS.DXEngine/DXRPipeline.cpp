@@ -1,6 +1,7 @@
 #include "DXRPipeline.h"
 #include "DXContext.h"
 #include "RenderTarget.h"
+#include "AccelerationStructure.h"
 #include "Scene/Scene.h"
 #include "Scene/Camera.h"
 #include "Scene/Light.h"
@@ -8,10 +9,13 @@
 #include "Scene/Objects/Plane.h"
 #include "Scene/Objects/Cylinder.h"
 #include <d3dcompiler.h>
+#include <dxcapi.h>
 #include <stdexcept>
 #include <algorithm>
 #include <string>
 #include <fstream>
+
+#pragma comment(lib, "dxcompiler.lib")
 
 // Debug log helper
 static void LogToFile(const char* message)
@@ -56,9 +60,43 @@ namespace RayTraceVS::DXEngine
         log.close();
         
         LogToFile("DXRPipeline::Initialize called");
-        bool result = CreateComputePipeline();
-        LogToFile(result ? "Initialize succeeded" : "Initialize failed");
-        return result;
+        
+        // Always create compute pipeline (fallback)
+        bool computeResult = CreateComputePipeline();
+        LogToFile(computeResult ? "Compute pipeline succeeded" : "Compute pipeline failed");
+        
+        // Try to create DXR pipeline if supported
+        if (dxContext->IsDXRSupported())
+        {
+            LogToFile("DXR supported, creating DXR pipeline...");
+            dxrPipelineReady = CreateDXRPipeline();
+            LogToFile(dxrPipelineReady ? "DXR pipeline succeeded" : "DXR pipeline failed, using compute fallback");
+        }
+        else
+        {
+            LogToFile("DXR not supported, using compute shader fallback");
+            dxrPipelineReady = false;
+        }
+        
+        return computeResult;  // Return true if at least compute pipeline works
+    }
+    
+    // ============================================
+    // Main Render Function
+    // ============================================
+    
+    void DXRPipeline::Render(RenderTarget* renderTarget, Scene* scene)
+    {
+        if (dxrPipelineReady)
+        {
+            LogToFile("Render: using DXR path");
+            RenderWithDXR(renderTarget, scene);
+        }
+        else
+        {
+            LogToFile("Render: using Compute path (dxrPipelineReady=false)");
+            RenderWithComputeShader(renderTarget, scene);
+        }
     }
 
     bool DXRPipeline::CreateComputePipeline()
@@ -707,29 +745,557 @@ namespace RayTraceVS::DXEngine
         commandList->ResourceBarrier(1, &barrier);
     }
 
+    // ============================================
+    // DXR Pipeline Implementation
+    // ============================================
+
+    bool DXRPipeline::CreateDXRPipeline()
+    {
+        LogToFile("CreateDXRPipeline started");
+        
+        if (!CreateGlobalRootSignature())
+        {
+            LogToFile("Failed to create global root signature");
+            return false;
+        }
+        
+        if (!CreateDXRStateObject())
+        {
+            LogToFile("Failed to create DXR state object");
+            return false;
+        }
+        
+        if (!CreateDXRDescriptorHeap())
+        {
+            LogToFile("Failed to create DXR descriptor heap");
+            return false;
+        }
+        
+        if (!CreateDXRShaderTables())
+        {
+            LogToFile("Failed to create DXR shader tables");
+            return false;
+        }
+        
+        // Create acceleration structure object
+        accelerationStructure = std::make_unique<AccelerationStructure>(dxContext);
+        
+        LogToFile("CreateDXRPipeline completed successfully");
+        return true;
+    }
+
+    bool DXRPipeline::CreateGlobalRootSignature()
+    {
+        auto device = dxContext->GetDevice();
+        
+        // Global root signature layout:
+        // [0] UAV - Output texture (u0)
+        // [1] SRV - Acceleration structure (t0)
+        // [2] CBV - Scene constants (b0)
+        // [3] SRV - Spheres buffer (t1)
+        // [4] SRV - Planes buffer (t2)
+        // [5] SRV - Cylinders buffer (t3)
+        // [6] SRV - Lights buffer (t4)
+        
+        CD3DX12_DESCRIPTOR_RANGE1 ranges[7];
+        ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);  // u0 - Output
+        ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);  // t0 - TLAS
+        ranges[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0);  // b0 - Constants
+        ranges[3].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);  // t1 - Spheres
+        ranges[4].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2);  // t2 - Planes
+        ranges[5].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 3);  // t3 - Cylinders
+        ranges[6].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 4);  // t4 - Lights
+
+        CD3DX12_ROOT_PARAMETER1 rootParameters[7];
+        for (int i = 0; i < 7; i++)
+        {
+            rootParameters[i].InitAsDescriptorTable(1, &ranges[i]);
+        }
+
+        CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDesc;
+        rootSignatureDesc.Init_1_1(_countof(rootParameters), rootParameters, 0, nullptr,
+            D3D12_ROOT_SIGNATURE_FLAG_NONE);
+
+        ComPtr<ID3DBlob> signature;
+        ComPtr<ID3DBlob> error;
+        HRESULT hr = D3DX12SerializeVersionedRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1_1,
+            &signature, &error);
+        
+        if (FAILED(hr))
+        {
+            if (error)
+                LogToFile((char*)error->GetBufferPointer());
+            return false;
+        }
+
+        hr = device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(),
+            IID_PPV_ARGS(&globalRootSignature));
+        
+        return SUCCEEDED(hr);
+    }
+
+    bool DXRPipeline::CreateLocalRootSignature()
+    {
+        // Empty local root signature for now
+        auto device = dxContext->GetDevice();
+        
+        CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDesc;
+        rootSignatureDesc.Init_1_1(0, nullptr, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE);
+
+        ComPtr<ID3DBlob> signature;
+        ComPtr<ID3DBlob> error;
+        HRESULT hr = D3DX12SerializeVersionedRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1_1,
+            &signature, &error);
+        
+        if (FAILED(hr))
+            return false;
+
+        hr = device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(),
+            IID_PPV_ARGS(&localRootSignature));
+        
+        return SUCCEEDED(hr);
+    }
+
+    bool DXRPipeline::LoadPrecompiledShader(const std::wstring& filename, ID3DBlob** shader)
+    {
+        // Open the precompiled shader file (.cso)
+        std::ifstream file(filename, std::ios::binary | std::ios::ate);
+        if (!file.is_open())
+        {
+            // Convert wstring to string for logging
+            std::string filenameStr(filename.begin(), filename.end());
+            LogToFile(("Failed to open precompiled shader: " + filenameStr).c_str());
+            return false;
+        }
+        
+        // Get file size
+        std::streamsize size = file.tellg();
+        file.seekg(0, std::ios::beg);
+        
+        if (size <= 0)
+        {
+            LogToFile("Precompiled shader file is empty");
+            return false;
+        }
+        
+        // Create blob
+        HRESULT hr = D3DCreateBlob(static_cast<SIZE_T>(size), shader);
+        if (FAILED(hr))
+        {
+            LogToFile("Failed to create blob for shader", hr);
+            return false;
+        }
+        
+        // Read file contents into blob
+        if (!file.read(static_cast<char*>((*shader)->GetBufferPointer()), size))
+        {
+            LogToFile("Failed to read precompiled shader file");
+            (*shader)->Release();
+            *shader = nullptr;
+            return false;
+        }
+        
+        return true;
+    }
+    
+    bool DXRPipeline::CompileShaderFromFile(const std::wstring& filename, const char* entryPoint, const char* target, ID3DBlob** shader)
+    {
+        // This function is kept for backward compatibility but not used
+        // DXR shaders are now precompiled at build time
+        LogToFile("CompileShaderFromFile is deprecated - use precompiled shaders");
+        return false;
+    }
+
+    bool DXRPipeline::CreateDXRStateObject()
+    {
+        auto device = dxContext->GetDevice();
+        
+        // Get executable directory for precompiled shaders
+        wchar_t exePath[MAX_PATH];
+        GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+        std::wstring exeDir(exePath);
+        size_t lastSlash = exeDir.find_last_of(L"\\/");
+        if (lastSlash != std::wstring::npos)
+            exeDir = exeDir.substr(0, lastSlash + 1);
+        
+        // Try multiple paths for precompiled shaders (.cso files)
+        std::wstring shaderPaths[] = {
+            exeDir,                                              // Same directory as exe (WPF output)
+            L"",                                                 // Current directory
+            L"..\\..\\..\\bin\\Debug\\",                        // Solution bin/Debug
+            L"..\\..\\..\\bin\\Release\\"                       // Solution bin/Release
+        };
+        
+        bool shadersLoaded = false;
+        for (const auto& path : shaderPaths)
+        {
+            LogToFile(("Trying to load DXR shaders from: " + std::string(path.begin(), path.end())).c_str());
+            
+            // Load precompiled shaders (.cso files built by Visual Studio)
+            if (LoadPrecompiledShader(path + L"RayGen.cso", &rayGenShader) &&
+                LoadPrecompiledShader(path + L"Miss.cso", &missShader) &&
+                LoadPrecompiledShader(path + L"ClosestHit.cso", &closestHitShader) &&
+                LoadPrecompiledShader(path + L"Intersection.cso", &intersectionShader))
+            {
+                shadersLoaded = true;
+                LogToFile("Successfully loaded precompiled DXR shaders");
+                break;
+            }
+            
+            // Reset any partially loaded shaders
+            rayGenShader.Reset();
+            missShader.Reset();
+            closestHitShader.Reset();
+            intersectionShader.Reset();
+        }
+        
+        if (!shadersLoaded)
+        {
+            LogToFile("Failed to load precompiled DXR shaders from any path");
+            return false;
+        }
+        
+        // Build state object using CD3DX12_STATE_OBJECT_DESC
+        CD3DX12_STATE_OBJECT_DESC stateObjectDesc(D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE);
+        
+        // Add DXIL libraries
+        auto AddLibrary = [&](ID3DBlob* shader, const wchar_t* exportName) {
+            auto lib = stateObjectDesc.CreateSubobject<CD3DX12_DXIL_LIBRARY_SUBOBJECT>();
+            D3D12_SHADER_BYTECODE bc = { shader->GetBufferPointer(), shader->GetBufferSize() };
+            lib->SetDXILLibrary(&bc);
+            lib->DefineExport(exportName);
+        };
+        
+        AddLibrary(rayGenShader.Get(), L"RayGen");
+        AddLibrary(missShader.Get(), L"Miss");
+        AddLibrary(closestHitShader.Get(), L"ClosestHit");
+        AddLibrary(intersectionShader.Get(), L"SphereIntersection");
+        
+        // Hit group for procedural geometry
+        auto hitGroup = stateObjectDesc.CreateSubobject<CD3DX12_HIT_GROUP_SUBOBJECT>();
+        hitGroup->SetHitGroupExport(L"HitGroup");
+        hitGroup->SetClosestHitShaderImport(L"ClosestHit");
+        hitGroup->SetIntersectionShaderImport(L"SphereIntersection");
+        hitGroup->SetHitGroupType(D3D12_HIT_GROUP_TYPE_PROCEDURAL_PRIMITIVE);
+        
+        // Shader config
+        auto shaderConfig = stateObjectDesc.CreateSubobject<CD3DX12_RAYTRACING_SHADER_CONFIG_SUBOBJECT>();
+        // RayPayload: float3 color (12) + uint depth (4) + bool hit (4 in HLSL) = 20 bytes
+        UINT payloadSize = 12 + 4 + 4;  // 20 bytes
+        // ProceduralAttributes: float3 normal (12) + uint objectType (4) + uint objectIndex (4) = 20 bytes
+        UINT attribSize = 12 + 4 + 4;   // 20 bytes
+        shaderConfig->Config(payloadSize, attribSize);
+        
+        // Global root signature
+        auto globalRS = stateObjectDesc.CreateSubobject<CD3DX12_GLOBAL_ROOT_SIGNATURE_SUBOBJECT>();
+        globalRS->SetRootSignature(globalRootSignature.Get());
+        
+        // Pipeline config
+        auto pipelineConfig = stateObjectDesc.CreateSubobject<CD3DX12_RAYTRACING_PIPELINE_CONFIG_SUBOBJECT>();
+        pipelineConfig->Config(31);  // Max recursion depth (hardware maximum for quality)
+        
+        // Create state object
+        HRESULT hr = device->CreateStateObject(stateObjectDesc, IID_PPV_ARGS(&stateObject));
+        if (FAILED(hr))
+        {
+            LogToFile("Failed to create state object", hr);
+            return false;
+        }
+        
+        // Get state object properties
+        hr = stateObject->QueryInterface(IID_PPV_ARGS(&stateObjectProperties));
+        if (FAILED(hr))
+        {
+            LogToFile("Failed to get state object properties", hr);
+            return false;
+        }
+        
+        return true;
+    }
+
+    bool DXRPipeline::CreateDXRDescriptorHeap()
+    {
+        auto device = dxContext->GetDevice();
+        
+        // Need descriptors for: UAV, TLAS SRV, CBV, 4 SRVs (spheres, planes, cylinders, lights)
+        D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
+        heapDesc.NumDescriptors = 7;
+        heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+        heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+
+        HRESULT hr = device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&dxrSrvUavHeap));
+        if (FAILED(hr))
+            return false;
+
+        dxrDescriptorSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+        
+        return true;
+    }
+
+    bool DXRPipeline::CreateDXRShaderTables()
+    {
+        auto device = dxContext->GetDevice();
+        
+        // Get shader identifiers
+        void* rayGenId = stateObjectProperties->GetShaderIdentifier(L"RayGen");
+        void* missId = stateObjectProperties->GetShaderIdentifier(L"Miss");
+        void* hitGroupId = stateObjectProperties->GetShaderIdentifier(L"HitGroup");
+        
+        if (!rayGenId || !missId || !hitGroupId)
+        {
+            LogToFile("Failed to get shader identifiers");
+            return false;
+        }
+        
+        UINT shaderIdSize = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
+        shaderTableRecordSize = D3D12_RAYTRACING_SHADER_TABLE_BYTE_ALIGNMENT;  // Align to 32 bytes
+        
+        CD3DX12_HEAP_PROPERTIES uploadHeapProps(D3D12_HEAP_TYPE_UPLOAD);
+        
+        // Ray generation shader table
+        {
+            CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(shaderTableRecordSize);
+            device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &desc,
+                D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&rayGenShaderTable));
+            
+            void* mapped = nullptr;
+            rayGenShaderTable->Map(0, nullptr, &mapped);
+            memcpy(mapped, rayGenId, shaderIdSize);
+            rayGenShaderTable->Unmap(0, nullptr);
+        }
+        
+        // Miss shader table
+        {
+            CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(shaderTableRecordSize);
+            device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &desc,
+                D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&missShaderTable));
+            
+            void* mapped = nullptr;
+            missShaderTable->Map(0, nullptr, &mapped);
+            memcpy(mapped, missId, shaderIdSize);
+            missShaderTable->Unmap(0, nullptr);
+        }
+        
+        // Hit group shader table
+        {
+            CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(shaderTableRecordSize);
+            device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &desc,
+                D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&hitGroupShaderTable));
+            
+            void* mapped = nullptr;
+            hitGroupShaderTable->Map(0, nullptr, &mapped);
+            memcpy(mapped, hitGroupId, shaderIdSize);
+            hitGroupShaderTable->Unmap(0, nullptr);
+        }
+        
+        return true;
+    }
+
+    bool DXRPipeline::BuildAccelerationStructures(Scene* scene)
+    {
+        if (!accelerationStructure)
+            return false;
+        
+        // Build BLAS and TLAS
+        if (!accelerationStructure->BuildProceduralBLAS(scene))
+        {
+            LogToFile("Failed to build procedural BLAS");
+            return false;
+        }
+        
+        if (!accelerationStructure->BuildProceduralTLAS())
+        {
+            LogToFile("Failed to build procedural TLAS");
+            return false;
+        }
+        
+        needsAccelerationStructureRebuild = false;
+        lastScene = scene;
+        
+        return true;
+    }
+
+    void DXRPipeline::UpdateDXRDescriptors(RenderTarget* renderTarget)
+    {
+        auto device = dxContext->GetDevice();
+        CD3DX12_CPU_DESCRIPTOR_HANDLE cpuHandle(dxrSrvUavHeap->GetCPUDescriptorHandleForHeapStart());
+        
+        // [0] UAV for output texture
+        D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+        uavDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+        device->CreateUnorderedAccessView(renderTarget->GetResource(), nullptr, &uavDesc, cpuHandle);
+        cpuHandle.Offset(1, dxrDescriptorSize);
+        
+        // [1] SRV for TLAS
+        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+        srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
+        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        srvDesc.RaytracingAccelerationStructure.Location = accelerationStructure->GetTLAS()->GetGPUVirtualAddress();
+        device->CreateShaderResourceView(nullptr, &srvDesc, cpuHandle);
+        cpuHandle.Offset(1, dxrDescriptorSize);
+        
+        // [2] CBV for constants
+        D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
+        cbvDesc.BufferLocation = constantBuffer->GetGPUVirtualAddress();
+        cbvDesc.SizeInBytes = sizeof(SceneConstants);
+        device->CreateConstantBufferView(&cbvDesc, cpuHandle);
+        cpuHandle.Offset(1, dxrDescriptorSize);
+        
+        // [3-6] SRVs for object buffers
+        D3D12_SHADER_RESOURCE_VIEW_DESC bufferSrvDesc = {};
+        bufferSrvDesc.Format = DXGI_FORMAT_UNKNOWN;
+        bufferSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+        bufferSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        bufferSrvDesc.Buffer.FirstElement = 0;
+        
+        // Spheres
+        bufferSrvDesc.Buffer.NumElements = 32;
+        bufferSrvDesc.Buffer.StructureByteStride = sizeof(GPUSphere);
+        device->CreateShaderResourceView(sphereBuffer.Get(), &bufferSrvDesc, cpuHandle);
+        cpuHandle.Offset(1, dxrDescriptorSize);
+        
+        // Planes
+        bufferSrvDesc.Buffer.StructureByteStride = sizeof(GPUPlane);
+        device->CreateShaderResourceView(planeBuffer.Get(), &bufferSrvDesc, cpuHandle);
+        cpuHandle.Offset(1, dxrDescriptorSize);
+        
+        // Cylinders
+        bufferSrvDesc.Buffer.StructureByteStride = sizeof(GPUCylinder);
+        device->CreateShaderResourceView(cylinderBuffer.Get(), &bufferSrvDesc, cpuHandle);
+        cpuHandle.Offset(1, dxrDescriptorSize);
+        
+        // Lights
+        bufferSrvDesc.Buffer.NumElements = 8;
+        bufferSrvDesc.Buffer.StructureByteStride = sizeof(GPULight);
+        device->CreateShaderResourceView(lightBuffer.Get(), &bufferSrvDesc, cpuHandle);
+    }
+
+    void DXRPipeline::RenderWithDXR(RenderTarget* renderTarget, Scene* scene)
+    {
+        LogToFile("RenderWithDXR called");
+        
+        if (!renderTarget || !scene || !dxrPipelineReady)
+        {
+            LogToFile("RenderWithDXR early return - invalid state");
+            return;
+        }
+        
+        LogToFile("RenderWithDXR: getting device and command list");
+        auto device = dxContext->GetDevice();
+        auto commandList = dxContext->GetCommandList();
+        
+        UINT width = renderTarget->GetWidth();
+        UINT height = renderTarget->GetHeight();
+        
+        // Create buffers if needed
+        if (!sphereBuffer)
+        {
+            LogToFile("RenderWithDXR: creating buffers");
+            if (!CreateBuffers(width, height))
+            {
+                LogToFile("RenderWithDXR: CreateBuffers failed");
+                return;
+            }
+        }
+        
+        // Update scene data
+        LogToFile("RenderWithDXR: updating scene data");
+        UpdateSceneData(scene, width, height);
+        
+        // Rebuild acceleration structures if needed
+        if (needsAccelerationStructureRebuild || scene != lastScene)
+        {
+            LogToFile("RenderWithDXR: building acceleration structures");
+            if (!BuildAccelerationStructures(scene))
+            {
+                LogToFile("Failed to build acceleration structures, falling back to compute");
+                RenderWithComputeShader(renderTarget, scene);
+                return;
+            }
+            LogToFile("RenderWithDXR: acceleration structures built");
+        }
+        
+        // Update descriptors
+        LogToFile("RenderWithDXR: updating descriptors");
+        UpdateDXRDescriptors(renderTarget);
+        
+        // Set descriptor heap
+        LogToFile("RenderWithDXR: setting descriptor heaps");
+        ID3D12DescriptorHeap* heaps[] = { dxrSrvUavHeap.Get() };
+        commandList->SetDescriptorHeaps(1, heaps);
+        
+        // Set global root signature
+        LogToFile("RenderWithDXR: setting root signature");
+        commandList->SetComputeRootSignature(globalRootSignature.Get());
+        
+        // Set root descriptor tables
+        LogToFile("RenderWithDXR: setting descriptor tables");
+        CD3DX12_GPU_DESCRIPTOR_HANDLE gpuHandle(dxrSrvUavHeap->GetGPUDescriptorHandleForHeapStart());
+        for (int i = 0; i < 7; i++)
+        {
+            commandList->SetComputeRootDescriptorTable(i, gpuHandle);
+            gpuHandle.Offset(1, dxrDescriptorSize);
+        }
+        
+        // Dispatch rays
+        LogToFile("RenderWithDXR: preparing dispatch desc");
+        D3D12_DISPATCH_RAYS_DESC dispatchDesc = {};
+        
+        dispatchDesc.RayGenerationShaderRecord.StartAddress = rayGenShaderTable->GetGPUVirtualAddress();
+        dispatchDesc.RayGenerationShaderRecord.SizeInBytes = shaderTableRecordSize;
+        
+        dispatchDesc.MissShaderTable.StartAddress = missShaderTable->GetGPUVirtualAddress();
+        dispatchDesc.MissShaderTable.SizeInBytes = shaderTableRecordSize;
+        dispatchDesc.MissShaderTable.StrideInBytes = shaderTableRecordSize;
+        
+        dispatchDesc.HitGroupTable.StartAddress = hitGroupShaderTable->GetGPUVirtualAddress();
+        dispatchDesc.HitGroupTable.SizeInBytes = shaderTableRecordSize;
+        dispatchDesc.HitGroupTable.StrideInBytes = shaderTableRecordSize;
+        
+        dispatchDesc.Width = width;
+        dispatchDesc.Height = height;
+        dispatchDesc.Depth = 1;
+        
+        LogToFile("RenderWithDXR: dispatching rays");
+        commandList->SetPipelineState1(stateObject.Get());
+        commandList->DispatchRays(&dispatchDesc);
+        LogToFile("RenderWithDXR: dispatch complete");
+    }
+
+    // ============================================
+    // Legacy Functions (kept for compatibility)
+    // ============================================
+
     void DXRPipeline::BuildPipeline()
     {
-        // Not used currently - compute shader pipeline created in Initialize
+        // Calls CreateDXRPipeline internally
+        if (!dxrPipelineReady && dxContext->IsDXRSupported())
+        {
+            dxrPipelineReady = CreateDXRPipeline();
+        }
     }
 
     void DXRPipeline::CreateRootSignatures()
     {
-        // Not used currently
+        CreateGlobalRootSignature();
+        CreateLocalRootSignature();
     }
 
     void DXRPipeline::CreatePipelineStateObject()
     {
-        // Not used currently
+        CreateDXRStateObject();
     }
 
     void DXRPipeline::CreateShaderTables()
     {
-        // Not used currently
+        CreateDXRShaderTables();
     }
 
     void DXRPipeline::DispatchRays(UINT width, UINT height)
     {
-        // Future DXR implementation
+        // This is now handled internally by RenderWithDXR
     }
 
     bool DXRPipeline::LoadShader(const wchar_t* filename, ID3DBlob** shader)

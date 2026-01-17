@@ -25,6 +25,9 @@ namespace RayTraceVS::DXEngine
         ID3D12CommandQueue* GetCommandQueue() const;
 
         bool CheckDXRSupport();
+        bool IsDXRSupported() const { return isDXRSupported; }
+        D3D12_RAYTRACING_TIER GetRaytracingTier() const { return raytracingTier; }
+        
         void CreateCommandQueue();
         void CreateCommandAllocatorAndList();
         void CreateSwapChain(HWND hwnd, int width, int height);
@@ -58,6 +61,7 @@ namespace RayTraceVS::DXEngine
         ComPtr<ID3D12Resource> renderTargets[frameCount];
 
         bool isDXRSupported = false;
+        D3D12_RAYTRACING_TIER raytracingTier = D3D12_RAYTRACING_TIER_NOT_SUPPORTED;
     };
 
     inline ID3D12Device5* DXContext::GetDevice() const { return device.Get(); }

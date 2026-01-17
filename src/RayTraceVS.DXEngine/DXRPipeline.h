@@ -6,6 +6,7 @@
 #include <memory>
 #include <vector>
 #include <DirectXMath.h>
+#include <string>
 
 using Microsoft::WRL::ComPtr;
 using namespace DirectX;
@@ -45,6 +46,10 @@ namespace RayTraceVS::DXEngine
         float Padding2;
     };
 
+    // ============================================
+    // AoS (Array of Structures) - Original format for Compute Shader fallback
+    // ============================================
+    
     // GPU sphere data (with PBR material)
     struct alignas(16) GPUSphere
     {
@@ -85,6 +90,44 @@ namespace RayTraceVS::DXEngine
         float IOR;
     };
 
+    // ============================================
+    // SoA (Structure of Arrays) - Optimized for DXR intersection
+    // Separates geometry data from material data for better cache efficiency
+    // ============================================
+
+    // Geometry-only data for intersection tests (minimal size = faster intersection)
+    struct alignas(16) SphereGeometry
+    {
+        XMFLOAT3 Center;
+        float Radius;
+    };
+
+    struct alignas(16) PlaneGeometry
+    {
+        XMFLOAT3 Position;
+        float Padding;
+        XMFLOAT3 Normal;
+        float Padding2;
+    };
+
+    struct alignas(16) CylinderGeometry
+    {
+        XMFLOAT3 Position;
+        float Radius;
+        XMFLOAT3 Axis;
+        float Height;
+    };
+
+    // Material data (only read after intersection is confirmed)
+    struct alignas(16) ObjectMaterial
+    {
+        XMFLOAT4 Color;
+        float Metallic;
+        float Roughness;
+        float Transmission;
+        float IOR;
+    };
+
     // Light type enum (must match shader)
     enum GPULightType : UINT
     {
@@ -117,26 +160,36 @@ namespace RayTraceVS::DXEngine
 
         void DispatchRays(UINT width, UINT height);
         
-        // GPU Compute Shader ray tracing
+        // DXR ray tracing with hardware BVH
+        void RenderWithDXR(RenderTarget* renderTarget, Scene* scene);
+        
+        // GPU Compute Shader ray tracing (fallback)
         void RenderWithComputeShader(RenderTarget* renderTarget, Scene* scene);
+        
+        // Main render function (auto-selects DXR or Compute)
+        void Render(RenderTarget* renderTarget, Scene* scene);
+        
+        // Check if DXR pipeline is ready
+        bool IsDXRReady() const { return dxrPipelineReady; }
 
     private:
         DXContext* dxContext;
+        bool dxrPipelineReady = false;
 
-        // Compute shader pipeline
+        // Compute shader pipeline (fallback)
         ComPtr<ID3D12RootSignature> computeRootSignature;
         ComPtr<ID3D12PipelineState> computePipelineState;
         ComPtr<ID3DBlob> computeShader;
         
         // Descriptor heap for compute shader
         ComPtr<ID3D12DescriptorHeap> computeSrvUavHeap;
-        UINT srvUavDescriptorSize;
+        UINT srvUavDescriptorSize = 0;
 
         // Constant buffer
         ComPtr<ID3D12Resource> constantBuffer;
-        SceneConstants* mappedConstantData;
+        SceneConstants* mappedConstantData = nullptr;
 
-        // Object buffers
+        // AoS Object buffers (for Compute Shader fallback)
         ComPtr<ID3D12Resource> sphereBuffer;
         ComPtr<ID3D12Resource> planeBuffer;
         ComPtr<ID3D12Resource> cylinderBuffer;
@@ -148,22 +201,84 @@ namespace RayTraceVS::DXEngine
         ComPtr<ID3D12Resource> cylinderUploadBuffer;
         ComPtr<ID3D12Resource> lightUploadBuffer;
 
-        // DXR (future)
+        // ============================================
+        // SoA Buffers (for DXR - optimized memory access)
+        // ============================================
+        
+        // Geometry buffers (minimal data for intersection tests)
+        ComPtr<ID3D12Resource> sphereGeometryBuffer;
+        ComPtr<ID3D12Resource> planeGeometryBuffer;
+        ComPtr<ID3D12Resource> cylinderGeometryBuffer;
+        
+        // Material buffer (shared by all object types)
+        ComPtr<ID3D12Resource> materialBuffer;
+        
+        // Upload buffers for SoA
+        ComPtr<ID3D12Resource> sphereGeometryUploadBuffer;
+        ComPtr<ID3D12Resource> planeGeometryUploadBuffer;
+        ComPtr<ID3D12Resource> cylinderGeometryUploadBuffer;
+        ComPtr<ID3D12Resource> materialUploadBuffer;
+        
+        bool useSoABuffers = false;
+
+        // ============================================
+        // DXR Pipeline Resources
+        // ============================================
+        
+        // Root signatures
         ComPtr<ID3D12RootSignature> globalRootSignature;
         ComPtr<ID3D12RootSignature> localRootSignature;
+        
+        // State object (RTPSO)
         ComPtr<ID3D12StateObject> stateObject;
-        ComPtr<ID3D12Resource> shaderTable;
+        ComPtr<ID3D12StateObjectProperties> stateObjectProperties;
+        
+        // Shader tables
+        ComPtr<ID3D12Resource> rayGenShaderTable;
+        ComPtr<ID3D12Resource> missShaderTable;
+        ComPtr<ID3D12Resource> hitGroupShaderTable;
+        
+        UINT shaderTableRecordSize = 0;
+        
+        // Acceleration structure
+        std::unique_ptr<AccelerationStructure> accelerationStructure;
+        
+        // DXR descriptor heap
+        ComPtr<ID3D12DescriptorHeap> dxrSrvUavHeap;
+        UINT dxrDescriptorSize = 0;
 
         // Shader bytecode
         ComPtr<ID3DBlob> rayGenShader;
         ComPtr<ID3DBlob> closestHitShader;
         ComPtr<ID3DBlob> missShader;
         ComPtr<ID3DBlob> intersectionShader;
+        
+        // Cached scene pointer for acceleration structure rebuild
+        Scene* lastScene = nullptr;
+        bool needsAccelerationStructureRebuild = true;
 
+        // ============================================
+        // Helper Functions
+        // ============================================
+        
         bool LoadShader(const wchar_t* filename, ID3DBlob** shader);
+        bool LoadPrecompiledShader(const std::wstring& filename, ID3DBlob** shader);
+        bool CompileShaderFromFile(const std::wstring& filename, const char* entryPoint, const char* target, ID3DBlob** shader);  // Deprecated
+        
+        // Compute pipeline
         bool CreateComputePipeline();
         bool CreateBuffers(UINT width, UINT height);
         void UpdateSceneData(Scene* scene, UINT width, UINT height);
         void RenderErrorPattern(RenderTarget* renderTarget);
+        
+        // DXR pipeline
+        bool CreateDXRPipeline();
+        bool CreateGlobalRootSignature();
+        bool CreateLocalRootSignature();
+        bool CreateDXRStateObject();
+        bool CreateDXRShaderTables();
+        bool CreateDXRDescriptorHeap();
+        bool BuildAccelerationStructures(Scene* scene);
+        void UpdateDXRDescriptors(RenderTarget* renderTarget);
     };
 }
