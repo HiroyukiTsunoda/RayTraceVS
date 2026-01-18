@@ -44,14 +44,20 @@ namespace RayTraceVS::DXEngine
         // Full NRD initialization - requires NRD library to be built
         // See README for instructions on building NRD with CMake
         
-        // Create NRD instance with REBLUR_DIFFUSE_SPECULAR denoiser
-        nrd::DenoiserDesc denoiserDesc = {};
-        denoiserDesc.identifier = m_reblurIdentifier;
-        denoiserDesc.denoiser = nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR;
+        // Create NRD instance with REBLUR_DIFFUSE_SPECULAR and SIGMA_SHADOW denoisers
+        nrd::DenoiserDesc denoiserDescs[2] = {};
+        
+        // REBLUR for diffuse/specular denoising
+        denoiserDescs[0].identifier = m_reblurIdentifier;
+        denoiserDescs[0].denoiser = nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR;
+        
+        // SIGMA for shadow denoising
+        denoiserDescs[1].identifier = m_sigmaIdentifier;
+        denoiserDescs[1].denoiser = nrd::Denoiser::SIGMA_SHADOW;
 
         nrd::InstanceCreationDesc instanceDesc = {};
-        instanceDesc.denoisers = &denoiserDesc;
-        instanceDesc.denoisersNum = 1;
+        instanceDesc.denoisers = denoiserDescs;
+        instanceDesc.denoisersNum = m_sigmaEnabled ? 2 : 1;
 
         nrd::Result result = nrd::CreateInstance(instanceDesc, m_nrdInstance);
         if (result != nrd::Result::SUCCESS)
@@ -60,7 +66,9 @@ namespace RayTraceVS::DXEngine
             LogToFile(buf);
             return false;
         }
-        LogToFile("NRD: Instance created successfully");
+        sprintf_s(buf, "NRD: Instance created successfully with %d denoisers (REBLUR + %s)", 
+            instanceDesc.denoisersNum, m_sigmaEnabled ? "SIGMA" : "none");
+        LogToFile(buf);
 #else
         LogToFile("NRDDenoiser::Initialize - NRD_ENABLED=0, stub mode");
 #endif
@@ -182,6 +190,12 @@ namespace RayTraceVS::DXEngine
         if (!CreateTexture(m_gBuffer.Albedo, DXGI_FORMAT_R8G8B8A8_UNORM, L"GBuffer_Albedo"))
             return false;
 
+        // Create SIGMA shadow G-Buffer textures
+        if (!CreateTexture(m_gBuffer.ShadowData, DXGI_FORMAT_R16G16_FLOAT, L"GBuffer_ShadowData"))
+            return false;
+        if (!CreateTexture(m_gBuffer.ShadowTranslucency, DXGI_FORMAT_R16G16B16A16_FLOAT, L"GBuffer_ShadowTranslucency"))
+            return false;
+
         // Create UAV descriptors for G-Buffer
         CD3DX12_CPU_DESCRIPTOR_HANDLE cpuHandle(m_descriptorHeap->GetCPUDescriptorHandleForHeapStart());
 
@@ -211,6 +225,15 @@ namespace RayTraceVS::DXEngine
         // UAV 4: MotionVectors
         uavDesc.Format = DXGI_FORMAT_R16G16_FLOAT;
         device->CreateUnorderedAccessView(m_gBuffer.MotionVectors.Get(), nullptr, &uavDesc, cpuHandle);
+        cpuHandle.Offset(m_descriptorSize);
+
+        // UAV 5: ShadowData (for SIGMA)
+        device->CreateUnorderedAccessView(m_gBuffer.ShadowData.Get(), nullptr, &uavDesc, cpuHandle);
+        cpuHandle.Offset(m_descriptorSize);
+
+        // UAV 6: ShadowTranslucency (for SIGMA)
+        uavDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+        device->CreateUnorderedAccessView(m_gBuffer.ShadowTranslucency.Get(), nullptr, &uavDesc, cpuHandle);
 
         return true;
     }
@@ -255,20 +278,31 @@ namespace RayTraceVS::DXEngine
         if (!CreateTexture(m_output.SpecularRadiance, DXGI_FORMAT_R16G16B16A16_FLOAT, L"Output_SpecularRadiance"))
             return false;
 
-        // Create UAV descriptors for output (starting at index 5)
+        // Create denoised shadow output (for SIGMA)
+        if (!CreateTexture(m_output.DenoisedShadow, DXGI_FORMAT_R16G16_FLOAT, L"Output_DenoisedShadow"))
+            return false;
+
+        // Create UAV descriptors for output (starting at index 7, after G-Buffer UAVs 0-6)
         auto device2 = m_dxContext->GetDevice();
         CD3DX12_CPU_DESCRIPTOR_HANDLE cpuHandle(m_descriptorHeap->GetCPUDescriptorHandleForHeapStart());
-        cpuHandle.Offset(5, m_descriptorSize);
+        cpuHandle.Offset(7, m_descriptorSize);
 
         D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
         uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
         uavDesc.Texture2D.MipSlice = 0;
         uavDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
 
+        // UAV 7: DiffuseRadiance output
         device2->CreateUnorderedAccessView(m_output.DiffuseRadiance.Get(), nullptr, &uavDesc, cpuHandle);
         cpuHandle.Offset(m_descriptorSize);
 
+        // UAV 8: SpecularRadiance output
         device2->CreateUnorderedAccessView(m_output.SpecularRadiance.Get(), nullptr, &uavDesc, cpuHandle);
+        cpuHandle.Offset(m_descriptorSize);
+
+        // UAV 9: DenoisedShadow output (for SIGMA)
+        uavDesc.Format = DXGI_FORMAT_R16G16_FLOAT;
+        device2->CreateUnorderedAccessView(m_output.DenoisedShadow.Get(), nullptr, &uavDesc, cpuHandle);
 
         return true;
     }
@@ -281,6 +315,11 @@ namespace RayTraceVS::DXEngine
 
         auto device = m_dxContext->GetDevice();
         const nrd::InstanceDesc& instanceDesc = nrd::GetInstanceDesc(*m_nrdInstance);
+
+        char buf[256];
+        sprintf_s(buf, "NRD: Creating resources - permanentPoolSize=%u, transientPoolSize=%u", 
+            instanceDesc.permanentPoolSize, instanceDesc.transientPoolSize);
+        LogToFile(buf);
 
         // Create NRD internal textures
         m_nrdTextures.resize(instanceDesc.permanentPoolSize + instanceDesc.transientPoolSize);
@@ -369,7 +408,8 @@ namespace RayTraceVS::DXEngine
 
         // Create NRD descriptor heap for dispatch resources
         // Each dispatch needs SRVs + UAVs, and we may have multiple dispatches per frame
-        uint32_t maxDispatches = 32;  // Reasonable upper bound
+        // SIGMA + REBLUR can have up to 50+ dispatches, so use 64 to be safe
+        uint32_t maxDispatches = 64;
         uint32_t descriptorsPerDispatch = instanceDesc.descriptorPoolDesc.perSetTexturesMaxNum + 
                                           instanceDesc.descriptorPoolDesc.perSetStorageTexturesMaxNum;
         
@@ -786,12 +826,33 @@ namespace RayTraceVS::DXEngine
         
         nrd::SetDenoiserSettings(*m_nrdInstance, m_reblurIdentifier, &reblurSettings);
 
-        // Get compute dispatches
+        // Set SIGMA-specific settings (shadow denoising)
+        if (m_sigmaEnabled)
+        {
+            nrd::SigmaSettings sigmaSettings = {};
+            // Light direction for directional light sources (normalized)
+            // Default to sun direction (straight down)
+            sigmaSettings.lightDirection[0] = 0.0f;
+            sigmaSettings.lightDirection[1] = -1.0f;
+            sigmaSettings.lightDirection[2] = 0.0f;
+            // Plane distance sensitivity (controls edge preservation)
+            sigmaSettings.planeDistanceSensitivity = 0.02f;
+            // Maximum stabilization frames
+            sigmaSettings.maxStabilizedFrameNum = 5;
+            
+            nrd::SetDenoiserSettings(*m_nrdInstance, m_sigmaIdentifier, &sigmaSettings);
+            LogToFile("NRD: SIGMA shadow denoiser settings applied");
+        }
+
+        // Get compute dispatches for active denoisers
         const nrd::DispatchDesc* dispatchDescs = nullptr;
         uint32_t dispatchDescsNum = 0;
         
-        nrd::Identifier identifiers[] = { m_reblurIdentifier };
-        nrd::Result result = nrd::GetComputeDispatches(*m_nrdInstance, identifiers, 1, dispatchDescs, dispatchDescsNum);
+        // Include SIGMA identifier if enabled
+        nrd::Identifier identifiers[2] = { m_reblurIdentifier, m_sigmaIdentifier };
+        uint32_t numIdentifiers = m_sigmaEnabled ? 2 : 1;
+        
+        nrd::Result result = nrd::GetComputeDispatches(*m_nrdInstance, identifiers, numIdentifiers, dispatchDescs, dispatchDescsNum);
         
         sprintf_s(buf, "NRD: GetComputeDispatches result=%d, dispatchDescsNum=%u", (int)result, dispatchDescsNum);
         LogToFile(buf);
@@ -969,34 +1030,89 @@ namespace RayTraceVS::DXEngine
 #if NRD_ENABLED
     ID3D12Resource* NRDDenoiser::GetResourceForNRD(const nrd::ResourceDesc& resource, const nrd::InstanceDesc& instanceDesc)
     {
+        ID3D12Resource* result = nullptr;
+        const char* resourceName = "unknown";
+        
         switch (resource.type)
         {
+        // REBLUR inputs
         case nrd::ResourceType::IN_MV:
-            return m_gBuffer.MotionVectors.Get();
+            result = m_gBuffer.MotionVectors.Get();
+            resourceName = "IN_MV";
+            break;
         case nrd::ResourceType::IN_NORMAL_ROUGHNESS:
-            return m_gBuffer.NormalRoughness.Get();
+            result = m_gBuffer.NormalRoughness.Get();
+            resourceName = "IN_NORMAL_ROUGHNESS";
+            break;
         case nrd::ResourceType::IN_VIEWZ:
-            return m_gBuffer.ViewZ.Get();
+            result = m_gBuffer.ViewZ.Get();
+            resourceName = "IN_VIEWZ";
+            break;
         case nrd::ResourceType::IN_DIFF_RADIANCE_HITDIST:
-            return m_gBuffer.DiffuseRadianceHitDist.Get();
+            result = m_gBuffer.DiffuseRadianceHitDist.Get();
+            resourceName = "IN_DIFF_RADIANCE_HITDIST";
+            break;
         case nrd::ResourceType::IN_SPEC_RADIANCE_HITDIST:
-            return m_gBuffer.SpecularRadianceHitDist.Get();
+            result = m_gBuffer.SpecularRadianceHitDist.Get();
+            resourceName = "IN_SPEC_RADIANCE_HITDIST";
+            break;
+        
+        // REBLUR outputs
         case nrd::ResourceType::OUT_DIFF_RADIANCE_HITDIST:
-            return m_output.DiffuseRadiance.Get();
+            result = m_output.DiffuseRadiance.Get();
+            resourceName = "OUT_DIFF_RADIANCE_HITDIST";
+            break;
         case nrd::ResourceType::OUT_SPEC_RADIANCE_HITDIST:
-            return m_output.SpecularRadiance.Get();
+            result = m_output.SpecularRadiance.Get();
+            resourceName = "OUT_SPEC_RADIANCE_HITDIST";
+            break;
+        
+        // SIGMA shadow inputs (penumbra and translucency)
+        case nrd::ResourceType::IN_PENUMBRA:
+            result = m_gBuffer.ShadowData.Get();
+            resourceName = "IN_PENUMBRA (ShadowData)";
+            break;
+        case nrd::ResourceType::IN_TRANSLUCENCY:
+            result = m_gBuffer.ShadowTranslucency.Get();
+            resourceName = "IN_TRANSLUCENCY";
+            break;
+        
+        // SIGMA shadow outputs
+        case nrd::ResourceType::OUT_SHADOW_TRANSLUCENCY:
+            result = m_gBuffer.ShadowTranslucency.Get();
+            resourceName = "OUT_SHADOW_TRANSLUCENCY";
+            break;
+        
+        // Internal pools
         case nrd::ResourceType::TRANSIENT_POOL:
             if (resource.indexInPool < instanceDesc.transientPoolSize)
-                return m_nrdTextures[instanceDesc.permanentPoolSize + resource.indexInPool].Get();
+                result = m_nrdTextures[instanceDesc.permanentPoolSize + resource.indexInPool].Get();
+            resourceName = "TRANSIENT_POOL";
             break;
         case nrd::ResourceType::PERMANENT_POOL:
             if (resource.indexInPool < instanceDesc.permanentPoolSize)
-                return m_nrdTextures[resource.indexInPool].Get();
+                result = m_nrdTextures[resource.indexInPool].Get();
+            resourceName = "PERMANENT_POOL";
             break;
         default:
+            {
+                char buf[128];
+                sprintf_s(buf, "NRD: Unknown resource type %d requested", (int)resource.type);
+                LogToFile(buf);
+            }
             break;
         }
-        return nullptr;
+        
+        // Log if resource is null (potential crash cause)
+        if (!result)
+        {
+            char buf[256];
+            sprintf_s(buf, "NRD WARNING: NULL resource for %s (type=%d, indexInPool=%d)", 
+                resourceName, (int)resource.type, resource.indexInPool);
+            LogToFile(buf);
+        }
+        
+        return result;
     }
 #endif
 
@@ -1031,6 +1147,27 @@ namespace RayTraceVS::DXEngine
     {
         CD3DX12_GPU_DESCRIPTOR_HANDLE handle(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart());
         handle.Offset(4, m_descriptorSize);
+        return handle;
+    }
+
+    D3D12_GPU_DESCRIPTOR_HANDLE NRDDenoiser::GetShadowDataUAV() const
+    {
+        CD3DX12_GPU_DESCRIPTOR_HANDLE handle(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart());
+        handle.Offset(5, m_descriptorSize);
+        return handle;
+    }
+
+    D3D12_GPU_DESCRIPTOR_HANDLE NRDDenoiser::GetShadowTranslucencyUAV() const
+    {
+        CD3DX12_GPU_DESCRIPTOR_HANDLE handle(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart());
+        handle.Offset(6, m_descriptorSize);
+        return handle;
+    }
+
+    D3D12_GPU_DESCRIPTOR_HANDLE NRDDenoiser::GetDenoisedShadowUAV() const
+    {
+        CD3DX12_GPU_DESCRIPTOR_HANDLE handle(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart());
+        handle.Offset(9, m_descriptorSize);
         return handle;
     }
 
@@ -1069,9 +1206,12 @@ namespace RayTraceVS::DXEngine
         m_gBuffer.NormalRoughness.Reset();
         m_gBuffer.ViewZ.Reset();
         m_gBuffer.MotionVectors.Reset();
+        m_gBuffer.ShadowData.Reset();
+        m_gBuffer.ShadowTranslucency.Reset();
 
         m_output.DiffuseRadiance.Reset();
         m_output.SpecularRadiance.Reset();
+        m_output.DenoisedShadow.Reset();
 
         m_initialized = false;
     }

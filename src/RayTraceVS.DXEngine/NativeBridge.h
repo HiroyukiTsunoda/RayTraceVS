@@ -59,7 +59,9 @@ namespace RayTraceVS::Interop::Bridge
         Vector3Native position;
         ColorNative color;
         float intensity;
-        int type; // 0: Point, 1: Directional
+        int type; // 0: Ambient, 1: Point, 2: Directional
+        float radius;       // Area light radius (0 = point light)
+        float softShadowSamples; // Number of shadow samples (1-16)
     };
 
     struct SphereDataNative

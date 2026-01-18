@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "driverVersion": "10DE-2684-51001462-00A1",
+  "adapterLUID": 95763,
+  "shaders": {
+    "RayGen": {
+      "sourceHash": "9a117adae53ec87be360fa97e61d536f2836ab5abeadbc976352c3419c868cfe",
+      "compiledAt": "2026-01-19T02:35:05",
+      "dependencies": {
+        "Common.hlsli": "dadc01819b8b84953aafdb4fcf86d3ad14f7705f537cdca3a105f658029564b2",
+        "NRDEncoding.hlsli": "71603babf2adbf630923d0841f2d5d307ece3fa1f58ccbb4baafe62540b4042a"
+      }
+    },
+    "RayTraceCompute": {
+      "sourceHash": "00cf5a808b28609830db63746d95014fda5940d77dcacd4b16f7238304bad6fb",
+      "compiledAt": "2026-01-19T02:35:04",
+      "dependencies": {}
+    },
+    "ClosestHit": {
+      "sourceHash": "43f769803d78b3ea150cb2c13a9500398932c734a6bf29c1dca7bbcfbcc04e3a",
+      "compiledAt": "2026-01-19T02:35:05",
+      "dependencies": {
+        "Common.hlsli": "dadc01819b8b84953aafdb4fcf86d3ad14f7705f537cdca3a105f658029564b2",
+        "NRDEncoding.hlsli": "71603babf2adbf630923d0841f2d5d307ece3fa1f58ccbb4baafe62540b4042a"
+      }
+    },
+    "Miss": {
+      "sourceHash": "c12af9325fc8a68ba72eb07d9c169aa96a503bb053694f022f2c2d2720408445",
+      "compiledAt": "2026-01-19T02:35:05",
+      "dependencies": {
+        "Common.hlsli": "dadc01819b8b84953aafdb4fcf86d3ad14f7705f537cdca3a105f658029564b2"
+      }
+    },
+    "Intersection": {
+      "sourceHash": "de974b1acf107965f7928b4d30c578ed2b5c57cacf597a5a73f612bf971a2d23",
+      "compiledAt": "2026-01-19T02:35:05",
+      "dependencies": {
+        "Common.hlsli": "dadc01819b8b84953aafdb4fcf86d3ad14f7705f537cdca3a105f658029564b2"
+      }
+    },
+    "AnyHit_Shadow": {
+      "sourceHash": "811477bc2a1611b36b79a611ee2f63c891a54a15b6a41d7bfb5a32c83a2a2540",
+      "compiledAt": "2026-01-19T02:35:05",
+      "dependencies": {
+        "Common.hlsli": "dadc01819b8b84953aafdb4fcf86d3ad14f7705f537cdca3a105f658029564b2"
+      }
+    },
+    "PhotonEmit": {
+      "sourceHash": "b02cf1aca19b580793082eda4e6cb64d53cfff1ae6fda958a13cc0acf0128d65",
+      "compiledAt": "2026-01-19T02:35:05",
+      "dependencies": {
+        "Common.hlsli": "dadc01819b8b84953aafdb4fcf86d3ad14f7705f537cdca3a105f658029564b2"
+      }
+    },
+    "PhotonTrace": {
+      "sourceHash": "7508866e1a99aebf93b326abbef7bb81bf7583e9227a8d914d09b1921d0ba992",
+      "compiledAt": "2026-01-19T02:35:05",
+      "dependencies": {
+        "Common.hlsli": "dadc01819b8b84953aafdb4fcf86d3ad14f7705f537cdca3a105f658029564b2"
+      }
+    },
+    "Composite": {
+      "sourceHash": "717f6f9eb12af4debdbb749beb64da7deb5d0723b1c5f34bffd67d0e659888a5",
+      "compiledAt": "2026-01-19T02:35:05",
+      "dependencies": {}
+    }
+  }
+}

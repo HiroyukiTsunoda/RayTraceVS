@@ -90,12 +90,16 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
         roughness = p.roughness;
         transmission = 0.0;
         
-        // Checkerboard pattern for planes
-        float scale = 1.0;
-        int checkX = (int)floor(hitPosition.x * scale);
-        int checkZ = (int)floor(hitPosition.z * scale);
-        bool isWhite = ((checkX + checkZ) & 1) == 0;
-        color.rgb = isWhite ? float3(0.9, 0.9, 0.9) : float3(0.1, 0.1, 0.1);
+        // Checkerboard pattern for floor (world space coordinates)
+        // Use hitPosition.xz directly for horizontal floor
+        float2 uv = hitPosition.xz;
+        
+        // Use bitwise AND for correct handling of negative coordinates
+        // fmod doesn't work correctly with negative numbers
+        int ix = (int)floor(uv.x);
+        int iy = (int)floor(uv.y);
+        int checker = (ix + iy) & 1;
+        color.rgb = checker ? float3(0.9, 0.9, 0.9) : float3(0.1, 0.1, 0.1);
     }
     else // OBJECT_TYPE_BOX
     {
@@ -214,15 +218,22 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
         if (payload.depth == 0)
         {
             float hitDistance = RayTCurrent();
-            payload.diffuseRadiance = tintedRefract;
-            payload.specularRadiance = reflectColor * fresnel;
+            // For glass, store the FULL appearance (refraction + reflection blend)
+            payload.diffuseRadiance = payload.color;  // Same as lerp(tintedRefract, reflectColor, fresnel)
+            payload.specularRadiance = float3(0, 0, 0);  // Already included above
             payload.hitDistance = hitDistance;
             payload.worldNormal = normal;
             payload.roughness = roughness;
             payload.worldPosition = hitPosition;
-            payload.viewZ = hitDistance;  // Simplified - should compute proper view Z
+            payload.viewZ = hitDistance;
             payload.metallic = 0.0;
             payload.albedo = color.rgb;
+            
+            // Glass is transparent, so it doesn't receive shadows in the traditional sense
+            // Set visibility to 1.0 (no shadow) for SIGMA
+            payload.shadowVisibility = 1.0;
+            payload.shadowPenumbra = 0.0;
+            payload.shadowDistance = NRD_FP16_MAX;
         }
         return;
     }
@@ -287,9 +298,10 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
         if (payload.depth == 0)
         {
             float hitDistance = RayTCurrent();
-            float3 safeAlbedo = max(color.rgb, float3(0.001, 0.001, 0.001));
-            payload.diffuseRadiance = diffuseColor / safeAlbedo;
-            payload.specularRadiance = reflectPayload.color * color.rgb;
+            // For metal, diffuseRadiance contains the FULL reflection (already colored)
+            // This is what we see - metallic reflection with the metal's color
+            payload.diffuseRadiance = reflectColor;  // Full metal appearance
+            payload.specularRadiance = float3(0, 0, 0);  // Already included above
             payload.hitDistance = hitDistance;
             payload.worldNormal = normal;
             payload.roughness = roughness;
@@ -297,6 +309,22 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
             payload.viewZ = hitDistance;
             payload.metallic = 1.0;
             payload.albedo = color.rgb;
+            
+            // Calculate shadow for metal surface
+            uint shadowSeed = uint(hitPosition.x * 12345.0 + hitPosition.y * 67890.0);
+            SoftShadowResult sigmaShadow;
+            if (GetPrimaryShadowForSigma(hitPosition, normal, shadowSeed, sigmaShadow))
+            {
+                payload.shadowVisibility = sigmaShadow.visibility;
+                payload.shadowPenumbra = sigmaShadow.penumbra;
+                payload.shadowDistance = sigmaShadow.occluderDistance;
+            }
+            else
+            {
+                payload.shadowVisibility = 1.0;
+                payload.shadowPenumbra = 0.0;
+                payload.shadowDistance = NRD_FP16_MAX;
+            }
         }
         return;
     }
@@ -392,8 +420,10 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
     if (payload.depth == 0)
     {
         float hitDistance = RayTCurrent();
-        float3 safeAlbedo = max(color.rgb, float3(0.001, 0.001, 0.001));
-        payload.diffuseRadiance = (ambient + diffuseNoShadow) / safeAlbedo;
+        // Output UNSHADOWED full lighting (diffuse + specular) WITH albedo
+        // This will be used as base image, SIGMA shadow will be applied in Composite
+        // Include specular so metal surfaces look correct
+        payload.diffuseRadiance = (ambient + diffuseNoShadow) * color.rgb + specular;
         payload.specularRadiance = specular;
         payload.hitDistance = hitDistance;
         payload.worldNormal = normal;
@@ -404,28 +434,19 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
         payload.albedo = color.rgb;
         
         // SIGMA shadow input (single primary light)
-        // DEBUG: Force white (no shadow) to test if ClosestHit changes are picked up
-        payload.shadowVisibility = 1.0;
-        payload.shadowPenumbra = 0.0;
-        payload.shadowDistance = NRD_FP16_MAX;
-        
-        // Original code (commented for debugging):
-        // SoftShadowResult sigmaShadow;
-        // if (GetPrimaryShadowForSigma(hitPosition, normal, seed, sigmaShadow))
-        // {
-        //     // Use lighting ratio to ensure visible shadow signal
-        //     float shadowVisibilityFromLighting = 1.0;
-        //     float denom = max(0.001, Luminance(ambient + diffuseNoShadow));
-        //     shadowVisibilityFromLighting = saturate(Luminance(ambient + diffuse) / denom);
-        //     payload.shadowVisibility = shadowVisibilityFromLighting;
-        //     payload.shadowPenumbra = sigmaShadow.penumbra;
-        //     payload.shadowDistance = sigmaShadow.occluderDistance;
-        // }
-        // else
-        // {
-        //     payload.shadowVisibility = 1.0;
-        //     payload.shadowPenumbra = 0.0;
-        //     payload.shadowDistance = NRD_FP16_MAX;
-        // }
+        SoftShadowResult sigmaShadow;
+        if (GetPrimaryShadowForSigma(hitPosition, normal, seed, sigmaShadow))
+        {
+            // Use direct shadow visibility from ray trace
+            payload.shadowVisibility = sigmaShadow.visibility;
+            payload.shadowPenumbra = sigmaShadow.penumbra;
+            payload.shadowDistance = sigmaShadow.occluderDistance;
+        }
+        else
+        {
+            payload.shadowVisibility = 1.0;
+            payload.shadowPenumbra = 0.0;
+            payload.shadowDistance = NRD_FP16_MAX;
+        }
     }
 }

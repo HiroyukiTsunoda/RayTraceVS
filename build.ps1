@@ -50,9 +50,10 @@ Write-Host "`nBuild successful!" -ForegroundColor Green
 
 # Output directory
 $wpfOutput = "src\RayTraceVS.WPF\bin\x64\Debug\net8.0-windows"
+$shaderCache = "src\Shader\Cache"
 
-# Verify required shader files exist
-Write-Host "`nVerifying shader files..." -ForegroundColor Cyan
+# Verify required shader files exist in Shader\Cache
+Write-Host "`nVerifying shader files in $shaderCache..." -ForegroundColor Cyan
 $requiredShaders = @(
     "RayGen.cso",
     "ClosestHit.cso", 
@@ -67,7 +68,7 @@ $requiredShaders = @(
 
 $missingShaders = @()
 foreach ($shader in $requiredShaders) {
-    $path = Join-Path $wpfOutput $shader
+    $path = Join-Path $shaderCache $shader
     if (Test-Path $path) {
         $info = Get-Item $path
         Write-Host "  [OK] $shader - $($info.LastWriteTime)" -ForegroundColor Green

@@ -33,6 +33,9 @@ namespace RayTraceVS::DXEngine
         ComPtr<ID3D12Resource> ViewZ;                    // R32F: linear view depth
         ComPtr<ID3D12Resource> MotionVectors;            // RG16F: 2D screen-space motion vectors
         ComPtr<ID3D12Resource> Albedo;                   // RGBA8: albedo color
+        // SIGMA shadow inputs
+        ComPtr<ID3D12Resource> ShadowData;               // RG16F: R = shadow visibility (0-1), G = penumbra
+        ComPtr<ID3D12Resource> ShadowTranslucency;       // RGBA16F: shadow translucency for SIGMA
     };
 
     // Denoised output structure
@@ -40,6 +43,8 @@ namespace RayTraceVS::DXEngine
     {
         ComPtr<ID3D12Resource> DiffuseRadiance;   // RGBA16F: denoised diffuse
         ComPtr<ID3D12Resource> SpecularRadiance;  // RGBA16F: denoised specular
+        // SIGMA shadow output
+        ComPtr<ID3D12Resource> DenoisedShadow;    // RG16F: denoised shadow visibility
     };
 
     // Common settings for NRD (per-frame)
@@ -101,6 +106,15 @@ namespace RayTraceVS::DXEngine
         D3D12_GPU_DESCRIPTOR_HANDLE GetNormalRoughnessUAV() const;
         D3D12_GPU_DESCRIPTOR_HANDLE GetViewZUAV() const;
         D3D12_GPU_DESCRIPTOR_HANDLE GetMotionVectorsUAV() const;
+        
+        // SIGMA shadow UAVs
+        D3D12_GPU_DESCRIPTOR_HANDLE GetShadowDataUAV() const;
+        D3D12_GPU_DESCRIPTOR_HANDLE GetShadowTranslucencyUAV() const;
+        D3D12_GPU_DESCRIPTOR_HANDLE GetDenoisedShadowUAV() const;
+        
+        // Check if SIGMA is enabled
+        bool IsSigmaEnabled() const { return m_sigmaEnabled; }
+        void SetSigmaEnabled(bool enabled) { m_sigmaEnabled = enabled; }
 
     private:
         DXContext* m_dxContext;
@@ -108,10 +122,13 @@ namespace RayTraceVS::DXEngine
         UINT m_width = 0;
         UINT m_height = 0;
 
+        bool m_sigmaEnabled = true;  // Re-enabled with logging to diagnose issues
+
 #if NRD_ENABLED
         // NRD Instance (only when NRD is enabled)
         nrd::Instance* m_nrdInstance = nullptr;
         nrd::Identifier m_reblurIdentifier = 0;
+        nrd::Identifier m_sigmaIdentifier = 1;  // SIGMA shadow denoiser identifier
         uint32_t m_frameIndex = 0;
         
         // NRD internal textures

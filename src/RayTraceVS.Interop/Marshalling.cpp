@@ -22,6 +22,8 @@ namespace RayTraceVS::Interop
         native.color = { managedLight.Color.X, managedLight.Color.Y, managedLight.Color.Z, managedLight.Color.W };
         native.intensity = managedLight.Intensity;
         native.type = static_cast<int>(managedLight.Type);
+        native.radius = managedLight.Radius;
+        native.softShadowSamples = managedLight.SoftShadowSamples;
         return native;
     }
 
