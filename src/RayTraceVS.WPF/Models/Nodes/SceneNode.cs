@@ -10,10 +10,25 @@ namespace RayTraceVS.WPF.Models.Nodes
         private int lightSocketCount = 0;
 
         [ObservableProperty]
-        private int _samplesPerPixel = 1;
+        private int _samplesPerPixel = 2;
 
         [ObservableProperty]
         private int _maxBounces = 4;
+
+        [ObservableProperty]
+        private float _exposure = 1.0f;
+
+        /// <summary>
+        /// 0 = Reinhard, 1 = ACES, 2 = None
+        /// </summary>
+        [ObservableProperty]
+        private int _toneMapOperator = 2;
+
+        /// <summary>
+        /// NRD Reblur stabilizationStrength (1.0 = default)
+        /// </summary>
+        [ObservableProperty]
+        private float _denoiserStabilization = 1.0f;
 
         public SceneNode() : base("Scene", NodeCategory.Scene)
         {
@@ -161,7 +176,10 @@ namespace RayTraceVS.WPF.Models.Nodes
                 Objects = objects,
                 Lights = lights,
                 SamplesPerPixel = SamplesPerPixel,
-                MaxBounces = MaxBounces
+                MaxBounces = MaxBounces,
+                Exposure = Exposure,
+                ToneMapOperator = ToneMapOperator,
+                DenoiserStabilization = DenoiserStabilization
             };
         }
     }
@@ -173,5 +191,8 @@ namespace RayTraceVS.WPF.Models.Nodes
         public List<LightData> Lights;
         public int SamplesPerPixel;
         public int MaxBounces;
+        public float Exposure;
+        public int ToneMapOperator;
+        public float DenoiserStabilization;
     }
 }

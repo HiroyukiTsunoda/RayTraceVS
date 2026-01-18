@@ -45,12 +45,14 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
-    <OutDir>$(SolutionDir)bin\$(Configuration)\</OutDir>
+    <!-- Output directly to WPF output directory -->
+    <OutDir>$(SolutionDir)src\RayTraceVS.WPF\bin\$(Platform)\$(Configuration)\net8.0-windows\</OutDir>
     <IntDir>$(SolutionDir)obj\$(ProjectName)\$(Configuration)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
-    <OutDir>$(SolutionDir)bin\$(Configuration)\</OutDir>
+    <!-- Output directly to WPF output directory -->
+    <OutDir>$(SolutionDir)src\RayTraceVS.WPF\bin\$(Platform)\$(Configuration)\net8.0-windows\</OutDir>
     <IntDir>$(SolutionDir)obj\$(ProjectName)\$(Configuration)\</IntDir>
   </PropertyGroup>
   <!-- NRD SDK Path -->
@@ -151,29 +153,34 @@
   </ItemGroup>
   <ItemGroup>
     <!-- DXR Shaders (lib_6_3) - compiled with DXC -->
+    <!-- AdditionalDependencies ensures recompilation when .hlsli files change -->
     <FxCompile Include="Shaders\RayGen.hlsl">
       <ShaderType>Library</ShaderType>
       <ShaderModel>6.3</ShaderModel>
       <ObjectFileOutput>$(OutDir)%(Filename).cso</ObjectFileOutput>
       <AdditionalIncludeDirectories>$(ProjectDir)Shaders</AdditionalIncludeDirectories>
+      <AdditionalDependencies>$(ProjectDir)Shaders\Common.hlsli;$(ProjectDir)Shaders\NRDEncoding.hlsli</AdditionalDependencies>
     </FxCompile>
     <FxCompile Include="Shaders\ClosestHit.hlsl">
       <ShaderType>Library</ShaderType>
       <ShaderModel>6.3</ShaderModel>
       <ObjectFileOutput>$(OutDir)%(Filename).cso</ObjectFileOutput>
       <AdditionalIncludeDirectories>$(ProjectDir)Shaders</AdditionalIncludeDirectories>
+      <AdditionalDependencies>$(ProjectDir)Shaders\Common.hlsli;$(ProjectDir)Shaders\NRDEncoding.hlsli</AdditionalDependencies>
     </FxCompile>
     <FxCompile Include="Shaders\Miss.hlsl">
       <ShaderType>Library</ShaderType>
       <ShaderModel>6.3</ShaderModel>
       <ObjectFileOutput>$(OutDir)%(Filename).cso</ObjectFileOutput>
       <AdditionalIncludeDirectories>$(ProjectDir)Shaders</AdditionalIncludeDirectories>
+      <AdditionalDependencies>$(ProjectDir)Shaders\Common.hlsli</AdditionalDependencies>
     </FxCompile>
     <FxCompile Include="Shaders\Intersection.hlsl">
       <ShaderType>Library</ShaderType>
       <ShaderModel>6.3</ShaderModel>
       <ObjectFileOutput>$(OutDir)%(Filename).cso</ObjectFileOutput>
       <AdditionalIncludeDirectories>$(ProjectDir)Shaders</AdditionalIncludeDirectories>
+      <AdditionalDependencies>$(ProjectDir)Shaders\Common.hlsli</AdditionalDependencies>
     </FxCompile>
     <!-- Material-specific Closest Hit Shaders (DISABLED - need NRD fields) -->
     <None Include="Shaders\ClosestHit_Diffuse.hlsl" />
@@ -185,6 +192,7 @@
       <ShaderModel>6.3</ShaderModel>
       <ObjectFileOutput>$(OutDir)%(Filename).cso</ObjectFileOutput>
       <AdditionalIncludeDirectories>$(ProjectDir)Shaders</AdditionalIncludeDirectories>
+      <AdditionalDependencies>$(ProjectDir)Shaders\Common.hlsli</AdditionalDependencies>
     </FxCompile>
     <!-- Photon Mapping Shaders (for Caustics) -->
     <FxCompile Include="Shaders\PhotonEmit.hlsl">
@@ -192,12 +200,14 @@
       <ShaderModel>6.3</ShaderModel>
       <ObjectFileOutput>$(OutDir)%(Filename).cso</ObjectFileOutput>
       <AdditionalIncludeDirectories>$(ProjectDir)Shaders</AdditionalIncludeDirectories>
+      <AdditionalDependencies>$(ProjectDir)Shaders\Common.hlsli</AdditionalDependencies>
     </FxCompile>
     <FxCompile Include="Shaders\PhotonTrace.hlsl">
       <ShaderType>Library</ShaderType>
       <ShaderModel>6.3</ShaderModel>
       <ObjectFileOutput>$(OutDir)%(Filename).cso</ObjectFileOutput>
       <AdditionalIncludeDirectories>$(ProjectDir)Shaders</AdditionalIncludeDirectories>
+      <AdditionalDependencies>$(ProjectDir)Shaders\Common.hlsli</AdditionalDependencies>
     </FxCompile>
     <!-- Compute Shader fallback (cs_5_1) -->
     <FxCompile Include="Shaders\RayTraceCompute.hlsl">
@@ -205,6 +215,7 @@
       <ShaderModel>5.1</ShaderModel>
       <EntryPointName>CSMain</EntryPointName>
       <ObjectFileOutput>$(OutDir)%(Filename).cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(ProjectDir)Shaders</AdditionalIncludeDirectories>
     </FxCompile>
     <!-- Composite Shader for NRD output (cs_5_1) -->
     <FxCompile Include="Shaders\Composite.hlsl">
@@ -212,12 +223,29 @@
       <ShaderModel>5.1</ShaderModel>
       <EntryPointName>CSMain</EntryPointName>
       <ObjectFileOutput>$(OutDir)%(Filename).cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(ProjectDir)Shaders</AdditionalIncludeDirectories>
     </FxCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\Common.hlsli" />
     <None Include="Shaders\NRDEncoding.hlsli" />
   </ItemGroup>
+  <!-- Verify shader compilation - runs after build -->
+  <Target Name="VerifyShaders" AfterTargets="Build">
+    <PropertyGroup>
+      <RequiredShaders>RayGen.cso;ClosestHit.cso;Miss.cso;Intersection.cso;AnyHit_Shadow.cso;PhotonEmit.cso;PhotonTrace.cso;RayTraceCompute.cso;Composite.cso</RequiredShaders>
+    </PropertyGroup>
+    <Error Condition="!Exists('$(OutDir)RayGen.cso')" Text="ERROR: RayGen.cso not found in $(OutDir)" />
+    <Error Condition="!Exists('$(OutDir)ClosestHit.cso')" Text="ERROR: ClosestHit.cso not found in $(OutDir)" />
+    <Error Condition="!Exists('$(OutDir)Miss.cso')" Text="ERROR: Miss.cso not found in $(OutDir)" />
+    <Error Condition="!Exists('$(OutDir)Intersection.cso')" Text="ERROR: Intersection.cso not found in $(OutDir)" />
+    <Error Condition="!Exists('$(OutDir)AnyHit_Shadow.cso')" Text="ERROR: AnyHit_Shadow.cso not found in $(OutDir)" />
+    <Error Condition="!Exists('$(OutDir)PhotonEmit.cso')" Text="ERROR: PhotonEmit.cso not found in $(OutDir)" />
+    <Error Condition="!Exists('$(OutDir)PhotonTrace.cso')" Text="ERROR: PhotonTrace.cso not found in $(OutDir)" />
+    <Error Condition="!Exists('$(OutDir)RayTraceCompute.cso')" Text="ERROR: RayTraceCompute.cso not found in $(OutDir)" />
+    <Error Condition="!Exists('$(OutDir)Composite.cso')" Text="ERROR: Composite.cso not found in $(OutDir)" />
+    <Message Text="All required shader files verified in $(OutDir)" Importance="high" />
+  </Target>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

@@ -110,6 +110,7 @@ void ClosestHit_Metal(inout RayPayload payload, in ProceduralAttributes attribs)
     float3 objectColor = color.rgb;
     float3 finalColor = float3(0, 0, 0);
     float3 specularColor = float3(0, 0, 0);
+    float3 diffuseLighting = CalculateMetalLighting(hitPosition, normal, float3(1.0, 1.0, 1.0));
     float3 diffuseColor = float3(0, 0, 0);
     
     if (payload.depth < MAX_RECURSION_DEPTH)
@@ -147,6 +148,9 @@ void ClosestHit_Metal(inout RayPayload payload, in ProceduralAttributes attribs)
         reflectPayload.viewZ = 10000.0;
         reflectPayload.metallic = 0.0;
         reflectPayload.albedo = float3(0, 0, 0);
+        reflectPayload.targetObjectType = 0;
+        reflectPayload.targetObjectIndex = 0;
+        reflectPayload.thicknessQuery = 0;
         
         TraceRay(SceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, reflectRay, reflectPayload);
         
@@ -157,15 +161,15 @@ void ClosestHit_Metal(inout RayPayload payload, in ProceduralAttributes attribs)
         // Blend with diffuse for rough metals
         if (roughness > 0.1)
         {
-            diffuseColor = CalculateMetalLighting(hitPosition, normal, objectColor);
+            diffuseColor = diffuseLighting * objectColor;
             float diffuseBlend = roughness * roughness;
-            finalColor = lerp(finalColor, diffuseColor * objectColor, diffuseBlend * 0.5);
+            finalColor = lerp(finalColor, diffuseColor, diffuseBlend * 0.5);
         }
     }
     else
     {
         // Max depth reached - use diffuse lighting
-        diffuseColor = CalculateMetalLighting(hitPosition, normal, objectColor);
+        diffuseColor = diffuseLighting * objectColor;
         finalColor = diffuseColor;
     }
     
@@ -175,7 +179,7 @@ void ClosestHit_Metal(inout RayPayload payload, in ProceduralAttributes attribs)
     // NRD-specific outputs (only for primary rays)
     if (payload.depth == 0)
     {
-        payload.diffuseRadiance = diffuseColor;
+        payload.diffuseRadiance = diffuseLighting;
         payload.specularRadiance = specularColor;
         payload.hitDistance = hitDistance;
         payload.worldNormal = normal;

@@ -157,8 +157,9 @@ void ClosestHit_Diffuse(inout RayPayload payload, in ProceduralAttributes attrib
         roughness = box.roughness;
     }
     
-    // Calculate diffuse lighting with caustics
-    float3 diffuseColor = CalculateDiffuseLightingWithCaustics(hitPosition, normal, color.rgb, roughness);
+    // Calculate diffuse lighting with caustics (separate lighting from albedo)
+    float3 diffuseLighting = CalculateDiffuseLightingWithCaustics(hitPosition, normal, float3(1.0, 1.0, 1.0), roughness);
+    float3 diffuseColor = diffuseLighting * color.rgb;
     float3 specularColor = float3(0, 0, 0);
     
     // Subtle Fresnel reflection for dielectrics
@@ -193,6 +194,9 @@ void ClosestHit_Diffuse(inout RayPayload payload, in ProceduralAttributes attrib
             reflectPayload.viewZ = 10000.0;
             reflectPayload.metallic = 0.0;
             reflectPayload.albedo = float3(0, 0, 0);
+            reflectPayload.targetObjectType = 0;
+            reflectPayload.targetObjectIndex = 0;
+            reflectPayload.thicknessQuery = 0;
             
             TraceRay(SceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, reflectRay, reflectPayload);
             
@@ -210,7 +214,7 @@ void ClosestHit_Diffuse(inout RayPayload payload, in ProceduralAttributes attrib
     // NRD-specific outputs (only for primary rays, depth == 0)
     if (payload.depth == 0)
     {
-        payload.diffuseRadiance = diffuseColor;
+        payload.diffuseRadiance = diffuseLighting;
         payload.specularRadiance = specularColor;
         payload.hitDistance = hitDistance;
         payload.worldNormal = normal;

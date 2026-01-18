@@ -2,6 +2,20 @@
 #include "../DXContext.h"
 #include "../d3dx12.h"
 #include <d3dcompiler.h>
+#include <fstream>
+#include <cstdio>
+
+static void LogToFile(const char* message)
+{
+    std::ofstream log("C:\\git\\RayTraceVS\\debug_log.txt", std::ios::app);
+    if (log.is_open())
+    {
+        log << message << std::endl;
+        log.close();
+    }
+    OutputDebugStringA(message);
+    OutputDebugStringA("\n");
+}
 
 namespace RayTraceVS::DXEngine
 {
@@ -20,7 +34,13 @@ namespace RayTraceVS::DXEngine
         m_width = width;
         m_height = height;
 
+        char buf[256];
+        sprintf_s(buf, "NRDDenoiser::Initialize - NRD_ENABLED=%d, width=%u, height=%u", NRD_ENABLED, width, height);
+        LogToFile(buf);
+
 #if NRD_ENABLED
+        LogToFile("NRDDenoiser::Initialize - NRD path active, creating instance...");
+        
         // Full NRD initialization - requires NRD library to be built
         // See README for instructions on building NRD with CMake
         
@@ -36,9 +56,13 @@ namespace RayTraceVS::DXEngine
         nrd::Result result = nrd::CreateInstance(instanceDesc, m_nrdInstance);
         if (result != nrd::Result::SUCCESS)
         {
-            OutputDebugStringW(L"NRD: Failed to create instance\n");
+            sprintf_s(buf, "NRD: Failed to create instance, result=%d", (int)result);
+            LogToFile(buf);
             return false;
         }
+        LogToFile("NRD: Instance created successfully");
+#else
+        LogToFile("NRDDenoiser::Initialize - NRD_ENABLED=0, stub mode");
 #endif
 
         // Create resources (always needed for G-Buffer output)
@@ -154,6 +178,8 @@ namespace RayTraceVS::DXEngine
             return false;
 
         if (!CreateTexture(m_gBuffer.MotionVectors, DXGI_FORMAT_R16G16_FLOAT, L"GBuffer_MotionVectors"))
+            return false;
+        if (!CreateTexture(m_gBuffer.Albedo, DXGI_FORMAT_R8G8B8A8_UNORM, L"GBuffer_Albedo"))
             return false;
 
         // Create UAV descriptors for G-Buffer
@@ -510,7 +536,10 @@ namespace RayTraceVS::DXEngine
             m_pipelineStates[i] = pso;
         }
 
-        OutputDebugStringW(L"NRD: Pipelines created successfully\n");
+        char buf[128];
+        sprintf_s(buf, "NRD: Pipelines created - total PSOs: %zu out of %u pipelines", 
+            m_pipelineStates.size(), instanceDesc.pipelinesNum);
+        LogToFile(buf);
         return m_pipelineStates.size() > 0;
     }
 
@@ -674,14 +703,24 @@ namespace RayTraceVS::DXEngine
     void NRDDenoiser::Denoise(ID3D12GraphicsCommandList* cmdList, const DenoiserFrameSettings& settings)
     {
         if (!m_initialized)
+        {
+            LogToFile("NRDDenoiser::Denoise - not initialized, returning");
             return;
+        }
+
+        char buf[256];
+        sprintf_s(buf, "NRDDenoiser::Denoise - NRD_ENABLED=%d, m_initialized=%d", NRD_ENABLED, m_initialized ? 1 : 0);
+        LogToFile(buf);
 
 #if NRD_ENABLED
         if (!m_nrdInstance || m_pipelineStates.empty())
         {
-            OutputDebugStringW(L"NRD: Denoise called but not ready\n");
+            sprintf_s(buf, "NRD: Denoise not ready - instance=%p, pipelineStates.size=%zu", 
+                m_nrdInstance, m_pipelineStates.size());
+            LogToFile(buf);
             return;
         }
+        LogToFile("NRDDenoiser::Denoise - NRD path active, proceeding...");
 
         const nrd::InstanceDesc& instanceDesc = nrd::GetInstanceDesc(*m_nrdInstance);
 
@@ -714,14 +753,33 @@ namespace RayTraceVS::DXEngine
         
         commonSettings.denoisingRange = settings.CameraFar;
         commonSettings.frameIndex = m_frameIndex++;
-        commonSettings.accumulationMode = settings.IsFirstFrame ? nrd::AccumulationMode::CLEAR_AND_RESTART : nrd::AccumulationMode::CONTINUE;
+        // Temporal accumulation disabled for this product.
+        commonSettings.accumulationMode = nrd::AccumulationMode::CLEAR_AND_RESTART;
         commonSettings.enableValidation = settings.EnableValidation;
+        
+        // Log NRD settings for debugging
+        sprintf_s(buf, "NRD Settings: frameIndex=%d, denoisingRange=%.1f, accumulationMode=%d (temporal off)",
+            commonSettings.frameIndex, commonSettings.denoisingRange, (int)commonSettings.accumulationMode);
+        LogToFile(buf);
+        sprintf_s(buf, "NRD Settings: resourceSize=%ux%u, rectSize=%ux%u",
+            commonSettings.resourceSize[0], commonSettings.resourceSize[1],
+            commonSettings.rectSize[0], commonSettings.rectSize[1]);
+        LogToFile(buf);
+        sprintf_s(buf, "NRD Settings: viewToClip[0]=[%.3f, %.3f, %.3f, %.3f]",
+            commonSettings.viewToClipMatrix[0], commonSettings.viewToClipMatrix[1],
+            commonSettings.viewToClipMatrix[2], commonSettings.viewToClipMatrix[3]);
+        LogToFile(buf);
+        sprintf_s(buf, "NRD Settings: worldToView[0]=[%.3f, %.3f, %.3f, %.3f]",
+            commonSettings.worldToViewMatrix[0], commonSettings.worldToViewMatrix[1],
+            commonSettings.worldToViewMatrix[2], commonSettings.worldToViewMatrix[3]);
+        LogToFile(buf);
 
         nrd::SetCommonSettings(*m_nrdInstance, commonSettings);
 
         // Set REBLUR-specific settings
         nrd::ReblurSettings reblurSettings = {};
         reblurSettings.hitDistanceReconstructionMode = nrd::HitDistanceReconstructionMode::AREA_3X3;
+        // Restore blur strength for NRD.
         reblurSettings.enableAntiFirefly = true;
         reblurSettings.maxBlurRadius = 30.0f;
         reblurSettings.minBlurRadius = 1.0f;
@@ -735,9 +793,12 @@ namespace RayTraceVS::DXEngine
         nrd::Identifier identifiers[] = { m_reblurIdentifier };
         nrd::Result result = nrd::GetComputeDispatches(*m_nrdInstance, identifiers, 1, dispatchDescs, dispatchDescsNum);
         
+        sprintf_s(buf, "NRD: GetComputeDispatches result=%d, dispatchDescsNum=%u", (int)result, dispatchDescsNum);
+        LogToFile(buf);
+        
         if (result != nrd::Result::SUCCESS || dispatchDescsNum == 0)
         {
-            OutputDebugStringW(L"NRD: GetComputeDispatches failed\n");
+            LogToFile("NRD: GetComputeDispatches failed, returning");
             return;
         }
 
@@ -747,6 +808,27 @@ namespace RayTraceVS::DXEngine
         cmdList->SetComputeRootSignature(m_nrdRootSignature.Get());
 
         // Execute each dispatch
+        int dispatchedCount = 0;
+        int skippedCount = 0;
+        
+        // Log first few dispatches for debugging
+        for (uint32_t i = 0; i < min(dispatchDescsNum, 3u); i++)
+        {
+            const nrd::DispatchDesc& dispatch = dispatchDescs[i];
+            sprintf_s(buf, "NRD Dispatch[%d]: name=%s, pipeline=%d, grid=%dx%d, resources=%d",
+                i, dispatch.name ? dispatch.name : "null", dispatch.pipelineIndex,
+                dispatch.gridWidth, dispatch.gridHeight, dispatch.resourcesNum);
+            LogToFile(buf);
+            
+            for (uint32_t r = 0; r < min(dispatch.resourcesNum, 5u); r++)
+            {
+                const nrd::ResourceDesc& res = dispatch.resources[r];
+                sprintf_s(buf, "  Resource[%d]: type=%d, indexInPool=%d",
+                    r, (int)res.type, res.indexInPool);
+                LogToFile(buf);
+            }
+        }
+        
         for (uint32_t i = 0; i < dispatchDescsNum; i++)
         {
             const nrd::DispatchDesc& dispatch = dispatchDescs[i];
@@ -755,9 +837,9 @@ namespace RayTraceVS::DXEngine
             auto psoIt = m_pipelineStates.find(dispatch.pipelineIndex);
             if (psoIt == m_pipelineStates.end())
             {
-                wchar_t msg[128];
-                swprintf_s(msg, L"NRD: Missing PSO for pipeline %d\n", dispatch.pipelineIndex);
-                OutputDebugStringW(msg);
+                sprintf_s(buf, "NRD: Missing PSO for pipeline %d", dispatch.pipelineIndex);
+                LogToFile(buf);
+                skippedCount++;
                 continue;
             }
 
@@ -773,8 +855,7 @@ namespace RayTraceVS::DXEngine
             // Set constant buffer
             cmdList->SetComputeRootConstantBufferView(0, m_constantBuffer->GetGPUVirtualAddress());
 
-            // Bind resources
-            // First, create descriptors for this dispatch's resources
+            // Bind resources following NRD's resourceRanges order to preserve descriptor layout
             const nrd::PipelineDesc& pipelineDesc = instanceDesc.pipelines[dispatch.pipelineIndex];
             
             UINT srvCount = 0;
@@ -791,11 +872,14 @@ namespace RayTraceVS::DXEngine
             }
 
             // Create descriptors for this dispatch
-            UINT descriptorOffset = i * (instanceDesc.descriptorPoolDesc.perSetTexturesMaxNum + 
-                                         instanceDesc.descriptorPoolDesc.perSetStorageTexturesMaxNum);
+            UINT maxSRVs = instanceDesc.descriptorPoolDesc.perSetTexturesMaxNum;
+            UINT maxUAVs = instanceDesc.descriptorPoolDesc.perSetStorageTexturesMaxNum;
+            UINT descriptorOffset = i * (maxSRVs + maxUAVs);
             
-            CD3DX12_CPU_DESCRIPTOR_HANDLE cpuHandle(m_nrdDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
-            cpuHandle.Offset(descriptorOffset, m_descriptorSize);
+            CD3DX12_CPU_DESCRIPTOR_HANDLE srvCpuHandle(m_nrdDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
+            srvCpuHandle.Offset(descriptorOffset, m_descriptorSize);
+            CD3DX12_CPU_DESCRIPTOR_HANDLE uavCpuHandle(m_nrdDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
+            uavCpuHandle.Offset(descriptorOffset + maxSRVs, m_descriptorSize);
 
             UINT resourceIdx = 0;
             for (uint32_t r = 0; r < pipelineDesc.resourceRangesNum; r++)
@@ -811,51 +895,59 @@ namespace RayTraceVS::DXEngine
                     ID3D12Resource* d3dResource = GetResourceForNRD(resource, instanceDesc);
                     
                     if (!d3dResource)
+                    {
+                        sprintf_s(buf, "NRD: NULL resource for type=%d, indexInPool=%d", (int)resource.type, resource.indexInPool);
+                        LogToFile(buf);
                         continue;
+                    }
 
                     if (range.descriptorType == nrd::DescriptorType::TEXTURE)
                     {
-                        // Create SRV
+                        // Create SRV in the SRV block
                         D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
                         srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
                         srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
                         srvDesc.Texture2D.MipLevels = 1;
                         srvDesc.Format = d3dResource->GetDesc().Format;
                         
-                        m_dxContext->GetDevice()->CreateShaderResourceView(d3dResource, &srvDesc, cpuHandle);
+                        m_dxContext->GetDevice()->CreateShaderResourceView(d3dResource, &srvDesc, srvCpuHandle);
+                        srvCpuHandle.Offset(m_descriptorSize);
+                        srvCount++;
                     }
                     else
                     {
-                        // Create UAV
+                        // Create UAV in the UAV block
                         D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
                         uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
                         uavDesc.Texture2D.MipSlice = 0;
                         uavDesc.Format = d3dResource->GetDesc().Format;
                         
-                        m_dxContext->GetDevice()->CreateUnorderedAccessView(d3dResource, nullptr, &uavDesc, cpuHandle);
+                        m_dxContext->GetDevice()->CreateUnorderedAccessView(d3dResource, nullptr, &uavDesc, uavCpuHandle);
+                        uavCpuHandle.Offset(m_descriptorSize);
+                        uavCount++;
                     }
-                    
-                    cpuHandle.Offset(m_descriptorSize);
                 }
             }
 
             // Set descriptor tables
-            CD3DX12_GPU_DESCRIPTOR_HANDLE gpuHandle(m_nrdDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
-            gpuHandle.Offset(descriptorOffset, m_descriptorSize);
+            CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpuHandle(m_nrdDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+            srvGpuHandle.Offset(descriptorOffset, m_descriptorSize);
+            CD3DX12_GPU_DESCRIPTOR_HANDLE uavGpuHandle(m_nrdDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+            uavGpuHandle.Offset(descriptorOffset + maxSRVs, m_descriptorSize);
             
             UINT rootParamIndex = 1;  // 0 is CBV
             if (srvCount > 0)
             {
-                cmdList->SetComputeRootDescriptorTable(rootParamIndex++, gpuHandle);
-                gpuHandle.Offset(instanceDesc.descriptorPoolDesc.perSetTexturesMaxNum, m_descriptorSize);
+                cmdList->SetComputeRootDescriptorTable(rootParamIndex++, srvGpuHandle);
             }
             if (uavCount > 0)
             {
-                cmdList->SetComputeRootDescriptorTable(rootParamIndex, gpuHandle);
+                cmdList->SetComputeRootDescriptorTable(rootParamIndex, uavGpuHandle);
             }
 
             // Dispatch
             cmdList->Dispatch(dispatch.gridWidth, dispatch.gridHeight, 1);
+            dispatchedCount++;
 
             // UAV barrier between dispatches
             D3D12_RESOURCE_BARRIER barrier = {};
@@ -864,7 +956,9 @@ namespace RayTraceVS::DXEngine
             cmdList->ResourceBarrier(1, &barrier);
         }
 
-        OutputDebugStringW(L"NRD: Denoise completed\n");
+        sprintf_s(buf, "NRD: Dispatched %d, Skipped %d (PSO count=%zu)", 
+            dispatchedCount, skippedCount, m_pipelineStates.size());
+        LogToFile(buf);
         return;
 #endif
 

@@ -72,11 +72,35 @@ void InitializeNRDPayload(inout RayPayload p)
     p.viewZ = 10000.0;
     p.metallic = 0.0;
     p.albedo = float3(0, 0, 0);
+    p.targetObjectType = 0;
+    p.targetObjectIndex = 0;
+    p.thicknessQuery = 0;
+}
+
+[shader("anyhit")]
+void AnyHit_Glass(inout RayPayload payload, in ProceduralAttributes attribs)
+{
+    if (payload.thicknessQuery == 0)
+    {
+        return;
+    }
+    
+    if (attribs.objectType != payload.targetObjectType || attribs.objectIndex != payload.targetObjectIndex)
+    {
+        IgnoreHit();
+    }
 }
 
 [shader("closesthit")]
 void ClosestHit_Glass(inout RayPayload payload, in ProceduralAttributes attribs)
 {
+    if (payload.thicknessQuery != 0)
+    {
+        payload.hit = true;
+        payload.hitDistance = RayTCurrent();
+        return;
+    }
+    
     float3 hitPosition = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
     float hitDistance = RayTCurrent();
     float3 normal = attribs.normal;
@@ -116,6 +140,7 @@ void ClosestHit_Glass(inout RayPayload payload, in ProceduralAttributes attribs)
     float3 objectColor = color.rgb;
     float3 finalColor = float3(0, 0, 0);
     float3 specularColor = float3(0, 0, 0);
+    float3 diffuseLighting = CalculateGlassLighting(hitPosition, normal, float3(1.0, 1.0, 1.0));
     float3 diffuseColor = float3(0, 0, 0);
     
     if (payload.depth < MAX_RECURSION_DEPTH)
@@ -149,6 +174,26 @@ void ClosestHit_Glass(inout RayPayload payload, in ProceduralAttributes attribs)
             
             TraceRay(SceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, refractRay, refractPayload);
             transmittedColor = refractPayload.color;
+            
+            RayPayload thicknessPayload;
+            thicknessPayload.color = float3(0, 0, 0);
+            thicknessPayload.depth = payload.depth + 1;
+            thicknessPayload.hit = false;
+            thicknessPayload.padding = 0.0;
+            InitializeNRDPayload(thicknessPayload);
+            thicknessPayload.targetObjectType = objectType;
+            thicknessPayload.targetObjectIndex = objectIndex;
+            thicknessPayload.thicknessQuery = 1;
+            
+            TraceRay(SceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, refractRay, thicknessPayload);
+            
+            if (thicknessPayload.hit)
+            {
+                float thickness = thicknessPayload.hitDistance;
+                float3 absorption = objectColor;
+                float3 transmittance = exp(-absorption * thickness);
+                transmittedColor *= transmittance;
+            }
         }
         else
         {
@@ -159,7 +204,7 @@ void ClosestHit_Glass(inout RayPayload payload, in ProceduralAttributes attribs)
         // ============================================
         // Surface color (opaque contribution)
         // ============================================
-        float3 opaqueColor = CalculateGlassLighting(hitPosition, normal, objectColor);
+        float3 opaqueColor = diffuseLighting * objectColor;
         diffuseColor = opaqueColor * (1.0 - transmission);
         
         // ============================================
@@ -205,7 +250,7 @@ void ClosestHit_Glass(inout RayPayload payload, in ProceduralAttributes attribs)
     else
     {
         // Max depth reached - use surface lighting only
-        diffuseColor = CalculateGlassLighting(hitPosition, normal, objectColor);
+        diffuseColor = diffuseLighting * objectColor;
         finalColor = diffuseColor;
     }
     
@@ -217,7 +262,7 @@ void ClosestHit_Glass(inout RayPayload payload, in ProceduralAttributes attribs)
     // and the reflected color as "specular"
     if (payload.depth == 0)
     {
-        payload.diffuseRadiance = diffuseColor;
+        payload.diffuseRadiance = diffuseLighting;
         payload.specularRadiance = specularColor;
         payload.hitDistance = hitDistance;
         payload.worldNormal = normal;

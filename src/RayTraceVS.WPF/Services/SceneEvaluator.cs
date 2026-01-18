@@ -17,7 +17,7 @@ namespace RayTraceVS.WPF.Services
 {
     public class SceneEvaluator
     {
-        public (InteropSphereData[], InteropPlaneData[], InteropBoxData[], InteropCameraData, InteropLightData[], int SamplesPerPixel, int MaxBounces) EvaluateScene(NodeGraph nodeGraph)
+        public (InteropSphereData[], InteropPlaneData[], InteropBoxData[], InteropCameraData, InteropLightData[], int SamplesPerPixel, int MaxBounces, float Exposure, int ToneMapOperator, float DenoiserStabilization) EvaluateScene(NodeGraph nodeGraph)
         {
             var spheres = new List<InteropSphereData>();
             var planes = new List<InteropPlaneData>();
@@ -25,6 +25,9 @@ namespace RayTraceVS.WPF.Services
             var lights = new List<InteropLightData>();
             int samplesPerPixel = 1;
             int maxBounces = 4;
+            float exposure = 1.0f;
+            int toneMapOperator = 2;
+            float denoiserStabilization = 1.0f;
             InteropCameraData camera = new InteropCameraData
             {
                 Position = new InteropVector3(0, 2, -5),
@@ -81,6 +84,9 @@ namespace RayTraceVS.WPF.Services
                     // レンダリング設定を取得
                     samplesPerPixel = sceneData.SamplesPerPixel > 0 ? sceneData.SamplesPerPixel : 1;
                     maxBounces = sceneData.MaxBounces > 0 ? sceneData.MaxBounces : 4;
+                    exposure = sceneData.Exposure > 0 ? sceneData.Exposure : 1.0f;
+                    toneMapOperator = sceneData.ToneMapOperator;
+                    denoiserStabilization = sceneData.DenoiserStabilization > 0 ? sceneData.DenoiserStabilization : 1.0f;
                     
                     System.Diagnostics.Debug.WriteLine($"[SceneEvaluator] SceneNode経由: Spheres={spheres.Count}, Planes={planes.Count}, Boxes={boxes.Count}, Lights={lights.Count}, Samples={samplesPerPixel}, Bounces={maxBounces}");
                     
@@ -231,7 +237,7 @@ namespace RayTraceVS.WPF.Services
                 System.Diagnostics.Debug.WriteLine($"[SceneEvaluator] フォールバック: Spheres={spheres.Count}, Planes={planes.Count}, Boxes={boxes.Count}, Lights={lights.Count}");
             }
 
-            return (spheres.ToArray(), planes.ToArray(), boxes.ToArray(), camera, lights.ToArray(), samplesPerPixel, maxBounces);
+            return (spheres.ToArray(), planes.ToArray(), boxes.ToArray(), camera, lights.ToArray(), samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization);
         }
 
         private InteropSphereData ConvertSphereData(Models.Nodes.SphereData data)

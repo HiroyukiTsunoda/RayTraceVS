@@ -43,6 +43,12 @@ struct RayPayload
     float metallic;           // Metallic value
     float3 albedo;            // Surface albedo
     float padding2;           // Padding for alignment
+    
+    // Thickness query for refractive objects
+    uint targetObjectType;
+    uint targetObjectIndex;
+    uint thicknessQuery;      // 1 = thickness ray, 0 = normal
+    float padding3;
 };
 
 // シャドウレイ用ペイロード
@@ -97,6 +103,9 @@ struct SceneConstantBuffer
     // DoF (Depth of Field) parameters
     float ApertureSize;         // 0.0 = DoF disabled, larger = stronger bokeh
     float FocusDistance;        // Distance to the focal plane
+    // Matrices for motion vectors
+    float4x4 ViewProjection;
+    float4x4 PrevViewProjection;
 };
 
 // 球データ (with PBR material, must match C++ GPUSphere)
@@ -234,6 +243,7 @@ RWTexture2D<float4> GBuffer_SpecularRadianceHitDist : register(u4); // RGBA16F: 
 RWTexture2D<float4> GBuffer_NormalRoughness : register(u5);          // RGBA8: Normal (oct) + roughness
 RWTexture2D<float>  GBuffer_ViewZ : register(u6);                    // R32F: Linear view depth
 RWTexture2D<float2> GBuffer_MotionVectors : register(u7);            // RG16F: Screen-space motion
+RWTexture2D<float4> GBuffer_Albedo : register(u8);                   // RGBA8: Albedo color
 #endif
 
 // ユーティリティ関数

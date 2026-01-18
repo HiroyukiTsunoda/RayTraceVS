@@ -13,6 +13,7 @@
         <converters:NotNullToVisibilityConverter x:Key="NotNullToVisibilityConverter"/>
         <converters:SocketCountToHeightConverter x:Key="SocketCountToHeightConverter"/>
         <converters:TypeNameConverter x:Key="TypeNameConverter"/>
+        <converters:IntToBoolConverter x:Key="IntToBoolConverter"/>
         
         <!-- Dark Theme Color Palette -->
         <SolidColorBrush x:Key="BackgroundBrush" Color="#1E1E1E"/>

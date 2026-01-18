@@ -76,7 +76,7 @@ namespace RayTraceVS.WPF
             Dispatcher.BeginInvoke(new Action(() =>
             {
                 NodeEditor.RefreshConnectionLines();
-            }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            }), System.Windows.Threading.DispatcherPriority.Loaded);
         }
 
         private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
@@ -261,6 +261,9 @@ namespace RayTraceVS.WPF
                 viewModel.Nodes.Clear();
                 viewModel.Connections.Clear();
                 
+                // ビューポートの状態を先に設定（ノード追加前に設定することで初期描画のズレを防ぐ）
+                NodeEditor.SetViewportState(viewportState);
+                
                 foreach (var node in nodes)
                     viewModel.AddNode(node);
                 
@@ -280,12 +283,11 @@ namespace RayTraceVS.WPF
                     ComponentPalette.SetExpanderStates(viewportState.ExpanderStates);
                 }
                 
-                // UIのレンダリング完了後に接続線とビューポートを更新
+                // UIのレンダリング完了後に接続線を更新
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
                     NodeEditor.RefreshConnectionLines();
-                    NodeEditor.SetViewportState(viewportState);
-                }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                }), System.Windows.Threading.DispatcherPriority.Loaded);
             }
         }
 

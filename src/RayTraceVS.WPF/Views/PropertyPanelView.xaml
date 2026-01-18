@@ -134,6 +134,37 @@
                                        Foreground="{StaticResource TextSecondaryBrush}"
                                        FontSize="9"
                                        Margin="0,0,0,10"/>
+
+                            <!-- Exposure -->
+                            <TextBlock Text="露出" 
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       FontSize="10"
+                                       Margin="0,5,0,2"/>
+                            <TextBox x:Name="ExposureTextBox"
+                                     Text="{Binding SelectedNode.Exposure, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                     Background="#3C3C3C"
+                                     Foreground="White"
+                                     BorderBrush="{StaticResource BorderBrush}"
+                                     Padding="5,3"
+                                     Margin="0,0,0,10"/>
+
+                            <!-- ToneMapOperator -->
+                            <TextBlock Text="トーンマップ" 
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       FontSize="10"
+                                       Margin="0,5,0,2"/>
+                            <StackPanel Margin="0,0,0,10">
+                                <RadioButton Content="Reinhard" 
+                                             IsChecked="{Binding SelectedNode.ToneMapOperator, Converter={StaticResource IntToBoolConverter}, ConverterParameter=0}"
+                                             Foreground="White" Margin="0,2"/>
+                                <RadioButton Content="ACES" 
+                                             IsChecked="{Binding SelectedNode.ToneMapOperator, Converter={StaticResource IntToBoolConverter}, ConverterParameter=1}"
+                                             Foreground="White" Margin="0,2"/>
+                                <RadioButton Content="None" 
+                                             IsChecked="{Binding SelectedNode.ToneMapOperator, Converter={StaticResource IntToBoolConverter}, ConverterParameter=2}"
+                                             Foreground="White" Margin="0,2"/>
+                            </StackPanel>
+
                         </StackPanel>
                         
                         <!-- CameraNode専用プロパティ -->

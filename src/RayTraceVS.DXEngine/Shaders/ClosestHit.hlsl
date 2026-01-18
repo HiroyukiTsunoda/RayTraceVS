@@ -154,6 +154,9 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
             reflPayload.viewZ = 10000.0;
             reflPayload.metallic = 0.0;
             reflPayload.albedo = float3(0, 0, 0);
+            reflPayload.targetObjectType = 0;
+            reflPayload.targetObjectIndex = 0;
+            reflPayload.thicknessQuery = 0;
             
             TraceRay(SceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, reflectRay, reflPayload);
             reflectColor = reflPayload.color;
@@ -183,6 +186,9 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
             refrPayload.viewZ = 10000.0;
             refrPayload.metallic = 0.0;
             refrPayload.albedo = float3(0, 0, 0);
+            refrPayload.targetObjectType = 0;
+            refrPayload.targetObjectIndex = 0;
+            refrPayload.thicknessQuery = 0;
             
             TraceRay(SceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, refractRay, refrPayload);
             refractColor = refrPayload.color;
@@ -241,6 +247,9 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
         reflectPayload.viewZ = 10000.0;
         reflectPayload.metallic = 0.0;
         reflectPayload.albedo = float3(0, 0, 0);
+        reflectPayload.targetObjectType = 0;
+        reflectPayload.targetObjectIndex = 0;
+        reflectPayload.thicknessQuery = 0;
         
         TraceRay(SceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, reflectRay, reflectPayload);
         
@@ -265,7 +274,8 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
         if (payload.depth == 0)
         {
             float hitDistance = RayTCurrent();
-            payload.diffuseRadiance = diffuseColor;
+            float3 safeAlbedo = max(color.rgb, float3(0.001, 0.001, 0.001));
+            payload.diffuseRadiance = diffuseColor / safeAlbedo;
             payload.specularRadiance = reflectPayload.color * color.rgb;
             payload.hitDistance = hitDistance;
             payload.worldNormal = normal;
@@ -307,6 +317,9 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
     shadowPayload.viewZ = 10000.0;
     shadowPayload.metallic = 0.0;
     shadowPayload.albedo = float3(0, 0, 0);
+    shadowPayload.targetObjectType = 0;
+    shadowPayload.targetObjectIndex = 0;
+    shadowPayload.thicknessQuery = 0;
     
     TraceRay(SceneBVH, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,
              0xFF, 0, 0, 0, shadowRay, shadowPayload);
@@ -333,7 +346,8 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
     if (payload.depth == 0)
     {
         float hitDistance = RayTCurrent();
-        payload.diffuseRadiance = ambient + diffuse;
+        float3 safeAlbedo = max(color.rgb, float3(0.001, 0.001, 0.001));
+        payload.diffuseRadiance = (ambient + diffuse) / safeAlbedo;
         payload.specularRadiance = specular;
         payload.hitDistance = hitDistance;
         payload.worldNormal = normal;
