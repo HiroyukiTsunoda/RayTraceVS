@@ -5,10 +5,17 @@
 ## 必須要件
 
 ### ハードウェア
-- **GPU**: DirectX 12対応GPU
-  - 推奨: NVIDIA RTX 2060以降
-  - 最小: NVIDIA GTX 1060 / AMD Radeon RX 580以降
+- **GPU**: ハードウェアレイトレーシング対応GPU（**必須**）
+  - **NVIDIA**: RTX 20シリーズ以降（RTX 2060, RTX 3060, RTX 4060等）
+  - **AMD**: RX 6000シリーズ以降（RX 6600, RX 6700 XT, RX 7600等）
+  - **Intel**: Arc Aシリーズ（A750, A770等）
+  
+  > ⚠️ GTX 10シリーズやRX 5000シリーズ以前はDXRソフトウェアエミュレーションとなり、実用的なパフォーマンスは得られません。
+  
+  > 💡 NRDデノイザーはNVIDIA RTX Kitを使用しているため、NVIDIA GPUで最適なパフォーマンスが得られます。
+
 - **RAM**: 8GB以上（16GB推奨）
+- **VRAM**: 6GB以上推奨（4K解像度では8GB以上推奨）
 - **ストレージ**: 5GB以上の空き容量
 
 ### ソフトウェア
@@ -21,8 +28,9 @@
 - **Windows SDK**: 最新版（10.0.22621.0以降推奨）
 
 ### グラフィックスドライバ
-- NVIDIA: Driver 450.82以降
-- AMD: Driver 20.11.2以降
+- **NVIDIA**: Driver 450.82以降（RTX 20シリーズ以降用）
+- **AMD**: Adrenalin 20.11.2以降（RX 6000シリーズ以降用）
+- **Intel**: Arc Graphics Driver 31.0.101.3490以降（Arc Aシリーズ用）
 
 ## セットアップ手順
 
@@ -76,12 +84,17 @@ msbuild RayTraceVS.sln /p:Configuration=Release /p:Platform=x64
 
 ### エラー: "DXR is not supported"
 
-**原因**: GPUがDirectX Raytracingをサポートしていない
+**原因**: GPUがハードウェアレイトレーシングをサポートしていない
 
 **解決策**:
-1. グラフィックスドライバを最新版に更新
-2. GPUがDXR対応か確認
+1. GPUがハードウェアレイトレーシング対応か確認：
+   - NVIDIA: RTX 20シリーズ以降が必要
+   - AMD: RX 6000シリーズ以降が必要
+   - Intel: Arc Aシリーズが必要
+2. グラフィックスドライバを最新版に更新
 3. Windows Updateを実行してDirectX 12を最新化
+
+> ⚠️ GTX 10シリーズ、RX 5000シリーズ以前のGPUではDXRはソフトウェアエミュレーションで動作しますが、本アプリケーションでは実用的なパフォーマンスが得られません。
 
 ### エラー: "d3d12.lib が見つかりません"
 
@@ -155,6 +168,7 @@ msbuild RayTraceVS.sln /p:Configuration=Release /p:Platform=x64
 - `RayTraceVS.WPF.exe`
 - `RayTraceVS.DXEngine.dll`
 - `RayTraceVS.Interop.dll`
+- `NRD.dll`（デノイザー用）
 - すべての`.cso`シェーダーファイル（`Shaders\`フォルダ内）
 - 必要なランタイム依存関係（.NET 8.0ランタイム）
 
