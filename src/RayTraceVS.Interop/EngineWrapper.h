@@ -27,7 +27,10 @@ namespace RayTraceVS::Interop
             CameraData camera,
             array<LightData>^ lights,
             int samplesPerPixel,
-            int maxBounces);
+            int maxBounces,
+            float exposure,
+            int toneMapOperator,
+            float denoiserStabilization);
 
         // Rendering
         void Render();

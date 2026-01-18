@@ -7,10 +7,10 @@
 #include <memory>
 #include <unordered_map>
 
-// NRD integration is disabled for now - need to build NRD with CMake first
-// When NRD is ready, define NRD_ENABLED=1 in preprocessor
+// NRD integration - enabled by default since NRD SDK is built
+// To disable, define NRD_ENABLED=0 in preprocessor
 #ifndef NRD_ENABLED
-#define NRD_ENABLED 0
+#define NRD_ENABLED 1
 #endif
 
 #if NRD_ENABLED
@@ -32,6 +32,7 @@ namespace RayTraceVS::DXEngine
         ComPtr<ID3D12Resource> NormalRoughness;          // RGBA8: XYZ = normal (oct encoded), W = roughness
         ComPtr<ID3D12Resource> ViewZ;                    // R32F: linear view depth
         ComPtr<ID3D12Resource> MotionVectors;            // RG16F: 2D screen-space motion vectors
+        ComPtr<ID3D12Resource> Albedo;                   // RGBA8: albedo color
     };
 
     // Denoised output structure
@@ -57,6 +58,7 @@ namespace RayTraceVS::DXEngine
         float CameraFar;
         bool IsFirstFrame;
         bool EnableValidation;
+        float DenoiserStabilization;
     };
 
     // NRD Denoiser wrapper class for D3D12

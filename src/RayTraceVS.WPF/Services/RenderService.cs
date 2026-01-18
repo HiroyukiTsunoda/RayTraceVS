@@ -30,14 +30,17 @@ namespace RayTraceVS.WPF.Services
             CameraData camera,
             LightData[] lights,
             int samplesPerPixel = 1,
-            int maxBounces = 4)
+            int maxBounces = 4,
+            float exposure = 1.0f,
+            int toneMapOperator = 2,
+            float denoiserStabilization = 1.0f)
         {
             if (!isInitialized || engineWrapper == null)
                 return;
 
             try
             {
-                engineWrapper.UpdateScene(spheres, planes, boxes, camera, lights, samplesPerPixel, maxBounces);
+                engineWrapper.UpdateScene(spheres, planes, boxes, camera, lights, samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization);
             }
             catch
             {

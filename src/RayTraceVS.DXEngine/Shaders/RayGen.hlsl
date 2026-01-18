@@ -122,6 +122,9 @@ void RayGen()
         payload.viewZ = 10000.0;
         payload.metallic = 0.0;
         payload.albedo = float3(0, 0, 0);
+        payload.targetObjectType = 0;
+        payload.targetObjectIndex = 0;
+        payload.thicknessQuery = 0;
         
         // レイトレーシング実行
         TraceRay(
@@ -160,13 +163,57 @@ void RayGen()
     
     // Output NRD G-Buffer data (when enabled)
 #ifdef ENABLE_NRD_GBUFFER
+    // Always write G-Buffer data
+    GBuffer_DiffuseRadianceHitDist[launchIndex] = float4(accumulatedDiffuse * invSampleCount, accumulatedHitDist * invSampleCount);
+    GBuffer_SpecularRadianceHitDist[launchIndex] = float4(accumulatedSpecular * invSampleCount, accumulatedHitDist * invSampleCount);
+    
+    // For primary normal/roughness/albedo, use hit data if available, else defaults
+    float3 worldNormal = anyHit ? primaryNormal : float3(0, 1, 0);
+    float outRoughness = anyHit ? primaryRoughness : 1.0;
+    float3 outAlbedo = anyHit ? primaryAlbedo : float3(1.0, 1.0, 1.0);
+    
+    // Convert world space normal to view space for NRD
+    // View space: X=right, Y=up, Z=forward (into screen)
+    float3 viewSpaceNormal;
+    viewSpaceNormal.x = dot(worldNormal, cameraRight);
+    viewSpaceNormal.y = dot(worldNormal, cameraUp);
+    viewSpaceNormal.z = dot(worldNormal, cameraForward);
+    viewSpaceNormal = normalize(viewSpaceNormal);
+    
+    // Calculate correct linear view depth (ViewZ)
+    // NRD expects view-space depth (negative forward in DX convention)
+    float outViewZ;
     if (anyHit)
     {
-        GBuffer_DiffuseRadianceHitDist[launchIndex] = float4(accumulatedDiffuse * invSampleCount, accumulatedHitDist * invSampleCount);
-        GBuffer_SpecularRadianceHitDist[launchIndex] = float4(accumulatedSpecular * invSampleCount, accumulatedHitDist * invSampleCount);
-        GBuffer_NormalRoughness[launchIndex] = NRD_FrontEnd_PackNormalAndRoughness(primaryNormal, primaryRoughness);
-        GBuffer_ViewZ[launchIndex] = primaryViewZ;
-        GBuffer_MotionVectors[launchIndex] = float2(0, 0);  // TODO: Implement motion vectors
+        float3 hitOffset = primaryPosition - cameraPos;
+        outViewZ = -dot(hitOffset, cameraForward);  // Negative along forward
+        outViewZ = min(outViewZ, -0.001);  // Ensure negative
     }
+    else
+    {
+        outViewZ = -10000.0;  // Far plane (negative) for misses
+    }
+    
+    // Pack normal and roughness for NRD (using view space normal)
+    GBuffer_NormalRoughness[launchIndex] = NRD_FrontEnd_PackNormalAndRoughness(viewSpaceNormal, outRoughness);
+    GBuffer_ViewZ[launchIndex] = outViewZ;
+    GBuffer_Albedo[launchIndex] = float4(outAlbedo, 1.0);
+    
+    // Motion vectors: screen-space pixel delta (current - previous)
+    float2 motion = float2(0, 0);
+    if (anyHit)
+    {
+        float4 currClip = mul(float4(primaryPosition, 1.0), Scene.ViewProjection);
+        float4 prevClip = mul(float4(primaryPosition, 1.0), Scene.PrevViewProjection);
+        float2 currNdc = currClip.xy / currClip.w;
+        float2 prevNdc = prevClip.xy / prevClip.w;
+        float2 ndcDelta = currNdc - prevNdc;
+        // NDC -1..1 to pixel delta (scaled down to avoid overshoot)
+        float2 pixelScale = float2(Scene.ScreenWidth, Scene.ScreenHeight) * 0.5;
+        motion = ndcDelta * pixelScale * 0.1; // dampen motion for stability
+        // Clamp to reasonable range
+        motion = clamp(motion, float2(-8, -8), float2(8, 8));
+    }
+    GBuffer_MotionVectors[launchIndex] = motion;
 #endif
 }

@@ -5,7 +5,7 @@
       "Id": "a1b2c3d4-e5f6-7890-abcd-111111111111",
       "Type": "SphereNode",
       "Title": "Sphere",
-      "PositionX": 1029.9909090909098,
+      "PositionX": 1029.1909090909096,
       "PositionY": 323.9999999999999,
       "Properties": {
         "Transform": {
@@ -106,8 +106,8 @@
       "Id": "a1b2c3d4-e5f6-7890-abcd-555555555555",
       "Type": "SceneNode",
       "Title": "Scene",
-      "PositionX": 1391.4571428571435,
-      "PositionY": 572.4428571428574,
+      "PositionX": 1395.4571428571433,
+      "PositionY": 570.8428571428574,
       "Properties": {
         "ObjectSocketNames": [
           "Object1",
@@ -121,7 +121,7 @@
           "Light4",
           "Light5"
         ],
-        "SamplesPerPixel": 1,
+        "SamplesPerPixel": 8,
         "MaxBounces": 6
       }
     },
@@ -509,8 +509,8 @@
       "PositionX": 275.5454545454545,
       "PositionY": 730.3636363636365,
       "Properties": {
-        "R": 0.3,
-        "G": 0.3,
+        "R": 0.2,
+        "G": 0.2,
         "B": 1.0,
         "A": 1.0
       }
@@ -758,10 +758,10 @@
       "InputSocketName": "Transparency"
     },
     {
-      "OutputNodeId": "008d86f0-f452-4931-b3fd-768917502a0e",
-      "OutputSocketName": "Material",
-      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-111111111111",
-      "InputSocketName": "Material"
+      "OutputNodeId": "59bc74c6-6e1d-4505-a999-aca4327a50bd",
+      "OutputSocketName": "Vector",
+      "InputNodeId": "d38ae94a-cab2-47e9-b086-7e48c9b4bdf0",
+      "InputSocketName": "Size"
     },
     {
       "OutputNodeId": "7d58b3ea-9fdf-41f0-b6a7-44d8d539696d",
@@ -770,15 +770,15 @@
       "InputSocketName": "Material"
     },
     {
-      "OutputNodeId": "59bc74c6-6e1d-4505-a999-aca4327a50bd",
-      "OutputSocketName": "Vector",
-      "InputNodeId": "d38ae94a-cab2-47e9-b086-7e48c9b4bdf0",
-      "InputSocketName": "Size"
+      "OutputNodeId": "008d86f0-f452-4931-b3fd-768917502a0e",
+      "OutputSocketName": "Material",
+      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-111111111111",
+      "InputSocketName": "Material"
     }
   ],
   "Viewport": {
-    "PanX": -55.735675684548596,
-    "PanY": -126.95694769627022,
+    "PanX": -41.33567568454896,
+    "PanY": -141.3569476962704,
     "Zoom": 1.0,
     "IsLeftPanelVisible": true,
     "IsRightPanelVisible": true,

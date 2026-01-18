@@ -82,6 +82,17 @@ namespace RayTraceVS::Interop
         float FocusDistance;  // DoF: distance to the focal plane
     };
 
+    // Render settings (managed side to native)
+    [StructLayout(LayoutKind::Sequential)]
+    public value struct RenderSettings
+    {
+        int SamplesPerPixel;
+        int MaxBounces;
+        float Exposure;
+        int ToneMapOperator;
+        float DenoiserStabilization;
+    };
+
     // Light type enumeration
     public enum class LightType
     {

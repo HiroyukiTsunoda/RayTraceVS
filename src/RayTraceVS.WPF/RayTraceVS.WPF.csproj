@@ -4,7 +4,7 @@
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
-    <Platform>x64</Platform>
+    <Platforms>x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
@@ -22,29 +22,14 @@
     <ProjectReference Include="..\RayTraceVS.Interop\RayTraceVS.Interop.vcxproj" />
   </ItemGroup>
 
-  <!-- C++プロジェクトの出力ディレクトリを明示的に定義（環境依存を排除） -->
-  <PropertyGroup>
-    <NativeOutputDir>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\bin\$(Configuration)\'))</NativeOutputDir>
-  </PropertyGroup>
-
-  <!-- NRD SDK Path -->
+  <!-- NRD SDK Path - only external DLL that needs copying -->
   <PropertyGroup>
     <NRD_DLL_PATH>C:\ProgramData\NVIDIA Corporation\SDKs\RTX_Kit_2025.4_Windows\RealTimeDenoiser\_Build\NRD.dll</NRD_DLL_PATH>
   </PropertyGroup>
 
-  <Target Name="CopyNativeDlls" AfterTargets="Build">
-    <ItemGroup>
-      <!-- DXEngine と Interop の出力DLLを明示的に指定 -->
-      <NativeDlls Include="$(NativeOutputDir)RayTraceVS.DXEngine.dll" />
-      <NativeDlls Include="$(NativeOutputDir)RayTraceVS.Interop.dll" />
-      <NativeDlls Include="$(NativeOutputDir)Ijwhost.dll" Condition="Exists('$(NativeOutputDir)Ijwhost.dll')" />
-      <!-- NRD DLL -->
-      <NativeDlls Include="$(NRD_DLL_PATH)" Condition="Exists('$(NRD_DLL_PATH)')" />
-      <!-- シェーダーファイル -->
-      <ShaderFiles Include="$(NativeOutputDir)*.cso" />
-    </ItemGroup>
-    <Copy SourceFiles="@(NativeDlls)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="@(ShaderFiles)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
-    <Message Text="Copied native DLLs from $(NativeOutputDir) to $(OutDir)" Importance="high" />
+  <!-- Copy only NRD.dll - DXEngine/Interop/CSO files are output directly to this folder -->
+  <Target Name="CopyNrdDll" AfterTargets="Build">
+    <Copy SourceFiles="$(NRD_DLL_PATH)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" Condition="Exists('$(NRD_DLL_PATH)')" />
+    <Message Text="Native output directory: $(OutDir)" Importance="high" />
   </Target>
 </Project>

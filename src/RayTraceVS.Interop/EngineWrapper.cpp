@@ -86,7 +86,10 @@ namespace RayTraceVS::Interop
         CameraData camera,
         array<LightData>^ lights,
         int samplesPerPixel,
-        int maxBounces)
+        int maxBounces,
+        float exposure,
+        int toneMapOperator,
+        float denoiserStabilization)
     {
         if (!isInitialized || !nativeScene)
             return;
@@ -99,7 +102,7 @@ namespace RayTraceVS::Interop
         Bridge::SetCamera(nativeScene, nativeCamera);
 
         // Set render settings
-        Bridge::SetRenderSettings(nativeScene, samplesPerPixel, maxBounces);
+        Bridge::SetRenderSettings(nativeScene, samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization);
 
         // Add spheres
         if (spheres != nullptr)

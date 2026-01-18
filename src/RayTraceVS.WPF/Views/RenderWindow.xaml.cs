@@ -63,6 +63,20 @@ namespace RayTraceVS.WPF.Views
                 // ウィンドウハンドル取得
                 var windowHandle = new WindowInteropHelper(this).Handle;
                 
+                // DPIスケーリングを取得して、物理ピクセル1920x1080になるようWPFサイズを計算
+                var source = PresentationSource.FromVisual(this);
+                double dpiScaleX = 1.0;
+                double dpiScaleY = 1.0;
+                if (source?.CompositionTarget != null)
+                {
+                    dpiScaleX = source.CompositionTarget.TransformToDevice.M11;
+                    dpiScaleY = source.CompositionTarget.TransformToDevice.M22;
+                }
+                
+                // WPF単位でのサイズ（物理ピクセル / DPIスケール）
+                double wpfWidth = RenderWidth / dpiScaleX;
+                double wpfHeight = RenderHeight / dpiScaleY;
+                
                 // レンダリングサービス初期化
                 renderService = new RenderService();
                 sceneEvaluator = new SceneEvaluator();
@@ -90,15 +104,24 @@ namespace RayTraceVS.WPF.Views
                     null);
                 RenderImage.Source = renderBitmap;
                 
+                // DPI補正したサイズで初期表示（物理ピクセル1920x1080）
+                RenderImage.Width = wpfWidth;
+                RenderImage.Height = wpfHeight;
+                RenderImage.Stretch = Stretch.None;
+                
                 UpdateInfo();
                 
-                // 初期サイズ設定後、ユーザーがリサイズできるようにする
-                SizeToContent = SizeToContent.Manual;
-                
-                // リサイズ時はスケーリングを有効にする
-                RenderImage.Width = double.NaN;
-                RenderImage.Height = double.NaN;
-                RenderImage.Stretch = Stretch.Uniform;
+                // レイアウト更新後にリサイズ可能モードに切り替え
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    // 初期サイズ設定後、ユーザーがリサイズできるようにする
+                    SizeToContent = SizeToContent.Manual;
+                    
+                    // リサイズ時はスケーリングを有効にする
+                    RenderImage.Width = double.NaN;
+                    RenderImage.Height = double.NaN;
+                    RenderImage.Stretch = Stretch.Uniform;
+                }), DispatcherPriority.Loaded);
             }
             catch (Exception ex)
             {
@@ -169,10 +192,10 @@ namespace RayTraceVS.WPF.Views
             try
             {
                 // ノードグラフからシーンデータを評価
-                var (spheres, planes, boxes, camera, lights, samplesPerPixel, maxBounces) = sceneEvaluator.EvaluateScene(nodeGraph);
+                var (spheres, planes, boxes, camera, lights, samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization) = sceneEvaluator.EvaluateScene(nodeGraph);
                 
                 // シーン更新
-                renderService.UpdateScene(spheres, planes, boxes, camera, lights, samplesPerPixel, maxBounces);
+                renderService.UpdateScene(spheres, planes, boxes, camera, lights, samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization);
                 
                 // レンダリング
                 renderService.Render();

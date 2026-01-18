@@ -204,12 +204,13 @@ void CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
     // Normal Rendering
     // ========================================
     
-    // Sample denoised radiance
+    // Diffuse & Specular: NRD
     float3 diffuseRadiance = DenoisedDiffuse.SampleLevel(LinearSampler, uv, 0).rgb;
     float3 specularRadiance = DenoisedSpecular.SampleLevel(LinearSampler, uv, 0).rgb;
+    float3 albedo = AlbedoTexture.SampleLevel(LinearSampler, uv, 0).rgb;
     
-    // Combine diffuse and specular
-    float3 finalRadiance = diffuseRadiance + specularRadiance;
+    // Combine: apply albedo after denoising
+    float3 finalRadiance = diffuseRadiance * albedo + specularRadiance;
     
     // Apply exposure
     finalRadiance *= ExposureValue;

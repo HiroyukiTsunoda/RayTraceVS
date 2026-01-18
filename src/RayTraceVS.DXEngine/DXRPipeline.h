@@ -51,6 +51,9 @@ namespace RayTraceVS::DXEngine
         // DoF (Depth of Field) parameters
         float ApertureSize;         // 0.0 = DoF disabled, larger = stronger bokeh
         float FocusDistance;        // Distance to the focal plane
+        // Matrices for motion vectors (column-major for HLSL)
+        XMFLOAT4X4 ViewProjection;
+        XMFLOAT4X4 PrevViewProjection;
     };
 
     // Photon structure for caustics (must match HLSL)
@@ -204,6 +207,11 @@ namespace RayTraceVS::DXEngine
         DXContext* dxContext;
         bool dxrPipelineReady = false;
 
+        // Shader base path (resolved once at initialization)
+        std::wstring shaderBasePath;
+        bool InitializeShaderPath();
+        std::wstring GetShaderPath(const std::wstring& filename) const { return shaderBasePath + filename; }
+
         // Compute shader pipeline (fallback)
         ComPtr<ID3D12RootSignature> computeRootSignature;
         ComPtr<ID3D12PipelineState> computePipelineState;
@@ -216,6 +224,11 @@ namespace RayTraceVS::DXEngine
         // Constant buffer
         ComPtr<ID3D12Resource> constantBuffer;
         SceneConstants* mappedConstantData = nullptr;
+
+        // Per-frame UI parameters
+        float exposure = 1.0f;
+        int toneMapOperator = 2;
+        float denoiserStabilization = 1.0f;
 
         // AoS Object buffers (for Compute Shader fallback)
         ComPtr<ID3D12Resource> sphereBuffer;
@@ -321,7 +334,7 @@ namespace RayTraceVS::DXEngine
         // ============================================
         
         std::unique_ptr<NRDDenoiser> denoiser;
-        bool denoiserEnabled = false;  // NRD denoiser disabled until G-Buffer output is enabled in shaders
+        bool denoiserEnabled = true;  // NRD denoiser enabled - G-Buffer output is ready
         
         // Frame tracking for motion vectors
         UINT frameIndex = 0;

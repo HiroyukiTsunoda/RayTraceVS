@@ -204,6 +204,10 @@ namespace RayTraceVS.WPF.Views
             currentZoom = viewportState.Zoom;
             zoomTransform.ScaleX = currentZoom;
             zoomTransform.ScaleY = currentZoom;
+            
+            // トランスフォームの変更を即座に反映
+            NodeCanvas.UpdateLayout();
+            ConnectionLayer.UpdateLayout();
         }
 
         /// <summary>
