@@ -349,7 +349,9 @@ namespace RayTraceVS.WPF.Services
                 Position = new InteropVector3(position.X, position.Y, position.Z),
                 Color = new InteropVector4(data.Color.X, data.Color.Y, data.Color.Z, data.Color.W),
                 Intensity = data.Intensity,
-                Type = interopType
+                Type = interopType,
+                Radius = data.Radius,
+                SoftShadowSamples = data.SoftShadowSamples
             };
         }
     }

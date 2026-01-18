@@ -1,21 +1,26 @@
 // Composite Shader
 // Combines denoised diffuse and specular radiance into final output
 // This is used after NRD denoising to produce the final image
+// Now also supports SIGMA-denoised shadows
+
+#include "NRDEncoding.hlsli"
 
 // Output render target
 RWTexture2D<float4> OutputTexture : register(u0);
 
 // Denoised inputs from NRD
-Texture2D<float4> DenoisedDiffuse : register(t0);     // Denoised diffuse radiance (output)
-Texture2D<float4> DenoisedSpecular : register(t1);    // Denoised specular radiance (output)
+Texture2D<float4> DenoisedDiffuse : register(t0);     // Denoised diffuse radiance (REBLUR output)
+Texture2D<float4> DenoisedSpecular : register(t1);    // Denoised specular radiance (REBLUR output)
 Texture2D<float4> AlbedoTexture : register(t2);       // Optional: albedo for modulation
+Texture2D<float4> DenoisedShadow : register(t3);      // Denoised shadow visibility (SIGMA output)
 
 // G-Buffer inputs (for debug visualization)
-Texture2D<float4> GBuffer_DiffuseIn : register(t3);   // Input diffuse before denoising
-Texture2D<float4> GBuffer_SpecularIn : register(t4); // Input specular before denoising
-Texture2D<float4> GBuffer_NormalRoughness : register(t5);
-Texture2D<float> GBuffer_ViewZ : register(t6);
-Texture2D<float2> GBuffer_MotionVectors : register(t7);
+Texture2D<float4> GBuffer_DiffuseIn : register(t4);   // Input diffuse before denoising
+Texture2D<float4> GBuffer_SpecularIn : register(t5); // Input specular before denoising
+Texture2D<float4> GBuffer_NormalRoughness : register(t6);
+Texture2D<float> GBuffer_ViewZ : register(t7);
+Texture2D<float2> GBuffer_MotionVectors : register(t8);
+Texture2D<float2> GBuffer_ShadowData : register(t9);  // Input shadow before denoising
 
 // Sampler
 SamplerState LinearSampler : register(s0);
@@ -28,6 +33,8 @@ cbuffer CompositeConstants : register(b0)
     float ToneMapOperator;  // 0 = Reinhard, 1 = ACES, 2 = None
     uint DebugMode;         // 0 = off, 1 = show debug tiles
     float DebugTileScale;   // Size of debug tiles (0.15 = 15% of screen height)
+    uint UseDenoisedShadow; // 1 = apply SIGMA-denoised shadow
+    float ShadowStrength;   // Multiplier for shadow contrast (1.0 = normal)
 };
 
 // ============================================
@@ -120,6 +127,47 @@ void CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
     float2 uv = (float2(pixelCoord) + 0.5) / float2(OutputSize);
     
     float3 finalColor;
+
+    // Debug Mode 2: full-screen input shadow visibility
+    if (DebugMode == 2)
+    {
+        float2 shadowIn = GBuffer_ShadowData.SampleLevel(LinearSampler, uv, 0);
+        float shadowVis = shadowIn.y;  // Y = visibility (0 = shadow, 1 = lit)
+        finalColor = float3(shadowVis, shadowVis, shadowVis);
+        OutputTexture[pixelCoord] = float4(LinearToSRGB(finalColor), 1.0);
+        return;
+    }
+    // Debug Mode 3: full-screen denoised shadow visibility
+    if (DebugMode == 3)
+    {
+        float shadowOut = SIGMA_BackEnd_UnpackShadow(DenoisedShadow.SampleLevel(LinearSampler, uv, 0)).x;
+        finalColor = float3(shadowOut, shadowOut, shadowOut);
+        OutputTexture[pixelCoord] = float4(LinearToSRGB(finalColor), 1.0);
+        return;
+    }
+    // Debug Mode 4: split-screen input vs denoised shadow
+    if (DebugMode == 4)
+    {
+        if (uv.x < 0.5)
+        {
+            float2 shadowIn = GBuffer_ShadowData.SampleLevel(LinearSampler, uv, 0);
+            float shadowVis = shadowIn.y;
+            finalColor = float3(shadowVis, shadowVis, shadowVis);
+        }
+        else
+        {
+            float shadowOut = SIGMA_BackEnd_UnpackShadow(DenoisedShadow.SampleLevel(LinearSampler, uv, 0)).x;
+            finalColor = float3(shadowOut, shadowOut, shadowOut);
+        }
+        OutputTexture[pixelCoord] = float4(LinearToSRGB(finalColor), 1.0);
+        return;
+    }
+    // Debug Mode 5: solid magenta (composite sanity check)
+    if (DebugMode == 5)
+    {
+        OutputTexture[pixelCoord] = float4(1.0, 0.0, 1.0, 1.0);
+        return;
+    }
     
     // ========================================
     // Debug Mode: Show tiles at bottom of screen
@@ -186,6 +234,19 @@ void CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
                 float2 mv = GBuffer_MotionVectors.SampleLevel(LinearSampler, tileUV, 0);
                 tileColor = VisualizeMotionVectors(mv);
             }
+            // Tile 7: Input Shadow (before SIGMA denoising)
+            else if (tileIndex == 7)
+            {
+                float2 shadowIn = GBuffer_ShadowData.SampleLevel(LinearSampler, tileUV, 0);
+                // X = penumbra, Y = visibility (0=shadow, 1=lit)
+                tileColor = float3(shadowIn.y, shadowIn.y, shadowIn.y);
+            }
+            // Tile 8: Denoised Shadow (SIGMA output)
+            else if (tileIndex == 8)
+            {
+                float shadowOut = SIGMA_BackEnd_UnpackShadow(DenoisedShadow.SampleLevel(LinearSampler, tileUV, 0)).x;
+                tileColor = float3(shadowOut, shadowOut, shadowOut);
+            }
             
             // Draw tile border (1px white line)
             if (localX < 0.01 || localX > 0.99 || localY < 0.01 || localY > 0.99)
@@ -204,13 +265,29 @@ void CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
     // Normal Rendering
     // ========================================
     
-    // Diffuse & Specular: NRD
+    // Diffuse & Specular: NRD REBLUR
     float3 diffuseRadiance = DenoisedDiffuse.SampleLevel(LinearSampler, uv, 0).rgb;
     float3 specularRadiance = DenoisedSpecular.SampleLevel(LinearSampler, uv, 0).rgb;
     float3 albedo = AlbedoTexture.SampleLevel(LinearSampler, uv, 0).rgb;
     
-    // Combine: apply albedo after denoising
-    float3 finalRadiance = diffuseRadiance * albedo + specularRadiance;
+    // Shadow: NRD SIGMA (optional)
+    float shadowVisibility = 1.0;
+    if (UseDenoisedShadow > 0)
+    {
+        // Read SIGMA-denoised shadow visibility
+        float shadowData = SIGMA_BackEnd_UnpackShadow(DenoisedShadow.SampleLevel(LinearSampler, uv, 0)).x;
+        shadowVisibility = shadowData;
+        
+        // Apply shadow strength for contrast control
+        // shadowVisibility = 1.0 means fully lit, 0.0 means fully shadowed
+        shadowVisibility = saturate(lerp(1.0, shadowVisibility, ShadowStrength));
+    }
+    
+    // Combine: apply albedo and shadow after denoising
+    // Note: If shadows were already baked into diffuseRadiance during ray tracing,
+    // this will double-apply shadows. For proper SIGMA integration, the ray tracer
+    // should output unshadowed diffuse and separate shadow data.
+    float3 finalRadiance = diffuseRadiance * albedo * shadowVisibility + specularRadiance;
     
     // Apply exposure
     finalRadiance *= ExposureValue;

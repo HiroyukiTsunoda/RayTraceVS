@@ -42,6 +42,7 @@ void AnyHit_Shadow(inout RayPayload payload, in ProceduralAttributes attribs)
     // Opaque or semi-transparent object blocks light
     // Mark as in shadow and accept hit (will terminate due to ray flags)
     payload.hit = true;
+    payload.hitDistance = RayTCurrent();
     
     // AcceptHitAndEndSearch() is implicit when using
     // RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH flag

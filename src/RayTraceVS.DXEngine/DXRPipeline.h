@@ -18,6 +18,7 @@ namespace RayTraceVS::DXEngine
     class Scene;
     class RenderTarget;
     class NRDDenoiser;
+    class ShaderCache;
 
     // Scene constants for compute shader
     struct alignas(256) SceneConstants
@@ -164,7 +165,9 @@ namespace RayTraceVS::DXEngine
         float Intensity;
         XMFLOAT4 Color;
         UINT Type;            // 0=Ambient, 1=Point, 2=Directional
-        XMFLOAT3 Padding;
+        float Radius;         // Area light radius (0 = point light, hard shadows)
+        float SoftShadowSamples; // Number of shadow samples (1-16)
+        float Padding;
     };
 
     class DXRPipeline
@@ -207,10 +210,14 @@ namespace RayTraceVS::DXEngine
         DXContext* dxContext;
         bool dxrPipelineReady = false;
 
-        // Shader base path (resolved once at initialization)
-        std::wstring shaderBasePath;
+        // Shader paths (fixed locations)
+        // - shaderSourcePath: C:\git\RayTraceVS\src\Shader\ (for .hlsl source files)
+        // - shaderBasePath:   C:\git\RayTraceVS\src\Shader\Cache\ (for .cso compiled files)
+        std::wstring shaderBasePath;      // Cache directory for .cso files
+        std::wstring shaderSourcePath;    // Source directory for .hlsl files
         bool InitializeShaderPath();
         std::wstring GetShaderPath(const std::wstring& filename) const { return shaderBasePath + filename; }
+        std::wstring GetShaderSourcePath(const std::wstring& filename) const { return shaderSourcePath + filename; }
 
         // Compute shader pipeline (fallback)
         ComPtr<ID3D12RootSignature> computeRootSignature;
@@ -330,6 +337,12 @@ namespace RayTraceVS::DXEngine
         bool needsAccelerationStructureRebuild = true;
 
         // ============================================
+        // Shader Cache System
+        // ============================================
+        
+        std::unique_ptr<ShaderCache> shaderCache;
+
+        // ============================================
         // Denoiser (NRD Integration)
         // ============================================
         
@@ -354,6 +367,9 @@ namespace RayTraceVS::DXEngine
         bool LoadShader(const wchar_t* filename, ID3DBlob** shader);
         bool LoadPrecompiledShader(const std::wstring& filename, ID3DBlob** shader);
         bool CompileShaderFromFile(const std::wstring& filename, const char* entryPoint, const char* target, ID3DBlob** shader);  // Deprecated
+        std::wstring ResolveDXRShaderSourcePath(const std::wstring& shaderName) const;
+        bool CompileDXRShaderFromSource(const std::wstring& shaderName, ID3DBlob** shader);  // Compile DXIL library from source
+        bool LoadOrCompileDXRShader(const std::wstring& shaderName, ID3DBlob** shader);  // Try source first, fall back to .cso
         
         // Compute pipeline
         bool CreateComputePipeline();

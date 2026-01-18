@@ -98,7 +98,7 @@
         "FieldOfView": 60.0,
         "Near": 0.1,
         "Far": 1000.0,
-        "ApertureSize": 0.05,
+        "ApertureSize": 0.0,
         "FocusDistance": 5.0
       }
     },
@@ -121,7 +121,7 @@
           "Light4",
           "Light5"
         ],
-        "SamplesPerPixel": 8,
+        "SamplesPerPixel": 16,
         "MaxBounces": 6
       }
     },
@@ -193,8 +193,8 @@
       "PositionY": 370.75714285714287,
       "Properties": {
         "R": 1.0,
-        "G": 0.2,
-        "B": 0.2,
+        "G": 0.0,
+        "B": 0.0,
         "A": 0.0
       }
     },
@@ -304,7 +304,7 @@
       "PositionX": 687.3772727272726,
       "PositionY": 1071.527272727273,
       "Properties": {
-        "Value": 0.3
+        "Value": 0.1
       }
     },
     {
@@ -360,15 +360,15 @@
       "PositionX": 695.7045454545455,
       "PositionY": 1229.727272727273,
       "Properties": {
-        "Value": 0.5
+        "Value": 0.3
       }
     },
     {
       "Id": "f9f127ed-a2d0-4b4c-8f48-a3ca8f3e72c5",
       "Type": "PointLightNode",
       "Title": "Point Light",
-      "PositionX": 1026.159090909091,
-      "PositionY": 1288.545454545455,
+      "PositionX": 1039.7954545454545,
+      "PositionY": 1307.6363636363642,
       "Properties": {
         "LightPosition": {
           "X": 5.0,
@@ -509,8 +509,8 @@
       "PositionX": 275.5454545454545,
       "PositionY": 730.3636363636365,
       "Properties": {
-        "R": 0.2,
-        "G": 0.2,
+        "R": 0.0,
+        "G": 0.0,
         "B": 1.0,
         "A": 1.0
       }
@@ -555,6 +555,26 @@
         "X": 1.0,
         "Y": 1.0,
         "Z": 1.0
+      }
+    },
+    {
+      "Id": "d441dacb-9d47-4f5f-995b-13ade781818f",
+      "Type": "FloatNode",
+      "Title": "Float",
+      "PositionX": 851.1999999999999,
+      "PositionY": 1137.4,
+      "Properties": {
+        "Value": 0.5
+      }
+    },
+    {
+      "Id": "b8217bc9-78a1-453e-ba43-fc9536a390ec",
+      "Type": "FloatNode",
+      "Title": "Float",
+      "PositionX": 850.8,
+      "PositionY": 1233.6000000000004,
+      "Properties": {
+        "Value": 10.0
       }
     }
   ],
@@ -774,12 +794,36 @@
       "OutputSocketName": "Material",
       "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-111111111111",
       "InputSocketName": "Material"
+    },
+    {
+      "OutputNodeId": "d441dacb-9d47-4f5f-995b-13ade781818f",
+      "OutputSocketName": "Value",
+      "InputNodeId": "1574bc15-76ea-4253-bde5-8f62befa63a3",
+      "InputSocketName": "Angular Radius"
+    },
+    {
+      "OutputNodeId": "b8217bc9-78a1-453e-ba43-fc9536a390ec",
+      "OutputSocketName": "Value",
+      "InputNodeId": "1574bc15-76ea-4253-bde5-8f62befa63a3",
+      "InputSocketName": "Shadow Samples"
+    },
+    {
+      "OutputNodeId": "d441dacb-9d47-4f5f-995b-13ade781818f",
+      "OutputSocketName": "Value",
+      "InputNodeId": "f9f127ed-a2d0-4b4c-8f48-a3ca8f3e72c5",
+      "InputSocketName": "Radius"
+    },
+    {
+      "OutputNodeId": "b8217bc9-78a1-453e-ba43-fc9536a390ec",
+      "OutputSocketName": "Value",
+      "InputNodeId": "f9f127ed-a2d0-4b4c-8f48-a3ca8f3e72c5",
+      "InputSocketName": "Shadow Samples"
     }
   ],
   "Viewport": {
-    "PanX": -41.33567568454896,
-    "PanY": -141.3569476962704,
-    "Zoom": 1.0,
+    "PanX": 22.26117682616814,
+    "PanY": -33.83731397271782,
+    "Zoom": 0.88,
     "IsLeftPanelVisible": true,
     "IsRightPanelVisible": true,
     "ExpanderStates": {

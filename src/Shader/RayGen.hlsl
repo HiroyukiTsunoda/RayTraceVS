@@ -65,6 +65,14 @@ void RayGen()
     float primaryMetallic = 0.0;
     float3 primaryAlbedo = float3(0, 0, 0);
     bool anyHit = false;
+    
+    // SIGMA expects RAW single-sample shadow data, NOT averaged!
+    // Store primary sample shadow for SIGMA (no averaging)
+    float primaryShadowVisibility = 1.0;
+    float primaryShadowPenumbra = 0.0;
+    float primaryShadowDistance = NRD_FP16_MAX;
+    
+    // For display/fallback only (averaged)
     float accumulatedShadowVisibility = 0.0;
     float accumulatedShadowPenumbra = 0.0;
     float minShadowDistance = NRD_FP16_MAX;
@@ -166,6 +174,13 @@ void RayGen()
             primaryViewZ = payload.viewZ;
             primaryMetallic = payload.metallic;
             primaryAlbedo = payload.albedo;
+            
+            // SIGMA: Store raw shadow from PRIMARY sample only (no averaging!)
+            // This is critical - SIGMA expects noisy single-sample input
+            primaryShadowVisibility = payload.shadowVisibility;
+            primaryShadowPenumbra = payload.shadowPenumbra;
+            primaryShadowDistance = payload.shadowDistance;
+            
             anyHit = true;
         }
     }
@@ -177,7 +192,8 @@ void RayGen()
     
     // Output NRD G-Buffer data (when enabled)
 #ifdef ENABLE_NRD_GBUFFER
-    // Always write G-Buffer data
+    // Write UNSHADOWED lighting with albedo to DiffuseRadiance
+    // SIGMA shadow will be applied in Composite shader
     GBuffer_DiffuseRadianceHitDist[launchIndex] = float4(accumulatedDiffuse * invSampleCount, accumulatedHitDist * invSampleCount);
     GBuffer_SpecularRadianceHitDist[launchIndex] = float4(accumulatedSpecular * invSampleCount, accumulatedHitDist * invSampleCount);
     
@@ -195,17 +211,17 @@ void RayGen()
     viewSpaceNormal = normalize(viewSpaceNormal);
     
     // Calculate correct linear view depth (ViewZ)
-    // NRD expects view-space depth (negative forward in DX convention)
+    // NRD/SIGMA expects POSITIVE view depth (distance along camera forward)
     float outViewZ;
     if (anyHit)
     {
         float3 hitOffset = primaryPosition - cameraPos;
-        outViewZ = -dot(hitOffset, cameraForward);  // Negative along forward
-        outViewZ = min(outViewZ, -0.001);  // Ensure negative
+        outViewZ = dot(hitOffset, cameraForward);  // Positive distance along forward
+        outViewZ = max(outViewZ, 0.01);  // Minimum positive depth (avoid zero)
     }
     else
     {
-        outViewZ = -10000.0;  // Far plane (negative) for misses
+        outViewZ = 10000.0;  // Far plane for misses (positive, large)
     }
     
     // Pack normal and roughness for NRD (using view space normal)
@@ -213,14 +229,24 @@ void RayGen()
     GBuffer_ViewZ[launchIndex] = outViewZ;
     GBuffer_Albedo[launchIndex] = float4(outAlbedo, 1.0);
     
-    // SIGMA shadow inputs
-    // DEBUG: Force white (no shadow) to verify G-Buffer path
-    float shadowVisibility = 1.0;  // accumulatedShadowVisibility * invSampleCount;
-    float shadowPenumbra = (occludedSampleCount > 0) ? (accumulatedShadowPenumbra / float(occludedSampleCount)) : 0.0;
-    float shadowDistance = (occludedSampleCount > 0) ? minShadowDistance : NRD_FP16_MAX;
-    GBuffer_ShadowData[launchIndex] = float2(shadowPenumbra, shadowVisibility);
-    // SIGMA_SHADOW expects shadow signal in OUT_SHADOW_TRANSLUCENCY input (X channel)
-    GBuffer_ShadowTranslucency[launchIndex] = float4(shadowVisibility, 0.0, 0.0, 0.0);
+    // SIGMA shadow inputs - Use RAW PRIMARY SAMPLE data, NOT averaged!
+    // SIGMA expects noisy single-sample input for temporal reconstruction
+    // Averaging before SIGMA destroys the temporal coherence SIGMA needs
+    
+    // Penumbra: use fixed value for testing SIGMA blur behavior
+    // If SIGMA blurs with this, then penumbra calculation is the issue
+    // Typical values: 1-10 pixels of penumbra radius
+    float sigmaPenumbra = 3.0;  // Fixed 3px penumbra for testing
+    GBuffer_ShadowData[launchIndex] = float2(sigmaPenumbra, primaryShadowVisibility);
+    
+    // Pack translucency using NRD format:
+    // X = 1.0 if no hit (lit), 0.0 if hit (shadow) - this is the binary signal
+    // SIGMA uses this combined with penumbra for temporal reconstruction
+    float4 packedTranslucency = SIGMA_FrontEnd_PackTranslucency(
+        primaryShadowDistance,  // distanceToOccluder (NRD_FP16_MAX if no hit)
+        float3(0, 0, 0)         // translucency (opaque shadow)
+    );
+    GBuffer_ShadowTranslucency[launchIndex] = packedTranslucency;
     
     // Motion vectors: screen-space pixel delta (current - previous)
     float2 motion = float2(0, 0);

@@ -24,12 +24,12 @@
         <SolidColorBrush x:Key="TextSecondaryBrush" Color="#C0C0C0"/>
         
         <!-- Node Colors -->
-        <SolidColorBrush x:Key="NodeObjectBrush" Color="#4A90E2"/>
-        <SolidColorBrush x:Key="NodeMaterialBrush" Color="#E25D5D"/>
-        <SolidColorBrush x:Key="NodeMathBrush" Color="#E27A3F"/>
-        <SolidColorBrush x:Key="NodeCameraBrush" Color="#9B59B6"/>
-        <SolidColorBrush x:Key="NodeLightBrush" Color="#F1C40F"/>
-        <SolidColorBrush x:Key="NodeSceneBrush" Color="#2ECC71"/>
+        <SolidColorBrush x:Key="NodeObjectBrush" Color="#4070B0"/>   <!-- 青 -->
+        <SolidColorBrush x:Key="NodeMaterialBrush" Color="#40A050"/> <!-- 緑 -->
+        <SolidColorBrush x:Key="NodeMathBrush" Color="#A04040"/>     <!-- 赤 -->
+        <SolidColorBrush x:Key="NodeCameraBrush" Color="#8040A0"/>   <!-- 紫 -->
+        <SolidColorBrush x:Key="NodeLightBrush" Color="#B0A020"/>    <!-- 黄色 -->
+        <SolidColorBrush x:Key="NodeSceneBrush" Color="#40A0A0"/>    <!-- シアン（水色） -->
         <SolidColorBrush x:Key="NodeSocketBrush" Color="#FFFFFF"/>
     </Application.Resources>
 </Application>

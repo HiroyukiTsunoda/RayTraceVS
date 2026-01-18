@@ -161,6 +161,16 @@ void ClosestHit_Diffuse(inout RayPayload payload, in ProceduralAttributes attrib
         color = plane.color;
         metallic = plane.metallic;
         roughness = plane.roughness;
+
+        // Checkerboard pattern for floor (world space coordinates)
+        // Use hitPosition.xz directly for horizontal floor
+        float2 uv = hitPosition.xz;
+        
+        // Use bitwise AND for correct handling of negative coordinates
+        int ix = (int)floor(uv.x);
+        int iy = (int)floor(uv.y);
+        int checker = (ix + iy) & 1;
+        color.rgb = checker ? float3(0.9, 0.9, 0.9) : float3(0.1, 0.1, 0.1);
     }
     else
     {
@@ -232,8 +242,10 @@ void ClosestHit_Diffuse(inout RayPayload payload, in ProceduralAttributes attrib
     // NRD-specific outputs (only for primary rays, depth == 0)
     if (payload.depth == 0)
     {
-        payload.diffuseRadiance = diffuseLightingNoShadow;
-        payload.specularRadiance = specularColor;
+        // Store the FULL rendered color (with shadows) for composite
+        // This is the same as payload.color - the complete scene render
+        payload.diffuseRadiance = finalColor;
+        payload.specularRadiance = float3(0, 0, 0);  // Already included in diffuseRadiance
         payload.hitDistance = hitDistance;
         payload.worldNormal = normal;
         payload.roughness = roughness;

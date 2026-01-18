@@ -28,6 +28,9 @@ namespace RayTraceVS::DXEngine
         bool IsDXRSupported() const { return isDXRSupported; }
         D3D12_RAYTRACING_TIER GetRaytracingTier() const { return raytracingTier; }
         
+        // Get adapter for driver information (used by ShaderCache)
+        IDXGIAdapter1* GetAdapter() const { return adapter.Get(); }
+        
         void CreateCommandQueue();
         void CreateCommandAllocatorAndList();
         void CreateSwapChain(HWND hwnd, int width, int height);

@@ -109,5 +109,7 @@ namespace RayTraceVS::Interop
         Vector4 Color;
         float Intensity;
         LightType Type;
+        float Radius;            // Area light radius (0 = point light, hard shadows)
+        float SoftShadowSamples; // Number of shadow samples (1-16)
     };
 }

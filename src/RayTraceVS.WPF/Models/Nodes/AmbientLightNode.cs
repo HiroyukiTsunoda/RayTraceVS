@@ -34,7 +34,9 @@ namespace RayTraceVS.WPF.Models.Nodes
                 Direction = Vector3.Zero,
                 Color = color,
                 Intensity = intensity,
-                Attenuation = 0.0f
+                Attenuation = 0.0f,
+                Radius = 0.0f,              // Ambientライトはシャドウなし
+                SoftShadowSamples = 1.0f
             };
         }
     }

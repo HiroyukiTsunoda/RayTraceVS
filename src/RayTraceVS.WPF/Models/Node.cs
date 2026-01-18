@@ -88,12 +88,12 @@ namespace RayTraceVS.WPF.Models
 
         public Brush CategoryColor => category switch
         {
-            NodeCategory.Object => new SolidColorBrush(Color.FromRgb(0x2C, 0x54, 0x87)),   // 青（暗め）
-            NodeCategory.Material => new SolidColorBrush(Color.FromRgb(0xB3, 0x4D, 0x4D)), // 赤（暗め）
-            NodeCategory.Math => new SolidColorBrush(Color.FromRgb(0x87, 0x49, 0x26)),     // オレンジ（暗め）
-            NodeCategory.Camera => new SolidColorBrush(Color.FromRgb(0x5B, 0x35, 0x6C)),   // 紫（暗め）
-            NodeCategory.Light => new SolidColorBrush(Color.FromRgb(0x8F, 0x74, 0x09)),    // 黄色（暗め）
-            NodeCategory.Scene => new SolidColorBrush(Color.FromRgb(0x1B, 0x7A, 0x43)),    // 緑（暗め）
+            NodeCategory.Object => new SolidColorBrush(Color.FromRgb(0x40, 0x70, 0xB0)),   // 青
+            NodeCategory.Material => new SolidColorBrush(Color.FromRgb(0x40, 0xA0, 0x50)), // 緑
+            NodeCategory.Math => new SolidColorBrush(Color.FromRgb(0xA0, 0x40, 0x40)),     // 赤
+            NodeCategory.Camera => new SolidColorBrush(Color.FromRgb(0x80, 0x40, 0xA0)),   // 紫
+            NodeCategory.Light => new SolidColorBrush(Color.FromRgb(0xB0, 0xA0, 0x20)),    // 黄色
+            NodeCategory.Scene => new SolidColorBrush(Color.FromRgb(0x40, 0xA0, 0xA0)),    // シアン（水色）
             _ => new SolidColorBrush(Colors.Gray)
         };
 
