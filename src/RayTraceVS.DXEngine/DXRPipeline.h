@@ -52,6 +52,9 @@ namespace RayTraceVS::DXEngine
         // DoF (Depth of Field) parameters
         float ApertureSize;         // 0.0 = DoF disabled, larger = stronger bokeh
         float FocusDistance;        // Distance to the focal plane
+        // Shadow parameters
+        float ShadowStrength;       // 0.0 = no shadow, 1.0 = normal, >1.0 = darker
+        UINT FrameIndex;            // Frame counter for temporal noise variation
         // Matrices for motion vectors (column-major for HLSL)
         XMFLOAT4X4 ViewProjection;
         XMFLOAT4X4 PrevViewProjection;
@@ -236,6 +239,7 @@ namespace RayTraceVS::DXEngine
         float exposure = 1.0f;
         int toneMapOperator = 2;
         float denoiserStabilization = 1.0f;
+        float shadowStrength = 1.0f;
 
         // AoS Object buffers (for Compute Shader fallback)
         ComPtr<ID3D12Resource> sphereBuffer;

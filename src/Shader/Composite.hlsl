@@ -16,11 +16,12 @@ Texture2D<float4> DenoisedShadow : register(t3);      // Denoised shadow visibil
 
 // G-Buffer inputs (for debug visualization)
 Texture2D<float4> GBuffer_DiffuseIn : register(t4);   // Input diffuse before denoising
-Texture2D<float4> GBuffer_SpecularIn : register(t5); // Input specular before denoising
+Texture2D<float4> GBuffer_SpecularIn : register(t5); // Input specular before denoising (corrupted by NRD)
 Texture2D<float4> GBuffer_NormalRoughness : register(t6);
 Texture2D<float> GBuffer_ViewZ : register(t7);
 Texture2D<float2> GBuffer_MotionVectors : register(t8);
 Texture2D<float2> GBuffer_ShadowData : register(t9);  // Input shadow before denoising
+Texture2D<float4> RawSpecularBackup : register(t10);  // Copy of specular BEFORE NRD processing
 
 // Sampler
 SamplerState LinearSampler : register(s0);
@@ -284,34 +285,49 @@ void CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
     }
     
     // ========================================
-    // Normal Rendering
+    // Normal Rendering with Mirror Bypass
     // ========================================
     
-    // GBuffer_DiffuseIn contains the ray traced scene
-    // For diffuse: unshadowed lighting * albedo + specular
-    // For metal/glass: full reflection/refraction result
+    // Get surface properties for mirror bypass
+    float4 normalRoughness = GBuffer_NormalRoughness.SampleLevel(LinearSampler, uv, 0);
+    float3 surfaceNormal;
+    float roughness;
+    NRD_FrontEnd_UnpackNormalAndRoughness(normalRoughness, surfaceNormal, roughness);
+    float viewZ = GBuffer_ViewZ.SampleLevel(LinearSampler, uv, 0);
+    
+    // ========================================
+    // Mirror/Glass Bypass for Low Roughness
+    // ========================================
+    // For very low roughness (< 0.05), bypass normal path and use raw specular backup
+    // This preserves sharp reflections/refractions for glass and mirrors
+    // IMPORTANT: Use RawSpecularBackup (t10), NOT GBuffer_SpecularIn (t5) which is corrupted by NRD
+    const float mirrorThreshold = 0.05;
+    if (roughness < mirrorThreshold && viewZ > 0.0)
+    {
+        // Use raw specular backup (copy made BEFORE NRD processing)
+        float3 rawSpecular = RawSpecularBackup.SampleLevel(LinearSampler, uv, 0).rgb;
+        OutputTexture[pixelCoord] = float4(LinearToSRGB(saturate(rawSpecular)), 1.0);
+        return;
+    }
+    
+    // ========================================
+    // Normal Surfaces: Use GBuffer_DiffuseIn directly
+    // ========================================
+    // GBuffer_DiffuseIn contains the ray traced scene color
     float3 sceneColor = GBuffer_DiffuseIn.SampleLevel(LinearSampler, uv, 0).rgb;
     
     // ========================================
     // Shadow Application (SIGMA denoised)
     // ========================================
-    // IMPORTANT: SIGMA outputs OCCLUSION (0=no occlusion, 1=full occlusion)
-    // We need TRANSMITTANCE for compositing (1=lit, 0=shadow)
-    
-    float transmittance = 1.0;  // Default: fully lit (no shadow)
+    float transmittance = 1.0;
     
     if (UseDenoisedShadow > 0)
     {
-        // Step 1: Get SIGMA output (occlusion) and CLAMP to 0-1
-        // SIGMA can overshoot causing white halos if not clamped!
         float occlusion = SIGMA_BackEnd_UnpackShadow(DenoisedShadow.SampleLevel(LinearSampler, uv, 0)).x;
-        occlusion = saturate(occlusion);  // CRITICAL: prevent overshoot
-        
-        // Step 2: Convert occlusion to transmittance
-        transmittance = saturate(1.0 - occlusion);  // Double saturate for safety
+        occlusion = saturate(occlusion);
+        transmittance = saturate(1.0 - occlusion);
     }
     
-    // Step 3: Apply shadow directly (no ambient floor for now)
     float3 finalRadiance = sceneColor * transmittance;
     
     // Apply exposure

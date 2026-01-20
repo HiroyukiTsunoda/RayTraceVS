@@ -54,7 +54,20 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
     uint maxBounces = (Scene.MaxBounces > 0) ? Scene.MaxBounces : 5;
     if (payload.depth >= maxBounces)
     {
-        payload.color = float3(0, 0, 0);
+        // Max depth reached - return approximate color instead of black
+        // Use sky color in the ray direction with a gentle tint from surface
+        float3 rayDir = WorldRayDirection();
+        float3 skyFallback = GetSkyColor(rayDir);
+        
+        // Get basic material color for tinting
+        float4 matColor = float4(0.5, 0.5, 0.5, 1.0);
+        if (attribs.objectType == OBJECT_TYPE_SPHERE)
+            matColor = Spheres[attribs.objectIndex].color;
+        else if (attribs.objectType == OBJECT_TYPE_BOX)
+            matColor = Boxes[attribs.objectIndex].color;
+        
+        // Blend sky with material tint
+        payload.color = skyFallback * lerp(float3(1, 1, 1), matColor.rgb, 0.3);
         return;
     }
     
@@ -119,7 +132,7 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
     {
         bool entering = dot(rayDir, normal) < 0;
         float3 N = entering ? normal : -normal;   // N always points against incoming ray
-        float eta = entering ? (1.0 / ior) : ior; // n1/n2
+        float eta = entering ? (1.0 / ior) : ior; // n1/n2 (restored original IOR)
         
         // Fresnel term (Schlick)
         float cosTheta = saturate(dot(-rayDir, N));
@@ -139,12 +152,14 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
         // If we are at the recursion budget, shoot1本だけで早期終了
         bool nearLimit = (payload.depth + 1) >= maxBounces;
         
-        // Trace reflection (always allowed)
+        // Trace reflection
+        // For box: use larger TMin to skip self-intersection on other faces
         {
             RayDesc reflectRay;
-            reflectRay.Origin = hitPosition + reflectDir * 0.002;   // offset along outgoing direction
+            reflectRay.Origin = hitPosition + N * 0.002;
             reflectRay.Direction = reflectDir;
-            reflectRay.TMin = 0.001;
+            // Box: TMin large enough to escape the box (typical size ~1.0, so TMin=2.0 escapes)
+            reflectRay.TMin = (attribs.objectType == OBJECT_TYPE_BOX) ? 2.5 : 0.001;
             reflectRay.TMax = 10000.0;
             
             RayPayload reflPayload;
@@ -152,7 +167,6 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
             reflPayload.depth = payload.depth + 1;
             reflPayload.hit = 0;
             reflPayload.padding = 0.0;
-            // Initialize NRD fields
             reflPayload.diffuseRadiance = float3(0, 0, 0);
             reflPayload.specularRadiance = float3(0, 0, 0);
             reflPayload.hitDistance = 10000.0;
@@ -165,54 +179,102 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
             reflPayload.shadowVisibility = 1.0;
             reflPayload.shadowPenumbra = 0.0;
             reflPayload.shadowDistance = NRD_FP16_MAX;
-            reflPayload.targetObjectType = 0;
-            reflPayload.targetObjectIndex = 0;
+            // Pass current object info to skip self-intersection
+            reflPayload.targetObjectType = attribs.objectType;
+            reflPayload.targetObjectIndex = attribs.objectIndex;
             reflPayload.thicknessQuery = 0;
             
             TraceRay(SceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, reflectRay, reflPayload);
             reflectColor = reflPayload.color;
         }
         
-        // Trace refraction if not total internal reflection and we have budget
-        if (!tir && !nearLimit)
+        // Trace refraction if not total internal reflection
+        if (!tir)
         {
-            RayDesc refractRay;
-            refractRay.Origin = hitPosition + refractDir * 0.002; // push along transmitted direction
-            refractRay.Direction = refractDir;
-            refractRay.TMin = 0.001;
-            refractRay.TMax = 10000.0;
+            // Sky color fallback for refraction direction
+            float3 skyFallback = GetSkyColor(refractDir);
             
-            RayPayload refrPayload;
-            refrPayload.color = GetSkyColor(refractRay.Direction);
-            refrPayload.depth = payload.depth + 1;
-            refrPayload.hit = 0;
-            refrPayload.padding = 0.0;
-            // Initialize NRD fields
-            refrPayload.diffuseRadiance = float3(0, 0, 0);
-            refrPayload.specularRadiance = float3(0, 0, 0);
-            refrPayload.hitDistance = 10000.0;
-            refrPayload.worldNormal = float3(0, 1, 0);
-            refrPayload.roughness = 1.0;
-            refrPayload.worldPosition = float3(0, 0, 0);
-            refrPayload.viewZ = 10000.0;
-            refrPayload.metallic = 0.0;
-            refrPayload.albedo = float3(0, 0, 0);
-            refrPayload.shadowVisibility = 1.0;
-            refrPayload.shadowPenumbra = 0.0;
-            refrPayload.shadowDistance = NRD_FP16_MAX;
-            refrPayload.targetObjectType = 0;
-            refrPayload.targetObjectIndex = 0;
-            refrPayload.thicknessQuery = 0;
-            
-            TraceRay(SceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, refractRay, refrPayload);
-            refractColor = refrPayload.color;
+            if (!nearLimit)
+            {
+                // We have recursion budget - trace the refraction ray
+                RayDesc refractRay;
+                refractRay.Origin = hitPosition + refractDir * 0.002; // push along transmitted direction
+                refractRay.Direction = refractDir;
+                // For boxes: use larger TMin to skip the opposite face of the same box
+                // This allows the ray to exit the box and hit other objects
+                // Box typical size ~1.0, so TMin=3.0 ensures we escape the box
+                refractRay.TMin = (attribs.objectType == OBJECT_TYPE_BOX) ? 3.0 : 0.001;
+                refractRay.TMax = 10000.0;
+                
+                RayPayload refrPayload;
+                refrPayload.color = skyFallback;  // Initialize with sky color
+                refrPayload.depth = payload.depth + 1;
+                refrPayload.hit = 0;
+                refrPayload.padding = 0.0;
+                // Initialize NRD fields
+                refrPayload.diffuseRadiance = float3(0, 0, 0);
+                refrPayload.specularRadiance = float3(0, 0, 0);
+                refrPayload.hitDistance = 10000.0;
+                refrPayload.worldNormal = float3(0, 1, 0);
+                refrPayload.roughness = 1.0;
+                refrPayload.worldPosition = float3(0, 0, 0);
+                refrPayload.viewZ = 10000.0;
+                refrPayload.metallic = 0.0;
+                refrPayload.albedo = float3(0, 0, 0);
+                refrPayload.shadowVisibility = 1.0;
+                refrPayload.shadowPenumbra = 0.0;
+                refrPayload.shadowDistance = NRD_FP16_MAX;
+                refrPayload.targetObjectType = 0;
+                refrPayload.targetObjectIndex = 0;
+                refrPayload.thicknessQuery = 0;
+                
+                TraceRay(SceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, refractRay, refrPayload);
+                refractColor = refrPayload.color;
+                
+                // If refraction result is too dark (possible deep recursion artifact),
+                // blend with sky color to prevent black artifacts
+                float refractLuminance = dot(refractColor, float3(0.299, 0.587, 0.114));
+                if (refractLuminance < 0.05)
+                {
+                    // Blend with sky to prevent complete blackout
+                    refractColor = lerp(skyFallback, refractColor, refractLuminance / 0.05);
+                }
+            }
+            else
+            {
+                // Near recursion limit - use approximate refraction with sky color
+                // This prevents black artifacts when viewing glass through reflections
+                refractColor = skyFallback * lerp(float3(1, 1, 1), color.rgb, 0.5);
+            }
+        }
+        else
+        {
+            // Total internal reflection - use sky color as fallback
+            refractColor = GetSkyColor(rayDir);
         }
         
         float fresnel = tir ? 1.0 : FresnelSchlick(cosTheta, f0);
         
-        // Apply simple tint from material color to transmitted component
-        float3 tintedRefract = refractColor * color.rgb;
+        // Apply tint from material color to transmitted component
+        // For primary rays (direct view): use full color tint for proper glass appearance
+        // For secondary rays (reflections): use gentler tint to prevent black artifacts
+        float tintStrength = (payload.depth == 0) ? 1.0 : 0.4;
+        float3 tintedRefract = refractColor * lerp(float3(1, 1, 1), color.rgb, tintStrength);
+        
+        // Blend refraction and reflection using Fresnel
         payload.color = lerp(tintedRefract, reflectColor, fresnel);
+        
+        // For secondary rays only: ensure minimum brightness to prevent black artifacts
+        if (payload.depth > 0)
+        {
+            float finalLuminance = dot(payload.color, float3(0.299, 0.587, 0.114));
+            if (finalLuminance < 0.05)
+            {
+                // If result is too dark, blend with sky
+                float3 skyContrib = GetSkyColor(refractDir) * 0.2;
+                payload.color = lerp(skyContrib, payload.color, finalLuminance / 0.05);
+            }
+        }
         
         // NRD outputs for glass (primary rays only)
         if (payload.depth == 0)

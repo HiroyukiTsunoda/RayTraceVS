@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using System.Numerics;
+using RayTraceVS.WPF.Models.Data;
 
 namespace RayTraceVS.WPF.Models.Nodes
 {
@@ -19,7 +21,7 @@ namespace RayTraceVS.WPF.Models.Nodes
             AddOutputSocket("Light", SocketType.Light);
         }
 
-        public override object? Evaluate(Dictionary<System.Guid, object?> inputValues)
+        public override object? Evaluate(Dictionary<Guid, object?> inputValues)
         {
             var colorInput = GetInputValue<Vector4?>("Color", inputValues);
             var intensityInput = GetInputValue<float?>("Intensity", inputValues);

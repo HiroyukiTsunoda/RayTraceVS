@@ -43,6 +43,7 @@ namespace RayTraceVS.WPF.ViewModels
 
             foreach (var connection in connectionsToRemove)
             {
+                connection.Dispose(); // イベント購読解除
                 connections.Remove(connection);
             }
 

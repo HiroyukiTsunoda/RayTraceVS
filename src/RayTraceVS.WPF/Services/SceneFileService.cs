@@ -244,6 +244,11 @@ namespace RayTraceVS.WPF.Services
                     properties["LightSocketNames"] = lightSocketNames;
                     properties["SamplesPerPixel"] = sceneNode.SamplesPerPixel;
                     properties["MaxBounces"] = sceneNode.MaxBounces;
+                    properties["Exposure"] = sceneNode.Exposure;
+                    properties["ToneMapOperator"] = sceneNode.ToneMapOperator;
+                    properties["DenoiserStabilization"] = sceneNode.DenoiserStabilization;
+                    properties["ShadowStrength"] = sceneNode.ShadowStrength;
+                    properties["EnableDenoiser"] = sceneNode.EnableDenoiser;
                     break;
 
                 case Vector3Node vector3:
@@ -490,6 +495,16 @@ namespace RayTraceVS.WPF.Services
                         sceneNode.SamplesPerPixel = Convert.ToInt32(samplesObj);
                     if (properties.TryGetValue("MaxBounces", out var bouncesObj))
                         sceneNode.MaxBounces = Convert.ToInt32(bouncesObj);
+                    if (properties.TryGetValue("Exposure", out var exposureObj))
+                        sceneNode.Exposure = Convert.ToSingle(exposureObj);
+                    if (properties.TryGetValue("ToneMapOperator", out var toneMapObj))
+                        sceneNode.ToneMapOperator = Convert.ToInt32(toneMapObj);
+                    if (properties.TryGetValue("DenoiserStabilization", out var stabObj))
+                        sceneNode.DenoiserStabilization = Convert.ToSingle(stabObj);
+                    if (properties.TryGetValue("ShadowStrength", out var shadowObj))
+                        sceneNode.ShadowStrength = Convert.ToSingle(shadowObj);
+                    if (properties.TryGetValue("EnableDenoiser", out var denoiserObj))
+                        sceneNode.EnableDenoiser = Convert.ToBoolean(denoiserObj);
                     break;
 
                 case Vector3Node vector3:

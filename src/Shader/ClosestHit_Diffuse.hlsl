@@ -169,8 +169,21 @@ void ClosestHit_Diffuse(inout RayPayload payload, in ProceduralAttributes attrib
         // Use bitwise AND for correct handling of negative coordinates
         int ix = (int)floor(uv.x);
         int iy = (int)floor(uv.y);
-        int checker = (ix + iy) & 1;
-        color.rgb = checker ? float3(0.9, 0.9, 0.9) : float3(0.1, 0.1, 0.1);
+        float checker = (float)((ix + iy) & 1);
+        
+        // Distance-based contrast reduction to reduce aliasing (pseudo-MIP filtering)
+        // Far away checkers fade to gray, reducing high-frequency aliasing
+        float fadeStart = 10.0;   // Distance where fading begins
+        float fadeEnd = 100.0;    // Distance where contrast is minimum
+        float distFactor = saturate((hitDistance - fadeStart) / (fadeEnd - fadeStart));
+        float contrast = lerp(1.0, 0.2, distFactor);  // 1.0 = full contrast, 0.2 = low contrast at distance
+        
+        // Apply contrast: lerp between gray (0.5) and checker pattern
+        float checkerValue = lerp(0.5, checker, contrast);
+        
+        // Map checker value to color range (0.1 to 0.9)
+        float colorValue = lerp(0.1, 0.9, checkerValue);
+        color.rgb = float3(colorValue, colorValue, colorValue);
     }
     else
     {
@@ -180,12 +193,21 @@ void ClosestHit_Diffuse(inout RayPayload payload, in ProceduralAttributes attrib
         roughness = box.roughness;
     }
     
-    // Calculate diffuse lighting with caustics and soft shadows (separate lighting from albedo)
+    // Calculate diffuse lighting with caustics and soft shadows
+    // IMPORTANT: Pass white (1,1,1) as objectColor to get RADIANCE ONLY (no albedo)
+    // This is required for proper NRD denoising - albedo is multiplied AFTER denoising
     DiffuseLightingResult lighting = CalculateDiffuseLightingWithCaustics(hitPosition, normal, float3(1.0, 1.0, 1.0), roughness, seed);
-    float3 diffuseLighting = lighting.shadowed;
-    float3 diffuseLightingNoShadow = lighting.unshadowed;
-    float3 diffuseColor = diffuseLighting * color.rgb;
+    float3 diffuseLighting = lighting.shadowed;           // Radiance with shadows
+    float3 diffuseLightingNoShadow = lighting.unshadowed; // Radiance without shadows (for NRD)
+    float3 diffuseColor = diffuseLighting * color.rgb;    // Final color = radiance * albedo
     float3 specularColor = float3(0, 0, 0);
+    
+    // Variables for NRD specular output (need to be in outer scope)
+    float fresnel = 0.0;
+    RayPayload reflectPayload;
+    reflectPayload.diffuseRadiance = float3(0, 0, 0);
+    reflectPayload.specularRadiance = float3(0, 0, 0);
+    reflectPayload.albedo = float3(0, 0, 0);
     
     // Subtle Fresnel reflection for dielectrics
     if (payload.depth < MAX_RECURSION_DEPTH)
@@ -193,7 +215,7 @@ void ClosestHit_Diffuse(inout RayPayload payload, in ProceduralAttributes attrib
         float f0 = 0.04;
         float3 viewDir = -WorldRayDirection();
         float cosTheta = max(0.0, dot(viewDir, normal));
-        float fresnel = FresnelSchlick(cosTheta, f0);
+        fresnel = FresnelSchlick(cosTheta, f0);
         
         if (fresnel > 0.05)
         {
@@ -204,7 +226,6 @@ void ClosestHit_Diffuse(inout RayPayload payload, in ProceduralAttributes attrib
             reflectRay.TMin = 0.001;
             reflectRay.TMax = 10000.0;
             
-            RayPayload reflectPayload;
             reflectPayload.color = float3(0, 0, 0);
             reflectPayload.depth = payload.depth + 1;
             reflectPayload.hit = false;
@@ -213,6 +234,7 @@ void ClosestHit_Diffuse(inout RayPayload payload, in ProceduralAttributes attrib
             reflectPayload.diffuseRadiance = float3(0, 0, 0);
             reflectPayload.specularRadiance = float3(0, 0, 0);
             reflectPayload.hitDistance = 10000.0;
+            reflectPayload.specularHitDistance = 10000.0;
             reflectPayload.worldNormal = float3(0, 1, 0);
             reflectPayload.roughness = 1.0;
             reflectPayload.worldPosition = float3(0, 0, 0);
@@ -228,7 +250,7 @@ void ClosestHit_Diffuse(inout RayPayload payload, in ProceduralAttributes attrib
             
             TraceRay(SceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, reflectRay, reflectPayload);
             
-            // Specular contribution from reflection
+            // Specular contribution from reflection (for display)
             specularColor = reflectPayload.color * fresnel * (1.0 - roughness);
         }
     }
@@ -242,11 +264,102 @@ void ClosestHit_Diffuse(inout RayPayload payload, in ProceduralAttributes attrib
     // NRD-specific outputs (only for primary rays, depth == 0)
     if (payload.depth == 0)
     {
-        // Store the FULL rendered color (with shadows) for composite
-        // This is the same as payload.color - the complete scene render
-        payload.diffuseRadiance = finalColor;
-        payload.specularRadiance = float3(0, 0, 0);  // Already included in diffuseRadiance
+        // Store RADIANCE ONLY (no albedo) for NRD denoising
+        // Albedo will be multiplied AFTER denoising in Composite shader
+        // This is critical for NRD quality - never denoise albedo-multiplied color
+        payload.diffuseRadiance = diffuseLightingNoShadow;  // Pure radiance, no albedo
+        
+        // ========================================
+        // Direct Light Specular (Blinn-Phong) for NRD
+        // This is ESSENTIAL - without it, t1 (DenoisedSpecular) will be black!
+        // ========================================
+        float3 directSpecularRadiance = float3(0, 0, 0);
+        float3 V = normalize(-WorldRayDirection());
+        
+        // Dielectric F0
+        float3 F0 = float3(0.04, 0.04, 0.04);
+        float VdotN = saturate(dot(V, normal));
+        float3 F = F0 + (1.0 - F0) * pow(1.0 - VdotN, 5.0);
+        
+        // roughness -> shininess
+        float shininess = lerp(256.0, 8.0, roughness);
+        
+        // Calculate specular from all lights
+        for (uint i = 0; i < Scene.NumLights; i++)
+        {
+            LightData light = Lights[i];
+            
+            if (light.type == LIGHT_TYPE_DIRECTIONAL)
+            {
+                float3 L = normalize(-light.position);
+                float3 H = normalize(L + V);
+                
+                float NdotL = saturate(dot(normal, L));
+                float NdotH = saturate(dot(normal, H));
+                
+                float specTerm = pow(NdotH, shininess) * NdotL;
+                directSpecularRadiance += light.color.rgb * light.intensity * specTerm * F;
+            }
+            else if (light.type == LIGHT_TYPE_POINT)
+            {
+                float3 toLight = light.position - hitPosition;
+                float lightDist = length(toLight);
+                float3 L = toLight / lightDist;
+                float3 H = normalize(L + V);
+                
+                float NdotL = saturate(dot(normal, L));
+                float NdotH = saturate(dot(normal, H));
+                float attenuation = 1.0 / (1.0 + lightDist * lightDist * 0.01);
+                
+                float specTerm = pow(NdotH, shininess) * NdotL * attenuation;
+                directSpecularRadiance += light.color.rgb * light.intensity * specTerm * F;
+            }
+        }
+        
+        // Fallback light if no lights defined
+        if (Scene.NumLights == 0)
+        {
+            float3 toLight = Scene.LightPosition - hitPosition;
+            float lightDist = length(toLight);
+            float3 L = toLight / lightDist;
+            float3 H = normalize(L + V);
+            
+            float NdotL = saturate(dot(normal, L));
+            float NdotH = saturate(dot(normal, H));
+            
+            float specTerm = pow(NdotH, shininess) * NdotL;
+            directSpecularRadiance += Scene.LightColor.rgb * Scene.LightIntensity * specTerm * F;
+        }
+        
+        // ========================================
+        // Reflection-based Specular (environment reflection)
+        // ========================================
+        float3 reflectionSpecularRadiance = float3(0, 0, 0);
+        if (fresnel > 0.01 && roughness < 0.9)
+        {
+            // Use reflected radiance (not color!) to preserve HDR and avoid albedo mixing
+            float3 reflectedRadiance = reflectPayload.diffuseRadiance * reflectPayload.albedo 
+                                     + reflectPayload.specularRadiance;
+            reflectionSpecularRadiance = reflectedRadiance * fresnel * (1.0 - roughness);
+        }
+        
+        // Combine direct + reflection specular
+        // NOTE: ×4 boost is now applied in RayGen for easier tuning
+        payload.specularRadiance = directSpecularRadiance + reflectionSpecularRadiance;
         payload.hitDistance = hitDistance;
+        
+        // Specular hit distance: use reflection ray distance if available, else primary
+        // NRD needs the hit distance of the specular source (reflection ray)
+        if (fresnel > 0.01 && roughness < 0.9 && reflectPayload.hit)
+        {
+            payload.specularHitDistance = reflectPayload.hitDistance;
+        }
+        else
+        {
+            // Direct specular only - use primary ray hit distance
+            payload.specularHitDistance = hitDistance;
+        }
+        
         payload.worldNormal = normal;
         payload.roughness = roughness;
         payload.worldPosition = hitPosition;

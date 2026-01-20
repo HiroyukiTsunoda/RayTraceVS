@@ -5,8 +5,8 @@
       "Id": "a1b2c3d4-e5f6-7890-abcd-111111111111",
       "Type": "SphereNode",
       "Title": "Sphere",
-      "PositionX": 1029.1909090909096,
-      "PositionY": 323.9999999999999,
+      "PositionX": 1025.554545454546,
+      "PositionY": 381.27272727272725,
       "Properties": {
         "Transform": {
           "Position": {
@@ -106,8 +106,8 @@
       "Id": "a1b2c3d4-e5f6-7890-abcd-555555555555",
       "Type": "SceneNode",
       "Title": "Scene",
-      "PositionX": 1395.4571428571433,
-      "PositionY": 570.8428571428574,
+      "PositionX": 1391.8207792207797,
+      "PositionY": 567.3155844155845,
       "Properties": {
         "ObjectSocketNames": [
           "Object1",
@@ -122,15 +122,20 @@
           "Light5"
         ],
         "SamplesPerPixel": 16,
-        "MaxBounces": 6
+        "MaxBounces": 6,
+        "Exposure": 1.0,
+        "ToneMapOperator": 2,
+        "DenoiserStabilization": 1.0,
+        "ShadowStrength": 0.85,
+        "EnableDenoiser": true
       }
     },
     {
       "Id": "d38ae94a-cab2-47e9-b086-7e48c9b4bdf0",
       "Type": "BoxNode",
       "Title": "Box",
-      "PositionX": 1038.2000000000005,
-      "PositionY": 738.7,
+      "PositionX": 1037.6594594594599,
+      "PositionY": 759.2405405405407,
       "Properties": {
         "Transform": {
           "Position": {
@@ -205,7 +210,7 @@
       "PositionX": 560.8,
       "PositionY": 411.15714285714284,
       "Properties": {
-        "Value": 0.5
+        "Value": 0.0
       }
     },
     {
@@ -357,10 +362,10 @@
       "Id": "b15ace43-cf5d-4957-984e-67853460ca73",
       "Type": "FloatNode",
       "Title": "Float",
-      "PositionX": 695.7045454545455,
-      "PositionY": 1229.727272727273,
+      "PositionX": 692.0681818181818,
+      "PositionY": 1248.818181818182,
       "Properties": {
-        "Value": 0.3
+        "Value": 0.5
       }
     },
     {
@@ -417,7 +422,7 @@
       "PositionX": 715.3409090909091,
       "PositionY": 1375.2727272727273,
       "Properties": {
-        "Value": 1.0
+        "Value": 3.0
       }
     },
     {
@@ -488,8 +493,8 @@
       "Id": "7d58b3ea-9fdf-41f0-b6a7-44d8d539696d",
       "Type": "GlassMaterialNode",
       "Title": "Glass",
-      "PositionX": 753.0,
-      "PositionY": 759.2000000000002,
+      "PositionX": 763.909090909091,
+      "PositionY": 753.7454545454547,
       "Properties": {
         "Color": {
           "X": 1.0,
@@ -520,17 +525,17 @@
       "Type": "FloatNode",
       "Title": "Float",
       "PositionX": 593.0,
-      "PositionY": 640.2,
+      "PositionY": 627.4727272727272,
       "Properties": {
-        "Value": 0.5
+        "Value": 0.0
       }
     },
     {
       "Id": "ec71a17d-7eff-44cc-8d38-bbca6f7583ae",
       "Type": "FloatNode",
       "Title": "Float",
-      "PositionX": 595.8000000000001,
-      "PositionY": 735.4,
+      "PositionX": 596.7090909090911,
+      "PositionY": 719.9454545454546,
       "Properties": {
         "Value": 1.5
       }
@@ -539,8 +544,8 @@
       "Id": "9d7a6aa1-2ddb-4b27-91ce-81283d93a479",
       "Type": "FloatNode",
       "Title": "Float",
-      "PositionX": 594.4,
-      "PositionY": 823.2,
+      "PositionX": 598.0363636363637,
+      "PositionY": 811.3818181818182,
       "Properties": {
         "Value": 0.5
       }
@@ -564,7 +569,7 @@
       "PositionX": 851.1999999999999,
       "PositionY": 1137.4,
       "Properties": {
-        "Value": 0.5
+        "Value": 0.1
       }
     },
     {
@@ -821,9 +826,9 @@
     }
   ],
   "Viewport": {
-    "PanX": 22.26117682616814,
-    "PanY": -33.83731397271782,
-    "Zoom": 0.88,
+    "PanX": -80.94508988343682,
+    "PanY": -133.28644596137215,
+    "Zoom": 1.0,
     "IsLeftPanelVisible": true,
     "IsRightPanelVisible": true,
     "ExpanderStates": {

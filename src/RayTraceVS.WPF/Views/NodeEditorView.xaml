@@ -166,7 +166,7 @@
                                     <Grid Visibility="{Binding HasEditableFloat, Converter={StaticResource BoolToVisibilityConverter}}"
                                           Margin="0,2">
                                         <TextBox x:Name="FloatValueTextBox"
-                                                 Text="{Binding EditableFloatValue, UpdateSourceTrigger=LostFocus, StringFormat={}{0:G}}"
+                                                 Text="{Binding EditableFloatValue, Mode=TwoWay, UpdateSourceTrigger=LostFocus, StringFormat={}{0:G}}"
                                                  Width="60"
                                                  Height="20"
                                                  FontSize="10"

@@ -91,6 +91,7 @@ namespace RayTraceVS::Interop
         float Exposure;
         int ToneMapOperator;
         float DenoiserStabilization;
+        float ShadowStrength;
     };
 
     // Light type enumeration

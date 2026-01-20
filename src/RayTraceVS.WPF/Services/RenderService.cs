@@ -33,14 +33,16 @@ namespace RayTraceVS.WPF.Services
             int maxBounces = 4,
             float exposure = 1.0f,
             int toneMapOperator = 2,
-            float denoiserStabilization = 1.0f)
+            float denoiserStabilization = 1.0f,
+            float shadowStrength = 1.0f,
+            bool enableDenoiser = true)
         {
             if (!isInitialized || engineWrapper == null)
                 return;
 
             try
             {
-                engineWrapper.UpdateScene(spheres, planes, boxes, camera, lights, samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization);
+                engineWrapper.UpdateScene(spheres, planes, boxes, camera, lights, samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization, shadowStrength, enableDenoiser);
             }
             catch
             {

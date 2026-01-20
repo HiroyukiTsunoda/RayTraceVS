@@ -108,51 +108,55 @@ void SphereIntersection()
             
             if (t >= RayTMin() && t <= RayTCurrent())
             {
-                // Calculate normal based on which face was hit
-                // Use the axis that contributed most to tNear/tFar
-                float3 normal;
+                // Calculate normal using hit point method - most stable for all cases
+                // This approach works consistently for edges and faces alike
+                float3 hitPoint = origin + direction * t;
+                float3 localHit = hitPoint - box.center;
                 
-                if (isEntering)
+                // Normalize by box size to handle non-uniform boxes correctly
+                float3 safeSize = max(box.size, float3(0.0001, 0.0001, 0.0001));
+                float3 normalizedLocal = localHit / safeSize;
+                float3 absNormalized = abs(normalizedLocal);
+                
+                // The face we hit is the one where the normalized coordinate is closest to 1.0
+                // Use a moderate bias to ensure consistent results at edges
+                const float FACE_BIAS = 0.001;
+                
+                float3 normal;
+                float maxComponent = max(max(absNormalized.x, absNormalized.y), absNormalized.z);
+                
+                // Determine which face(s) we're closest to
+                // At edges, multiple components will be near maxComponent
+                // We need a consistent tie-breaking rule: prioritize X > Y > Z
+                if (absNormalized.x >= maxComponent - FACE_BIAS)
                 {
-                    // Entering: find which axis gave tNear (maximum of tMin values)
-                    // Compare differences to find the closest match
-                    float3 diff = abs(float3(tNear, tNear, tNear) - tMin);
-                    
-                    if (diff.x <= diff.y && diff.x <= diff.z)
-                        normal = float3(-sign(direction.x), 0, 0);
-                    else if (diff.y <= diff.z)
-                        normal = float3(0, -sign(direction.y), 0);
-                    else
-                        normal = float3(0, 0, -sign(direction.z));
+                    // X face (or X edge)
+                    normal = float3(normalizedLocal.x > 0 ? 1 : -1, 0, 0);
+                }
+                else if (absNormalized.y >= maxComponent - FACE_BIAS)
+                {
+                    // Y face (or Y edge without X)
+                    normal = float3(0, normalizedLocal.y > 0 ? 1 : -1, 0);
                 }
                 else
                 {
-                    // Exiting: find which axis gave tFar (minimum of tMax values)
-                    float3 diff = abs(float3(tFar, tFar, tFar) - tMax);
-                    
-                    if (diff.x <= diff.y && diff.x <= diff.z)
-                        normal = float3(sign(direction.x), 0, 0);
-                    else if (diff.y <= diff.z)
-                        normal = float3(0, sign(direction.y), 0);
-                    else
-                        normal = float3(0, 0, sign(direction.z));
+                    // Z face
+                    normal = float3(0, 0, normalizedLocal.z > 0 ? 1 : -1);
                 }
                 
-                // Handle edge case where direction component is exactly 0
-                // (sign(0) = 0 would give zero normal)
+                // Safety check: ensure normal is valid
                 if (length(normal) < 0.5)
                 {
-                    // Fallback: use hit point method
-                    float3 hitPoint = origin + direction * t;
-                    float3 localHit = hitPoint - box.center;
-                    float3 normalizedLocal = abs(localHit) / max(box.size, float3(0.0001, 0.0001, 0.0001));
-                    
-                    if (normalizedLocal.x > normalizedLocal.y && normalizedLocal.x > normalizedLocal.z)
-                        normal = float3(localHit.x > 0 ? 1 : -1, 0, 0);
-                    else if (normalizedLocal.y > normalizedLocal.z)
-                        normal = float3(0, localHit.y > 0 ? 1 : -1, 0);
+                    // Fallback: use outward direction from center
+                    normal = normalize(localHit);
+                    // Snap to axis
+                    float3 absN = abs(normal);
+                    if (absN.x >= absN.y && absN.x >= absN.z)
+                        normal = float3(normal.x > 0 ? 1 : -1, 0, 0);
+                    else if (absN.y >= absN.z)
+                        normal = float3(0, normal.y > 0 ? 1 : -1, 0);
                     else
-                        normal = float3(0, 0, localHit.z > 0 ? 1 : -1);
+                        normal = float3(0, 0, normal.z > 0 ? 1 : -1);
                 }
                 
                 ProceduralAttributes attribs;

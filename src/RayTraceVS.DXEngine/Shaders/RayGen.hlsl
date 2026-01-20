@@ -65,6 +65,8 @@ void RayGen()
     float primaryMetallic = 0.0;
     float3 primaryAlbedo = float3(0, 0, 0);
     bool anyHit = false;
+    float3 accumulatedAlbedo = float3(0, 0, 0);
+    uint albedoSampleCount = 0;
     float accumulatedShadowVisibility = 0.0;
     float accumulatedShadowPenumbra = 0.0;
     float minShadowDistance = NRD_FP16_MAX;
@@ -157,6 +159,18 @@ void RayGen()
             minShadowDistance = min(minShadowDistance, payload.shadowDistance);
         }
         
+        if (payload.hit)
+        {
+            float3 sampleAlbedo = payload.albedo;
+            if (all(sampleAlbedo == float3(0.0, 0.0, 0.0)))
+            {
+                // Fallback: derive from final color if albedo wasn't populated
+                sampleAlbedo = saturate(payload.color);
+            }
+            accumulatedAlbedo += sampleAlbedo;
+            albedoSampleCount++;
+        }
+        
         // 最初のヒットからNRDデータを取得（プライマリレイの情報）
         if (payload.hit && !anyHit)
         {
@@ -175,8 +189,7 @@ void RayGen()
     float3 finalColor = accumulatedColor * invSampleCount;
     RenderTarget[launchIndex] = float4(finalColor, 1.0);
     
-    // Output NRD G-Buffer data (when enabled)
-#ifdef ENABLE_NRD_GBUFFER
+    // Output NRD G-Buffer data (always enabled for denoising)
     // Always write G-Buffer data
     GBuffer_DiffuseRadianceHitDist[launchIndex] = float4(accumulatedDiffuse * invSampleCount, accumulatedHitDist * invSampleCount);
     GBuffer_SpecularRadianceHitDist[launchIndex] = float4(accumulatedSpecular * invSampleCount, accumulatedHitDist * invSampleCount);
@@ -184,7 +197,9 @@ void RayGen()
     // For primary normal/roughness/albedo, use hit data if available, else defaults
     float3 worldNormal = anyHit ? primaryNormal : float3(0, 1, 0);
     float outRoughness = anyHit ? primaryRoughness : 1.0;
-    float3 outAlbedo = anyHit ? primaryAlbedo : float3(1.0, 1.0, 1.0);
+    float3 outAlbedo = anyHit
+        ? ((albedoSampleCount > 0) ? (accumulatedAlbedo / float(albedoSampleCount)) : primaryAlbedo)
+        : float3(0.0, 0.0, 0.0);
     
     // Convert world space normal to view space for NRD
     // View space: X=right, Y=up, Z=forward (into screen)
@@ -194,33 +209,60 @@ void RayGen()
     viewSpaceNormal.z = dot(worldNormal, cameraForward);
     viewSpaceNormal = normalize(viewSpaceNormal);
     
-    // Calculate correct linear view depth (ViewZ)
-    // NRD expects view-space depth (negative forward in DX convention)
+    // Calculate linear view depth (ViewZ)
+    // NRD expects a positive camera distance
     float outViewZ;
     if (anyHit)
     {
-        float3 hitOffset = primaryPosition - cameraPos;
-        outViewZ = -dot(hitOffset, cameraForward);  // Negative along forward
-        outViewZ = min(outViewZ, -0.001);  // Ensure negative
+        outViewZ = primaryViewZ;  // payload.viewZ = hitDistance (positive)
     }
     else
     {
-        outViewZ = -10000.0;  // Far plane (negative) for misses
+        outViewZ = 0.0;  // Miss sentinel for NRD
     }
     
     // Pack normal and roughness for NRD (using view space normal)
     GBuffer_NormalRoughness[launchIndex] = NRD_FrontEnd_PackNormalAndRoughness(viewSpaceNormal, outRoughness);
     GBuffer_ViewZ[launchIndex] = outViewZ;
-    GBuffer_Albedo[launchIndex] = float4(outAlbedo, 1.0);
     
-    // SIGMA shadow inputs
-    // DEBUG: Force white (no shadow) to verify G-Buffer path
-    float shadowVisibility = 1.0;  // accumulatedShadowVisibility * invSampleCount;
-    float shadowPenumbra = (occludedSampleCount > 0) ? (accumulatedShadowPenumbra / float(occludedSampleCount)) : 0.0;
-    float shadowDistance = (occludedSampleCount > 0) ? minShadowDistance : NRD_FP16_MAX;
-    GBuffer_ShadowData[launchIndex] = float2(shadowPenumbra, shadowVisibility);
-    // SIGMA_SHADOW expects shadow signal in OUT_SHADOW_TRANSLUCENCY input (X channel)
-    GBuffer_ShadowTranslucency[launchIndex] = float4(shadowVisibility, 0.0, 0.0, 0.0);
+    // DEBUG: Write magenta to verify UAV write works
+    // If Tile9 becomes magenta, UAV binding is correct and problem is in albedo computation
+    // If Tile9 stays black, UAV write itself is failing
+    float3 debugAlbedo = float3(1.0, 0.0, 1.0);  // Magenta for visibility
+    GBuffer_Albedo[launchIndex] = float4(debugAlbedo, 1.0);
+    
+    // SIGMA shadow inputs - CORRECT FORMAT
+    // IN_PENUMBRA (ShadowData.x): 
+    //   - lit pixels: NRD_FP16_MAX (sentinel value)
+    //   - shadow pixels: penumbra radius from PackPenumbra
+    // IN_TRANSLUCENCY (ShadowTranslucency): packed from SIGMA_FrontEnd_PackTranslucency
+    
+    // Pack penumbra: lit uses NRD_FP16_MAX sentinel, shadow uses packed value
+    float packedPenumbra;
+    if (primaryShadowDistance >= NRD_FP16_MAX)
+    {
+        // Lit
+        packedPenumbra = NRD_FP16_MAX;
+    }
+    else
+    {
+        // Shadow
+        float tanOfLightAngularRadius = 0.15;  // Larger for better soft shadows
+        packedPenumbra = SIGMA_FrontEnd_PackPenumbra(primaryShadowDistance, tanOfLightAngularRadius);
+        packedPenumbra = max(packedPenumbra, 0.5);
+    }
+    
+    // ShadowData: X = packed penumbra, Y = unused
+    GBuffer_ShadowData[launchIndex] = float2(packedPenumbra, 0.0);
+    
+    // Pack translucency using NRD format
+    // X = 1.0 if no occluder (lit), 0.0 if occluder (shadow)
+    // YZW = translucency color (0,0,0 for opaque shadow)
+    float4 packedTranslucency = SIGMA_FrontEnd_PackTranslucency(
+        primaryShadowDistance,  // distanceToOccluder (NRD_FP16_MAX if no hit)
+        float3(0, 0, 0)         // translucency (opaque shadow)
+    );
+    GBuffer_ShadowTranslucency[launchIndex] = packedTranslucency;
     
     // Motion vectors: screen-space pixel delta (current - previous)
     float2 motion = float2(0, 0);
@@ -238,5 +280,4 @@ void RayGen()
         motion = clamp(motion, float2(-8, -8), float2(8, 8));
     }
     GBuffer_MotionVectors[launchIndex] = motion;
-#endif
 }

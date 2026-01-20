@@ -1,10 +1,14 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using Newtonsoft.Json.Linq;
+using RayTraceVS.WPF.Models.Data;
+using RayTraceVS.WPF.Models.Serialization;
 
 namespace RayTraceVS.WPF.Models.Nodes
 {
-    public class BoxNode : Node
+    public class BoxNode : Node, ISerializableNode
     {
         // Transform（位置・回転・スケール）
         public Transform ObjectTransform { get; set; } = Transform.Identity;
@@ -23,7 +27,7 @@ namespace RayTraceVS.WPF.Models.Nodes
             AddOutputSocket("Object", SocketType.Object);
         }
 
-        public override object? Evaluate(Dictionary<System.Guid, object?> inputValues)
+        public override object? Evaluate(Dictionary<Guid, object?> inputValues)
         {
             // Transform入力を取得（未接続の場合は内部プロパティを使用）
             var transformSocket = InputSockets.FirstOrDefault(s => s.Name == "Transform");
@@ -35,7 +39,6 @@ namespace RayTraceVS.WPF.Models.Nodes
 
             // マテリアル入力を取得（未接続の場合はデフォルト）
             var material = GetInputValue<MaterialData?>("Material", inputValues) ?? MaterialData.Default;
-            System.Diagnostics.Debug.WriteLine($"[BoxNode] Material: Transmission={material.Transmission}, Metallic={material.Metallic}, IOR={material.IOR}");
             
             // 形状パラメータ入力を取得
             var sizeInput = GetInputValue<Vector3?>("Size", inputValues);
@@ -56,12 +59,19 @@ namespace RayTraceVS.WPF.Models.Nodes
                 Material = material
             };
         }
-    }
 
-    public struct BoxData
-    {
-        public Vector3 Center;
-        public Vector3 Size;  // half-extents
-        public MaterialData Material;
+        #region ISerializableNode
+        public void SerializeProperties(JObject json)
+        {
+            json["transform"] = ObjectTransform.ToJson();
+            json["size"] = Size.ToJson();
+        }
+
+        public void DeserializeProperties(JObject json)
+        {
+            ObjectTransform = json["transform"].ToTransform();
+            Size = json["size"].ToVector3(Vector3.One);
+        }
+        #endregion
     }
 }

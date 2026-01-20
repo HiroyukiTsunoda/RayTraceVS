@@ -190,12 +190,11 @@ void RayGen()
     float3 finalColor = accumulatedColor * invSampleCount;
     RenderTarget[launchIndex] = float4(finalColor, 1.0);
     
-    // Output NRD G-Buffer data (when enabled)
-#ifdef ENABLE_NRD_GBUFFER
-    // Write UNSHADOWED lighting with albedo to DiffuseRadiance
-    // SIGMA shadow will be applied in Composite shader
+    // Output NRD G-Buffer data (always enabled for denoising)
     GBuffer_DiffuseRadianceHitDist[launchIndex] = float4(accumulatedDiffuse * invSampleCount, accumulatedHitDist * invSampleCount);
-    GBuffer_SpecularRadianceHitDist[launchIndex] = float4(accumulatedSpecular * invSampleCount, accumulatedHitDist * invSampleCount);
+    // CRITICAL: Write finalColor to specular buffer for mirror bypass
+    // This ensures glass/mirror surfaces bypass NRD and show correct refraction
+    GBuffer_SpecularRadianceHitDist[launchIndex] = float4(finalColor, accumulatedHitDist * invSampleCount);
     
     // For primary normal/roughness/albedo, use hit data if available, else defaults
     float3 worldNormal = anyHit ? primaryNormal : float3(0, 1, 0);
@@ -264,5 +263,4 @@ void RayGen()
         motion = clamp(motion, float2(-8, -8), float2(8, 8));
     }
     GBuffer_MotionVectors[launchIndex] = motion;
-#endif
 }

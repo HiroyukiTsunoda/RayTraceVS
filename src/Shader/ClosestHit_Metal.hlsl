@@ -75,9 +75,16 @@ float3 CalculateMetalLighting(float3 hitPosition, float3 normal, float3 objectCo
     return finalColor;
 }
 
+// Force recompile: hitDistance fix for secondary rays 2026-01-19
+
 [shader("closesthit")]
 void ClosestHit_Metal(inout RayPayload payload, in ProceduralAttributes attribs)
 {
+    // CRITICAL: Always set hitDistance for ALL rays (primary AND secondary)
+    // NRD needs the hit distance from reflection rays to properly denoise specular
+    payload.hit = true;
+    payload.hitDistance = RayTCurrent();
+    
     float3 hitPosition = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
     float hitDistance = RayTCurrent();
     float3 normal = attribs.normal;
@@ -113,6 +120,13 @@ void ClosestHit_Metal(inout RayPayload payload, in ProceduralAttributes attribs)
     float3 diffuseLighting = CalculateMetalLighting(hitPosition, normal, float3(1.0, 1.0, 1.0));
     float3 diffuseColor = float3(0, 0, 0);
     
+    // Variables for NRD specular output (need to be in outer scope)
+    float3 fresnel = float3(0, 0, 0);
+    RayPayload reflectPayload;
+    reflectPayload.diffuseRadiance = float3(0, 0, 0);
+    reflectPayload.specularRadiance = float3(0, 0, 0);
+    reflectPayload.albedo = float3(0, 0, 0);
+    
     if (payload.depth < MAX_RECURSION_DEPTH)
     {
         float3 viewDir = -WorldRayDirection();
@@ -120,7 +134,7 @@ void ClosestHit_Metal(inout RayPayload payload, in ProceduralAttributes attribs)
         
         // Metal F0 is the base color
         float3 f0 = objectColor;
-        float3 fresnel = f0 + (1.0 - f0) * pow(1.0 - cosTheta, 5.0);
+        fresnel = f0 + (1.0 - f0) * pow(1.0 - cosTheta, 5.0);
         
         // Reflection with roughness perturbation
         float3 reflectDir = reflect(WorldRayDirection(), normal);
@@ -133,7 +147,6 @@ void ClosestHit_Metal(inout RayPayload payload, in ProceduralAttributes attribs)
         reflectRay.TMin = 0.001;
         reflectRay.TMax = 10000.0;
         
-        RayPayload reflectPayload;
         reflectPayload.color = float3(0, 0, 0);
         reflectPayload.depth = payload.depth + 1;
         reflectPayload.hit = false;
@@ -142,6 +155,7 @@ void ClosestHit_Metal(inout RayPayload payload, in ProceduralAttributes attribs)
         reflectPayload.diffuseRadiance = float3(0, 0, 0);
         reflectPayload.specularRadiance = float3(0, 0, 0);
         reflectPayload.hitDistance = 10000.0;
+        reflectPayload.specularHitDistance = 10000.0;
         reflectPayload.worldNormal = float3(0, 1, 0);
         reflectPayload.roughness = 1.0;
         reflectPayload.worldPosition = float3(0, 0, 0);
@@ -157,8 +171,19 @@ void ClosestHit_Metal(inout RayPayload payload, in ProceduralAttributes attribs)
         
         TraceRay(SceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, reflectRay, reflectPayload);
         
+        // If reflection ray missed (hit sky), use sky color explicitly
+        float3 reflectedColor;
+        if (reflectPayload.hit)
+        {
+            reflectedColor = reflectPayload.color;
+        }
+        else
+        {
+            reflectedColor = GetSkyColor(perturbedDir);
+        }
+        
         // Metal reflection tinted by base color
-        specularColor = reflectPayload.color * fresnel;
+        specularColor = reflectedColor * fresnel;
         finalColor = specularColor;
         
         // Blend with diffuse for rough metals
@@ -171,9 +196,25 @@ void ClosestHit_Metal(inout RayPayload payload, in ProceduralAttributes attribs)
     }
     else
     {
-        // Max depth reached - use diffuse lighting
+        // Max depth reached - use approximate reflection with environment
+        // Instead of just diffuse, blend with sky color in reflection direction
+        // This provides a more natural fallback for deep reflections
+        float3 viewDir = -WorldRayDirection();
+        float3 reflectDir = reflect(WorldRayDirection(), normal);
+        float3 skyReflection = GetSkyColor(reflectDir);
+        
+        // Metal F0 (Fresnel at normal incidence) is the base color
+        float cosTheta = max(0.0, dot(viewDir, normal));
+        float3 f0 = objectColor;
+        fresnel = f0 + (1.0 - f0) * pow(1.0 - cosTheta, 5.0);
+        
+        // Combine diffuse lighting with sky reflection, tinted by metal color
         diffuseColor = diffuseLighting * objectColor;
-        finalColor = diffuseColor;
+        float3 approxReflection = skyReflection * fresnel;
+        
+        // Blend based on roughness - smoother metals reflect more sky
+        float reflectWeight = saturate(1.0 - roughness * roughness);
+        finalColor = lerp(diffuseColor, approxReflection, reflectWeight * 0.7);
     }
     
     payload.color = saturate(finalColor);
@@ -182,9 +223,25 @@ void ClosestHit_Metal(inout RayPayload payload, in ProceduralAttributes attribs)
     // NRD-specific outputs (only for primary rays)
     if (payload.depth == 0)
     {
-        payload.diffuseRadiance = diffuseLighting;
-        payload.specularRadiance = specularColor;
+        // Store RADIANCE ONLY (no albedo) for NRD denoising
+        // For metals: diffuseLighting is pure lighting
+        // Albedo is stored separately and multiplied AFTER denoising in Composite shader
+        payload.diffuseRadiance = diffuseLighting;  // Pure radiance
+        
+        // For specular: use reflected RADIANCE, not saturated color
+        // reflectPayload.color is saturated/clamped, which destroys HDR
+        float3 specularRadiance = float3(0, 0, 0);
+        if (any(fresnel > 0.01))
+        {
+            float3 reflectedRadiance = reflectPayload.diffuseRadiance * reflectPayload.albedo 
+                                     + reflectPayload.specularRadiance;
+            specularRadiance = reflectedRadiance * fresnel;
+        }
+        // NOTE: ×4 boost is now applied in RayGen for easier tuning
+        payload.specularRadiance = specularRadiance;
         payload.hitDistance = hitDistance;
+        // Metal: specular comes from reflection ray, use its hit distance
+        payload.specularHitDistance = reflectPayload.hit ? reflectPayload.hitDistance : hitDistance;
         payload.worldNormal = normal;
         payload.roughness = roughness;
         payload.worldPosition = hitPosition;

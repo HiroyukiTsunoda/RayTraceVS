@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using RayTraceVS.WPF.Utils;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -78,7 +79,7 @@ namespace RayTraceVS.WPF.Models
         }
 
         /// <summary>
-        /// キャッシュをクリアしてDirty状態にする
+        /// キャッシュをクリアしてDirty状態にする（イベント発火あり）
         /// </summary>
         public void InvalidateCache()
         {
@@ -86,15 +87,26 @@ namespace RayTraceVS.WPF.Models
             MarkDirty();
         }
 
+        /// <summary>
+        /// キャッシュをクリアしてDirty状態にする（イベント発火なし）。
+        /// DirtyTrackerからの一括伝播時に使用。
+        /// </summary>
+        public void InvalidateCacheOnly()
+        {
+            CachedResult = null;
+            IsDirty = true;
+            // DirtyChangedイベントは発火しない
+        }
+
         public Brush CategoryColor => category switch
         {
-            NodeCategory.Object => new SolidColorBrush(Color.FromRgb(0x40, 0x70, 0xB0)),   // 青
-            NodeCategory.Material => new SolidColorBrush(Color.FromRgb(0x40, 0xA0, 0x50)), // 緑
-            NodeCategory.Math => new SolidColorBrush(Color.FromRgb(0xA0, 0x40, 0x40)),     // 赤
-            NodeCategory.Camera => new SolidColorBrush(Color.FromRgb(0x80, 0x40, 0xA0)),   // 紫
-            NodeCategory.Light => new SolidColorBrush(Color.FromRgb(0xB0, 0xA0, 0x20)),    // 黄色
-            NodeCategory.Scene => new SolidColorBrush(Color.FromRgb(0x40, 0xA0, 0xA0)),    // シアン（水色）
-            _ => new SolidColorBrush(Colors.Gray)
+            NodeCategory.Object => BrushCache.Get(0x40, 0x70, 0xB0),   // 青
+            NodeCategory.Material => BrushCache.Get(0x40, 0xA0, 0x50), // 緑
+            NodeCategory.Math => BrushCache.Get(0xA0, 0x40, 0x40),     // 赤
+            NodeCategory.Camera => BrushCache.Get(0x80, 0x40, 0xA0),   // 紫
+            NodeCategory.Light => BrushCache.Get(0xB0, 0xA0, 0x20),    // 黄色
+            NodeCategory.Scene => BrushCache.Get(0x40, 0xA0, 0xA0),    // シアン（水色）
+            _ => BrushCache.Get(Colors.Gray)
         };
 
         /// <summary>
@@ -131,20 +143,31 @@ namespace RayTraceVS.WPF.Models
             outputSockets = new ObservableCollection<NodeSocket>();
         }
 
-        protected void AddInputSocket(string name, SocketType type)
+        /// <summary>
+        /// 入力ソケットを追加し、そのソケットを返す。
+        /// </summary>
+        protected NodeSocket AddInputSocket(string name, SocketType type)
         {
             var socket = new NodeSocket(name, type, true) { ParentNode = this };
             inputSockets.Add(socket);
+            return socket;
         }
 
-        protected void AddOutputSocket(string name, SocketType type)
+        /// <summary>
+        /// 出力ソケットを追加し、そのソケットを返す。
+        /// </summary>
+        protected NodeSocket AddOutputSocket(string name, SocketType type)
         {
             var socket = new NodeSocket(name, type, false) { ParentNode = this };
             outputSockets.Add(socket);
+            return socket;
         }
 
         public abstract object? Evaluate(Dictionary<Guid, object?> inputValues);
 
+        /// <summary>
+        /// ソケット名で入力値を取得する（後方互換性のため維持）。
+        /// </summary>
         protected T? GetInputValue<T>(string socketName, Dictionary<Guid, object?> inputValues)
         {
             foreach (var socket in inputSockets)
@@ -154,6 +177,18 @@ namespace RayTraceVS.WPF.Models
                     if (value is T typedValue)
                         return typedValue;
                 }
+            }
+            return default;
+        }
+
+        /// <summary>
+        /// キャッシュされたソケット参照で入力値を取得する（パフォーマンス向上版）。
+        /// </summary>
+        protected T? GetInputValue<T>(NodeSocket? socket, Dictionary<Guid, object?> inputValues)
+        {
+            if (socket != null && inputValues.TryGetValue(socket.Id, out var value) && value is T typedValue)
+            {
+                return typedValue;
             }
             return default;
         }

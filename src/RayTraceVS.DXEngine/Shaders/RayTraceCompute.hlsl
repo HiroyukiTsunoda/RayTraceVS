@@ -320,8 +320,21 @@ HitInfo TraceRay(Ray ray)
                 float checkerSize = 1.0;
                 int ix = (int)floor(uv.x / checkerSize);
                 int iz = (int)floor(uv.y / checkerSize);
-                bool isWhite = ((ix + iz) & 1) == 0;
-                result.Color = isWhite ? float4(0.9, 0.9, 0.9, 1.0) : float4(0.1, 0.1, 0.1, 1.0);
+                float checker = (float)(((ix + iz) & 1) == 0);
+                
+                // Distance-based contrast reduction to reduce aliasing (pseudo-MIP filtering)
+                float hitDist = t;
+                float fadeStart = 10.0;   // Distance where fading begins
+                float fadeEnd = 100.0;    // Distance where contrast is minimum
+                float distFactor = saturate((hitDist - fadeStart) / (fadeEnd - fadeStart));
+                float contrast = lerp(1.0, 0.2, distFactor);
+                
+                // Apply contrast: lerp between gray (0.5) and checker pattern
+                float checkerValue = lerp(0.5, checker, contrast);
+                
+                // Map checker value to color range (0.1 to 0.9)
+                float colorValue = lerp(0.1, 0.9, checkerValue);
+                result.Color = float4(colorValue, colorValue, colorValue, 1.0);
                 result.Metallic = Planes[j].Metallic;
                 result.Roughness = Planes[j].Roughness;
                 result.Transmission = Planes[j].Transmission;

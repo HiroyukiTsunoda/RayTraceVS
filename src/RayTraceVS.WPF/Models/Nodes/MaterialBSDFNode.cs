@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using System.Numerics;
+using RayTraceVS.WPF.Models.Data;
 
 namespace RayTraceVS.WPF.Models.Nodes
 {
@@ -41,7 +43,7 @@ namespace RayTraceVS.WPF.Models.Nodes
             AddOutputSocket("Material", SocketType.Material);
         }
 
-        public override object? Evaluate(Dictionary<System.Guid, object?> inputValues)
+        public override object? Evaluate(Dictionary<Guid, object?> inputValues)
         {
             // 入力値を取得（接続されていない場合はデフォルト値を使用）
             var baseColorInput = GetInputValue<Vector4?>("Base Color", inputValues);
@@ -56,10 +58,10 @@ namespace RayTraceVS.WPF.Models.Nodes
             var emission = emissionInput ?? Emission;
 
             // 値の範囲を制限
-            metallic = System.Math.Clamp(metallic, 0.0f, 1.0f);
-            roughness = System.Math.Clamp(roughness, 0.0f, 1.0f);
-            transmission = System.Math.Clamp(transmission, 0.0f, 1.0f);
-            ior = System.Math.Max(ior, 1.0f);
+            metallic = Math.Clamp(metallic, 0.0f, 1.0f);
+            roughness = Math.Clamp(roughness, 0.0f, 1.0f);
+            transmission = Math.Clamp(transmission, 0.0f, 1.0f);
+            ior = Math.Max(ior, 1.0f);
 
             return new MaterialData
             {
@@ -71,32 +73,5 @@ namespace RayTraceVS.WPF.Models.Nodes
                 Emission = emission
             };
         }
-    }
-
-    /// <summary>
-    /// マテリアルデータ構造体
-    /// レンダリング時に使用するマテリアルパラメータを保持
-    /// </summary>
-    public struct MaterialData
-    {
-        public Vector4 BaseColor;
-        public float Metallic;
-        public float Roughness;
-        public float Transmission;
-        public float IOR;
-        public Vector4 Emission;
-
-        /// <summary>
-        /// デフォルトマテリアル（白色Diffuse）
-        /// </summary>
-        public static MaterialData Default => new MaterialData
-        {
-            BaseColor = new Vector4(0.8f, 0.8f, 0.8f, 1.0f),
-            Metallic = 0.0f,
-            Roughness = 0.5f,
-            Transmission = 0.0f,
-            IOR = 1.5f,
-            Emission = Vector4.Zero
-        };
     }
 }

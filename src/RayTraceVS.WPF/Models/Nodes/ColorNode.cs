@@ -11,17 +11,57 @@ namespace RayTraceVS.WPF.Models.Nodes
     /// </summary>
     public partial class ColorNode : Node
     {
-        [ObservableProperty]
         private float _r = 0.8f;
+        public float R
+        {
+            get => _r;
+            set
+            {
+                if (SetProperty(ref _r, value))
+                {
+                    MarkDirty();
+                }
+            }
+        }
 
-        [ObservableProperty]
         private float _g = 0.8f;
+        public float G
+        {
+            get => _g;
+            set
+            {
+                if (SetProperty(ref _g, value))
+                {
+                    MarkDirty();
+                }
+            }
+        }
 
-        [ObservableProperty]
         private float _b = 0.8f;
+        public float B
+        {
+            get => _b;
+            set
+            {
+                if (SetProperty(ref _b, value))
+                {
+                    MarkDirty();
+                }
+            }
+        }
 
-        [ObservableProperty]
         private float _a = 1.0f;
+        public float A
+        {
+            get => _a;
+            set
+            {
+                if (SetProperty(ref _a, value))
+                {
+                    MarkDirty();
+                }
+            }
+        }
 
         public override bool HasEditableColorInputs => true;
 

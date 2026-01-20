@@ -36,6 +36,8 @@ namespace RayTraceVS::DXEngine
         // SIGMA shadow inputs
         ComPtr<ID3D12Resource> ShadowData;               // RG16F: R = shadow visibility (0-1), G = penumbra
         ComPtr<ID3D12Resource> ShadowTranslucency;       // RGBA16F: shadow translucency for SIGMA
+        // Raw specular backup (copy before NRD corrupts the original)
+        ComPtr<ID3D12Resource> RawSpecularBackup;        // RGBA16F: copy of SpecularRadianceHitDist before NRD
     };
 
     // Denoised output structure

@@ -157,8 +157,19 @@ void ClosestHit_Metal(inout RayPayload payload, in ProceduralAttributes attribs)
         
         TraceRay(SceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, reflectRay, reflectPayload);
         
+        // If reflection ray missed (hit sky), use sky color explicitly
+        float3 reflectedColor;
+        if (reflectPayload.hit)
+        {
+            reflectedColor = reflectPayload.color;
+        }
+        else
+        {
+            reflectedColor = GetSkyColor(perturbedDir);
+        }
+        
         // Metal reflection tinted by base color
-        specularColor = reflectPayload.color * fresnel;
+        specularColor = reflectedColor * fresnel;
         finalColor = specularColor;
         
         // Blend with diffuse for rough metals
@@ -171,9 +182,25 @@ void ClosestHit_Metal(inout RayPayload payload, in ProceduralAttributes attribs)
     }
     else
     {
-        // Max depth reached - use diffuse lighting
+        // Max depth reached - use approximate reflection with environment
+        // Instead of just diffuse, blend with sky color in reflection direction
+        // This provides a more natural fallback for deep reflections
+        float3 viewDir = -WorldRayDirection();
+        float3 reflectDir = reflect(WorldRayDirection(), normal);
+        float3 skyReflection = GetSkyColor(reflectDir);
+        
+        // Metal F0 (Fresnel at normal incidence) is the base color
+        float cosTheta = max(0.0, dot(viewDir, normal));
+        float3 f0 = objectColor;
+        float3 fresnel = f0 + (1.0 - f0) * pow(1.0 - cosTheta, 5.0);
+        
+        // Combine diffuse lighting with sky reflection, tinted by metal color
         diffuseColor = diffuseLighting * objectColor;
-        finalColor = diffuseColor;
+        float3 approxReflection = skyReflection * fresnel;
+        
+        // Blend based on roughness - smoother metals reflect more sky
+        float reflectWeight = saturate(1.0 - roughness * roughness);
+        finalColor = lerp(diffuseColor, approxReflection, reflectWeight * 0.7);
     }
     
     payload.color = saturate(finalColor);
@@ -182,8 +209,11 @@ void ClosestHit_Metal(inout RayPayload payload, in ProceduralAttributes attribs)
     // NRD-specific outputs (only for primary rays)
     if (payload.depth == 0)
     {
-        payload.diffuseRadiance = diffuseLighting;
-        payload.specularRadiance = specularColor;
+        // Store RADIANCE ONLY (no albedo) for NRD denoising
+        // For metals: diffuseLighting is pure lighting, specularColor is reflection (tinted by metal color)
+        // Albedo is stored separately and multiplied AFTER denoising in Composite shader
+        payload.diffuseRadiance = diffuseLighting;  // Pure radiance
+        payload.specularRadiance = specularColor;   // Reflection (already colored by Fresnel)
         payload.hitDistance = hitDistance;
         payload.worldNormal = normal;
         payload.roughness = roughness;

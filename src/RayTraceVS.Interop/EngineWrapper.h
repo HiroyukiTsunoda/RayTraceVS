@@ -30,7 +30,9 @@ namespace RayTraceVS::Interop
             int maxBounces,
             float exposure,
             int toneMapOperator,
-            float denoiserStabilization);
+            float denoiserStabilization,
+            float shadowStrength,
+            bool enableDenoiser);
 
         // Rendering
         void Render();
