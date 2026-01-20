@@ -12,13 +12,16 @@ WPFベースのビジュアルスクリプティングUIと、DirectX12 DXRを�
 ## 主な機能
 
 - UEのBlueprintライクなノードエディタでシーンを構築
-- リアルタイムGPUレイトレーシングでのレンダリング
-- 球、平面、ボックスなどの基本オブジェクト
+- リアルタイムGPUレイトレーシング (DirectX 12 DXR)
+- 球、平面、ボックスのプロシージャルジオメトリ
 - 複数光源のサポート（ポイントライト、ディレクショナルライト、アンビエントライト）
-- 物理ベースマテリアル（Diffuse、Metal、Glass、Emission）
-- 鏡面反射と屈折（透明マテリアル）
-- フォトンマッピングによるグローバルイルミネーション
-- NRDデノイザー対応
+- 物理ベースマテリアル（PBR: Metallic/Roughness/Transmission/IOR）
+- 鏡面反射（Fresnelシュリック近似）
+- ソフトシャドウ（エリアライトサンプリング）
+- フォトンマッピングによるコースティクス
+- NRDデノイザー統合（REBLUR + SIGMA）
+- トーンマッピング（Reinhard / ACES Filmic）
+- 被写界深度（DoF）シミュレーション
 
 ## プロジェクト構造
 
@@ -195,29 +198,32 @@ RayTraceVS/
 
 | 項目 | 詳細 |
 |------|------|
-| **API** | DirectX 12 + DXR 1.1 |
+| **API** | DirectX 12 + DXR (DirectX Raytracing) |
 | **シェーダーモデル** | HLSL Shader Model 6.3+ |
-| **アクセラレーション構造** | BLAS/TLAS (BVH) |
-| **レイタイプ** | プライマリレイ、シャドウレイ、反射/屈折レイ |
-| **最大再帰深度** | 設定可能（デフォルト: 8） |
+| **シェーダーコンパイラ** | DXC (DirectX Shader Compiler) → DXIL出力 |
+| **アクセラレーション構造** | BLAS/TLAS (BVH)、プロシージャルAABB |
+| **レイタイプ** | プライマリレイ、シャドウレイ、反射レイ |
+| **最大再帰深度** | 5 (MAX_RECURSION_DEPTH) |
+| **デノイザー** | NRD (NVIDIA Real-time Denoiser) |
+| ├─ REBLUR | Diffuse/Specularデノイズ |
+| └─ SIGMA | シャドウデノイズ |
 
 ### シェーダー構成
 
 | シェーダー | 役割 |
 |------------|------|
-| **RayGen.hlsl** | レイ生成、カメラからのプライマリレイ発射 |
+| **RayGen.hlsl** | レイ生成、カメラからのプライマリレイ発射、G-Buffer出力 |
 | **ClosestHit.hlsl** | 基本ヒット処理 |
-| **ClosestHit_Diffuse.hlsl** | 拡散反射マテリアル処理 |
+| **ClosestHit_Diffuse.hlsl** | 拡散反射マテリアル処理（コースティクス対応） |
 | **ClosestHit_Metal.hlsl** | 金属マテリアル（反射）処理 |
-| **ClosestHit_Glass.hlsl** | ガラスマテリアル（屈折）処理 |
 | **AnyHit_Shadow.hlsl** | シャドウレイ判定 |
 | **Miss.hlsl** | レイミス時の背景色処理 |
-| **Intersection.hlsl** | カスタム交差判定（球、円柱等） |
-| **PhotonEmit.hlsl** | フォトン放出 |
+| **Intersection.hlsl** | プロシージャル交差判定（球、平面、ボックス） |
+| **PhotonEmit.hlsl** | フォトン放出（コースティクス用） |
 | **PhotonTrace.hlsl** | フォトントレース |
-| **Composite.hlsl** | 最終合成 |
-| **Common.hlsli** | 共通定義・構造体 |
-| **NRDEncoding.hlsli** | NRDデノイザー用エンコーディング |
+| **Composite.hlsl** | 最終合成、トーンマッピング、ガンマ補正 |
+| **Common.hlsli** | 共通定義・構造体・ユーティリティ関数 |
+| **NRDEncoding.hlsli** | NRDデノイザー用エンコーディング（Oct法線、SIGMA等） |
 
 ### レンダリングパイプライン
 
@@ -226,22 +232,29 @@ RayTraceVS/
         ↓
 2. アクセラレーション構造構築（BLAS/TLAS）
         ↓
-3. レイ生成（RayGen）
+3. フォトン放出（コースティクス用、オプション）
         ↓
-4. BVHトラバーサル
+4. レイ生成（RayGen）+ G-Buffer出力
         ↓
-5. 交差判定（Intersection / ビルトイン）
+5. BVHトラバーサル
         ↓
-6. シェーディング（ClosestHit_*）
-   ├─ ライティング計算
-   ├─ 反射レイ発射（再帰）
-   └─ 屈折レイ発射（再帰）
+6. 交差判定（Intersection: 球/平面/ボックス）
         ↓
-7. デノイズ（NRD）[オプション]
+7. シェーディング（ClosestHit_Diffuse / ClosestHit_Metal）
+   ├─ ライティング計算（ソフトシャドウ対応）
+   ├─ コースティクス（フォトンマップ参照）
+   └─ 反射レイ発射（再帰、最大5回）
         ↓
-8. 最終合成（Composite）
+8. デノイズ（NRD）
+   ├─ REBLUR: Diffuse/Specularデノイズ
+   └─ SIGMA: シャドウデノイズ
         ↓
-9. 画面出力
+9. 最終合成（Composite）
+   ├─ アルベド乗算
+   ├─ トーンマッピング（Reinhard/ACES）
+   └─ ガンマ補正（sRGB）
+        ↓
+10. 画面出力
 ```
 
 ### WPF ノードエディタ

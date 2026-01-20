@@ -175,9 +175,11 @@ float4 SIGMA_FrontEnd_PackTranslucency(float distanceToOccluder, float3 transluc
 }
 
 // OUT_SHADOW_TRANSLUCENCY => X (and YZW for translucency)
+// Note: Removed the squaring (shadow * shadow) that was causing contrast differences
+// between denoised and non-denoised paths. The shadow value is used directly.
 float4 SIGMA_BackEnd_UnpackShadow(float4 shadow)
 {
-    return shadow * shadow;
+    return shadow;
 }
 
 // ============================================

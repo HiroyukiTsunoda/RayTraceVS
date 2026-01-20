@@ -20,6 +20,8 @@ namespace RayTraceVS::DXEngine
         float roughness;    // 0.0 = smooth, 1.0 = rough
         float transmission; // 0.0 = opaque, 1.0 = fully transparent (glass)
         float ior;          // Index of Refraction (default 1.5 for glass)
+        float specular;     // Specular intensity (0.0 = none, 1.0 = full)
+        XMFLOAT3 emission;  // Emissive color (self-illumination)
     };
 
     class RayTracingObject

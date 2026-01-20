@@ -27,11 +27,9 @@ namespace RayTraceVS.WPF.Models.Serialization
             Register<BoxNode>("Box");
             
             // マテリアルノード
-            Register<DiffuseMaterialNode>("Diffuse");
-            Register<MetalMaterialNode>("Metal");
-            Register<GlassMaterialNode>("Glass");
             Register<EmissionMaterialNode>("Emission");
             Register<MaterialBSDFNode>("MaterialBSDF");
+            Register<UniversalPBRNode>("UniversalPBR");
             
             // ライトノード
             Register<PointLightNode>("PointLight");

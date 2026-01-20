@@ -37,6 +37,8 @@ namespace RayTraceVS::Interop
         native.material.roughness = managedSphere.Roughness;
         native.material.transmission = managedSphere.Transmission;
         native.material.ior = managedSphere.IOR;
+        native.material.specular = managedSphere.Specular;
+        native.material.emission = { managedSphere.Emission.X, managedSphere.Emission.Y, managedSphere.Emission.Z };
         return native;
     }
 
@@ -50,6 +52,8 @@ namespace RayTraceVS::Interop
         native.material.roughness = managedPlane.Roughness;
         native.material.transmission = managedPlane.Transmission;
         native.material.ior = managedPlane.IOR;
+        native.material.specular = managedPlane.Specular;
+        native.material.emission = { managedPlane.Emission.X, managedPlane.Emission.Y, managedPlane.Emission.Z };
         return native;
     }
 
@@ -63,6 +67,8 @@ namespace RayTraceVS::Interop
         native.material.roughness = managedBox.Roughness;
         native.material.transmission = managedBox.Transmission;
         native.material.ior = managedBox.IOR;
+        native.material.specular = managedBox.Specular;
+        native.material.emission = { managedBox.Emission.X, managedBox.Emission.Y, managedBox.Emission.Z };
         return native;
     }
 }

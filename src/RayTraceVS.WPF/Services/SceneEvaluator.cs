@@ -265,7 +265,7 @@ namespace RayTraceVS.WPF.Services
         {
             var material = data.Material;
             
-            System.Diagnostics.Debug.WriteLine($"[SceneEvaluator] Sphere Material: Color=({material.BaseColor.X:F2},{material.BaseColor.Y:F2},{material.BaseColor.Z:F2}), Metallic={material.Metallic:F2}, Roughness={material.Roughness:F2}, Transmission={material.Transmission:F2}, IOR={material.IOR:F2}");
+            System.Diagnostics.Debug.WriteLine($"[SceneEvaluator] Sphere Material: Color=({material.BaseColor.X:F2},{material.BaseColor.Y:F2},{material.BaseColor.Z:F2}), Metallic={material.Metallic:F2}, Roughness={material.Roughness:F2}, Transmission={material.Transmission:F2}, IOR={material.IOR:F2}, Specular={material.Specular:F2}, Emission=({material.Emission.X:F2},{material.Emission.Y:F2},{material.Emission.Z:F2})");
             
             return new InteropSphereData
             {
@@ -275,7 +275,9 @@ namespace RayTraceVS.WPF.Services
                 Metallic = material.Metallic,
                 Roughness = material.Roughness,
                 Transmission = material.Transmission,
-                IOR = material.IOR
+                IOR = material.IOR,
+                Specular = material.Specular,
+                Emission = new InteropVector3(material.Emission.X, material.Emission.Y, material.Emission.Z)
             };
         }
 
@@ -311,7 +313,9 @@ namespace RayTraceVS.WPF.Services
                 Metallic = material.Metallic,
                 Roughness = material.Roughness,
                 Transmission = material.Transmission,
-                IOR = material.IOR
+                IOR = material.IOR,
+                Specular = material.Specular,
+                Emission = new InteropVector3(material.Emission.X, material.Emission.Y, material.Emission.Z)
             };
         }
 
@@ -319,7 +323,7 @@ namespace RayTraceVS.WPF.Services
         {
             var material = data.Material;
             
-            System.Diagnostics.Debug.WriteLine($"[SceneEvaluator] Box Material: Color=({material.BaseColor.X:F2},{material.BaseColor.Y:F2},{material.BaseColor.Z:F2}), Metallic={material.Metallic:F2}, Roughness={material.Roughness:F2}, Transmission={material.Transmission:F2}, IOR={material.IOR:F2}");
+            System.Diagnostics.Debug.WriteLine($"[SceneEvaluator] Box Material: Color=({material.BaseColor.X:F2},{material.BaseColor.Y:F2},{material.BaseColor.Z:F2}), Metallic={material.Metallic:F2}, Roughness={material.Roughness:F2}, Transmission={material.Transmission:F2}, IOR={material.IOR:F2}, Specular={material.Specular:F2}, Emission=({material.Emission.X:F2},{material.Emission.Y:F2},{material.Emission.Z:F2})");
             
             return new InteropBoxData
             {
@@ -329,7 +333,9 @@ namespace RayTraceVS.WPF.Services
                 Metallic = material.Metallic,
                 Roughness = material.Roughness,
                 Transmission = material.Transmission,
-                IOR = material.IOR
+                IOR = material.IOR,
+                Specular = material.Specular,
+                Emission = new InteropVector3(material.Emission.X, material.Emission.Y, material.Emission.Z)
             };
         }
 

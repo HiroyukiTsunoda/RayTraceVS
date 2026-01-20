@@ -11,6 +11,8 @@ namespace RayTraceVS::DXEngine
         material.roughness = 0.5f;
         material.transmission = 0.0f;
         material.ior = 1.0f;
+        material.specular = 0.5f;
+        material.emission = XMFLOAT3(0.0f, 0.0f, 0.0f);
     }
 
     Box::Box(const XMFLOAT3& center, const XMFLOAT3& size)
@@ -22,5 +24,7 @@ namespace RayTraceVS::DXEngine
         material.roughness = 0.5f;
         material.transmission = 0.0f;
         material.ior = 1.0f;
+        material.specular = 0.5f;
+        material.emission = XMFLOAT3(0.0f, 0.0f, 0.0f);
     }
 }

@@ -16,15 +16,16 @@ Texture2D<float4> DenoisedShadow : register(t3);      // Denoised shadow visibil
 
 // G-Buffer inputs (for debug visualization)
 Texture2D<float4> GBuffer_DiffuseIn : register(t4);   // Input diffuse before denoising
-Texture2D<float4> GBuffer_SpecularIn : register(t5); // Input specular before denoising (corrupted by NRD)
+Texture2D<float4> GBuffer_SpecularIn : register(t5); // Input specular before denoising
 Texture2D<float4> GBuffer_NormalRoughness : register(t6);
 Texture2D<float> GBuffer_ViewZ : register(t7);
 Texture2D<float2> GBuffer_MotionVectors : register(t8);
 Texture2D<float2> GBuffer_ShadowData : register(t9);  // Input shadow before denoising
-Texture2D<float4> RawSpecularBackup : register(t10);  // Copy of specular BEFORE NRD processing
+Texture2D<float4> RawSpecularBackup : register(t10);  // Raw specular before NRD (for mirror bypass)
 
-// Sampler
+// Samplers
 SamplerState LinearSampler : register(s0);
+SamplerState PointSampler : register(s1);
 
 // Constants
 cbuffer CompositeConstants : register(b0)
@@ -129,22 +130,13 @@ void CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
     
     float3 finalColor;
 
-    // Debug Mode 2: full-screen input shadow visibility (Y channel)
+    // Debug Mode 2: full-screen input shadow visibility
     if (DebugMode == 2)
     {
         float2 shadowIn = GBuffer_ShadowData.SampleLevel(LinearSampler, uv, 0);
         float shadowVis = shadowIn.y;  // Y = visibility (0 = shadow, 1 = lit)
         finalColor = float3(shadowVis, shadowVis, shadowVis);
         OutputTexture[pixelCoord] = float4(LinearToSRGB(finalColor), 1.0);
-        return;
-    }
-    // Debug Mode 6: Show raw penumbra (X channel) - should be occluder info
-    if (DebugMode == 6)
-    {
-        float2 shadowIn = GBuffer_ShadowData.SampleLevel(LinearSampler, uv, 0);
-        float penumbra = shadowIn.x;  // X = penumbra (packed)
-        finalColor = float3(penumbra, penumbra, penumbra);
-        OutputTexture[pixelCoord] = float4(finalColor, 1.0);
         return;
     }
     // Debug Mode 3: full-screen denoised shadow visibility
@@ -178,11 +170,41 @@ void CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
         OutputTexture[pixelCoord] = float4(1.0, 0.0, 1.0, 1.0);
         return;
     }
+    // Debug Mode 6: Show denoised diffuse only (no albedo, no shadow)
+    if (DebugMode == 6)
+    {
+        float3 diffOnly = DenoisedDiffuse.SampleLevel(LinearSampler, uv, 0).rgb;
+        // Apply exposure and tone mapping for visibility
+        diffOnly *= ExposureValue;
+        float3 tonemapped = ACESFilm(diffOnly);
+        OutputTexture[pixelCoord] = float4(LinearToSRGB(tonemapped), 1.0);
+        return;
+    }
+    // Debug Mode 7: Show diffuse * albedo (no shadow)
+    if (DebugMode == 7)
+    {
+        float3 diff = DenoisedDiffuse.SampleLevel(LinearSampler, uv, 0).rgb;
+        float3 alb = AlbedoTexture.SampleLevel(LinearSampler, uv, 0).rgb;
+        float3 result = diff * alb * ExposureValue;
+        float3 tonemapped = ACESFilm(result);
+        OutputTexture[pixelCoord] = float4(LinearToSRGB(tonemapped), 1.0);
+        return;
+    }
+    // Debug Mode 8: Show GBuffer_DiffuseIn (raw input before NRD)
+    if (DebugMode == 8)
+    {
+        float3 rawDiff = GBuffer_DiffuseIn.SampleLevel(LinearSampler, uv, 0).rgb;
+        rawDiff *= ExposureValue;
+        float3 tonemapped = ACESFilm(rawDiff);
+        OutputTexture[pixelCoord] = float4(LinearToSRGB(tonemapped), 1.0);
+        return;
+    }
     
     // ========================================
     // Debug Mode: Show tiles at bottom of screen
+    // Only enabled when DebugMode == 1 explicitly
     // ========================================
-    if (DebugMode > 0)
+    if (DebugMode == 1)
     {
         float tileHeight = OutputSize.y * DebugTileScale;
         float tileWidth = tileHeight; // Square tiles
@@ -248,27 +270,16 @@ void CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
             else if (tileIndex == 7)
             {
                 float2 shadowIn = GBuffer_ShadowData.SampleLevel(LinearSampler, tileUV, 0);
+                // X = penumbra, Y = visibility (0=shadow, 1=lit)
+                // Show visibility as grayscale (shadow silhouette)
                 tileColor = float3(shadowIn.y, shadowIn.y, shadowIn.y);
             }
             // Tile 8: Denoised Shadow (SIGMA output)
             else if (tileIndex == 8)
             {
-                // Show the same visibility used in final composite
-                float shadowOut = SIGMA_BackEnd_UnpackShadow(DenoisedShadow.SampleLevel(LinearSampler, tileUV, 0)).x;
-                float visibility = 1.0 - saturate(shadowOut); // invert if output is occlusion-like
-                tileColor = float3(visibility, visibility, visibility);
-            }
-            // Tile 9: Albedo texture
-            else if (tileIndex == 9)
-            {
-                tileColor = AlbedoTexture.SampleLevel(LinearSampler, tileUV, 0).rgb;
-            }
-            // Tile 10: Direct lighting (diffuse * albedo, no shadow)
-            else if (tileIndex == 10)
-            {
-                float3 diff = DenoisedDiffuse.SampleLevel(LinearSampler, tileUV, 0).rgb;
-                float3 alb = AlbedoTexture.SampleLevel(LinearSampler, tileUV, 0).rgb;
-                tileColor = saturate(diff * alb);
+                float4 rawSigma = DenoisedShadow.SampleLevel(LinearSampler, tileUV, 0);
+                // R = shadow visibility (0=shadow, 1=lit)
+                tileColor = float3(rawSigma.x, rawSigma.x, rawSigma.x);
             }
             
             // Draw tile border (1px white line)
@@ -285,77 +296,39 @@ void CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
     }
     
     // ========================================
-    // Normal Rendering with Mirror Bypass
+    // Normal Rendering
     // ========================================
     
-    // Get surface properties for mirror bypass
-    float4 normalRoughness = GBuffer_NormalRoughness.SampleLevel(LinearSampler, uv, 0);
-    float3 surfaceNormal;
-    float roughness;
-    NRD_FrontEnd_UnpackNormalAndRoughness(normalRoughness, surfaceNormal, roughness);
+    // Read G-Buffer data for mirror bypass decision
+    float4 normalRoughnessPacked = GBuffer_NormalRoughness.SampleLevel(LinearSampler, uv, 0);
+    float roughness = normalRoughnessPacked.w * normalRoughnessPacked.w;  // sqrt encoding -> linear
     float viewZ = GBuffer_ViewZ.SampleLevel(LinearSampler, uv, 0);
     
     // ========================================
-    // Mirror/Glass Bypass for Low Roughness
+    // Sky/Miss pixels: viewZ == 0 means no hit, use raw input directly
+    // NRD cannot properly denoise sky pixels, so bypass denoising
     // ========================================
-    // For very low roughness (< 0.05), bypass normal path and use raw specular backup
-    // This preserves sharp reflections/refractions for glass and mirrors
-    // IMPORTANT: Use RawSpecularBackup (t10), NOT GBuffer_SpecularIn (t5) which is corrupted by NRD
-    const float mirrorThreshold = 0.05;
-    if (roughness < mirrorThreshold && viewZ > 0.0)
-    {
-        // Use raw specular backup (copy made BEFORE NRD processing)
-        float3 rawSpecular = RawSpecularBackup.SampleLevel(LinearSampler, uv, 0).rgb;
-        OutputTexture[pixelCoord] = float4(LinearToSRGB(saturate(rawSpecular)), 1.0);
-        return;
-    }
+    // Sky bypass disabled - handled by main path below
+    // (GBuffer_DiffuseIn now contains the complete finalColor from RayGen for all pixels)
     
-    // ========================================
-    // Normal Surfaces: Use GBuffer_DiffuseIn directly
-    // ========================================
-    // GBuffer_DiffuseIn contains the ray traced scene color
-    float3 sceneColor = GBuffer_DiffuseIn.SampleLevel(LinearSampler, uv, 0).rgb;
+    // Correct SIGMA workflow:
+    // GBuffer_DiffuseIn = radiance WITHOUT albedo, WITHOUT shadow
+    // We apply albedo and SIGMA shadow here in Composite
     
-    // ========================================
-    // Shadow Application (SIGMA denoised)
-    // ========================================
-    float transmittance = 1.0;
+    float3 inputColor = GBuffer_DiffuseIn.SampleLevel(LinearSampler, uv, 0).rgb;
     
-    if (UseDenoisedShadow > 0)
-    {
-        float occlusion = SIGMA_BackEnd_UnpackShadow(DenoisedShadow.SampleLevel(LinearSampler, uv, 0)).x;
-        occlusion = saturate(occlusion);
-        transmittance = saturate(1.0 - occlusion);
-    }
+    // For hit pixels, apply SIGMA shadow
+    // Metal/Glass set shadowVisibility=1.0 in their G-Buffer output, so SIGMA won't darken them
+    // Sky pixels have albedo.a == 0, so we skip shadow application for them
+    float4 albedoData = AlbedoTexture.SampleLevel(LinearSampler, uv, 0);
+    bool isHitPixel = albedoData.a > 0.5;  // Alpha = 1.0 for hits, 0.0 for misses
     
-    float3 finalRadiance = sceneColor * transmittance;
+    // Shadow is now baked into diffuseRadiance in ClosestHit (same as denoiser-disabled path)
+    // No need to apply shadow here - this avoids white artifacts at object edges
+    // UseDenoisedShadow flag is ignored since shadow is already applied
     
-    // Apply exposure
-    finalRadiance *= ExposureValue;
-    
-    // Tone mapping
-    float3 tonemapped;
-    if (ToneMapOperator < 0.5)
-    {
-        // Reinhard
-        tonemapped = ReinhardToneMap(finalRadiance);
-    }
-    else if (ToneMapOperator < 1.5)
-    {
-        // ACES
-        tonemapped = ACESFilm(finalRadiance);
-    }
-    else
-    {
-        // No tone mapping
-        tonemapped = saturate(finalRadiance);
-    }
-    
-    // Gamma correction (linear to sRGB)
-    finalColor = LinearToSRGB(tonemapped);
-    
-    // Write output
-    OutputTexture[pixelCoord] = float4(finalColor, 1.0);
+    // Output
+    OutputTexture[pixelCoord] = float4(saturate(inputColor), 1.0);
 }
 
 // ============================================

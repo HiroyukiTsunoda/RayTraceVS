@@ -23,6 +23,20 @@
 #define MAX_PHOTON_BOUNCES 8        // Max bounces for photon tracing
 #define CAUSTIC_INTENSITY 2.0       // Intensity multiplier for caustics
 
+// ============================================
+// Spatial Hash for Photon Gathering (O(1) lookup)
+// ============================================
+#define PHOTON_HASH_TABLE_SIZE 65536    // 2^16 hash buckets
+#define MAX_PHOTONS_PER_CELL 64         // Max photons per hash cell
+#define PHOTON_HASH_CELL_SIZE 1.0       // Default cell size (will be radius * 2)
+
+// Spatial hash cell structure
+struct PhotonHashCell
+{
+    uint count;                                     // Number of photons in this cell
+    uint photonIndices[MAX_PHOTONS_PER_CELL];       // Indices into PhotonMap
+};
+
 // レイペイロード (with NRD fields for denoising)
 struct RayPayload
 {
@@ -115,19 +129,23 @@ struct SceneConstantBuffer
     float4x4 PrevViewProjection;
 };
 
-// 球データ (with PBR material, must match C++ GPUSphere)
+// 球データ (with PBR material, must match C++ GPUSphere) - 64 bytes (TEST: emission removed)
 struct SphereData
 {
-    float3 center;
-    float radius;
-    float4 color;
-    float metallic;
-    float roughness;
-    float transmission;
-    float ior;
+    float3 center;      // 12
+    float radius;       // 4  -> 16
+    float4 color;       // 16 -> 32
+    float metallic;     // 4
+    float roughness;    // 4
+    float transmission; // 4
+    float ior;          // 4  -> 48
+    float specular;     // 4
+    float padding1;     // 4
+    float padding2;     // 4
+    float padding3;     // 4  -> 64
 };
 
-// 平面データ (with PBR material, must match C++ GPUPlane)
+// 平面データ (with PBR material, must match C++ GPUPlane) - 64 bytes (TEST: emission removed)
 struct PlaneData
 {
     float3 position;
@@ -137,22 +155,26 @@ struct PlaneData
     float4 color;
     float transmission;
     float ior;
+    float specular;     // Specular intensity (0.0 = none, 1.0 = full)
     float padding1;
-    float padding2;
 };
 
-// ボックスデータ (with PBR material, must match C++ GPUBox)
+// ボックスデータ (with PBR material, must match C++ GPUBox) - 80 bytes (TEST: emission removed)
 struct BoxData
 {
-    float3 center;
-    float padding1;
-    float3 size;       // half-extents (width/2, height/2, depth/2)
-    float padding2;
-    float4 color;
-    float metallic;
-    float roughness;
-    float transmission;
-    float ior;
+    float3 center;      // 12
+    float padding1;     // 4  -> 16
+    float3 size;        // 12
+    float padding2;     // 4  -> 32
+    float4 color;       // 16 -> 48
+    float metallic;     // 4
+    float roughness;    // 4
+    float transmission; // 4
+    float ior;          // 4  -> 64
+    float specular;     // 4
+    float padding3;     // 4
+    float padding4;     // 4
+    float padding5;     // 4  -> 80
 };
 
 // ライトデータ (must match C++ GPULight)
@@ -242,6 +264,10 @@ StructuredBuffer<LightData> Lights : register(t4);
 RWStructuredBuffer<Photon> PhotonMap : register(u1);
 RWStructuredBuffer<uint> PhotonCounter : register(u2);  // Atomic counter for photon index
 
+// Spatial hash table for efficient photon gathering (O(1) lookup instead of O(N))
+// Note: This buffer is populated by BuildPhotonHash compute shader after photon emission
+RWStructuredBuffer<PhotonHashCell> PhotonHashTable : register(u11);
+
 // ============================================
 // G-Buffer Outputs for NRD Denoiser
 // ============================================
@@ -288,6 +314,71 @@ float3 CalculateSpecular(float3 normal, float3 lightDir, float3 viewDir, float3 
 float FresnelSchlick(float cosTheta, float f0)
 {
     return f0 + (1.0 - f0) * pow(1.0 - cosTheta, 5.0);
+}
+
+// ============================================
+// Universal PBR BRDF Functions
+// ============================================
+#define PI 3.14159265359
+
+// GGX Normal Distribution Function (Trowbridge-Reitz)
+float GGX_D(float NdotH, float roughness)
+{
+    float a = roughness * roughness;
+    float a2 = a * a;
+    float denom = NdotH * NdotH * (a2 - 1.0) + 1.0;
+    return a2 / (PI * denom * denom + 0.0001);
+}
+
+// Smith Geometry Function (Schlick-GGX) for direct lighting
+float Smith_G1(float NdotV, float k)
+{
+    return NdotV / (NdotV * (1.0 - k) + k);
+}
+
+float Smith_G(float NdotV, float NdotL, float roughness)
+{
+    float r = roughness + 1.0;
+    float k = (r * r) / 8.0;  // Remapping for direct lighting
+    return Smith_G1(NdotV, k) * Smith_G1(NdotL, k);
+}
+
+// Fresnel-Schlick approximation (float3 version for PBR)
+float3 Fresnel_Schlick3(float VdotH, float3 F0)
+{
+    return F0 + (1.0 - F0) * pow(saturate(1.0 - VdotH), 5.0);
+}
+
+// Cook-Torrance Specular BRDF
+// Returns specular contribution for a single light
+float3 CookTorranceSpecular(float3 N, float3 V, float3 L, float3 F0, float roughness)
+{
+    float3 H = normalize(V + L);
+    
+    float NdotL = max(dot(N, L), 0.001);
+    float NdotV = max(dot(N, V), 0.001);
+    float NdotH = max(dot(N, H), 0.0);
+    float VdotH = max(dot(V, H), 0.0);
+    
+    // Distribution
+    float D = GGX_D(NdotH, roughness);
+    
+    // Geometry
+    float G = Smith_G(NdotV, NdotL, roughness);
+    
+    // Fresnel
+    float3 F = Fresnel_Schlick3(VdotH, F0);
+    
+    // Cook-Torrance specular BRDF
+    float3 specular = (D * G * F) / (4.0 * NdotV * NdotL + 0.001);
+    
+    return specular;
+}
+
+// Lambert Diffuse BRDF (energy conserving with Fresnel)
+float3 LambertDiffuse(float3 diffuseColor)
+{
+    return diffuseColor / PI;
 }
 
 // Get sky color for background (simple sky gradient)

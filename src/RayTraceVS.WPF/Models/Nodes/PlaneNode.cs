@@ -10,11 +10,22 @@ namespace RayTraceVS.WPF.Models.Nodes
 {
     public class PlaneNode : Node, ISerializableNode
     {
+        private Transform _objectTransform = Transform.Identity;
+        private Vector3 _normal = Vector3.UnitY;
+
         // Transform（位置・回転・スケール）
-        public Transform ObjectTransform { get; set; } = Transform.Identity;
+        public Transform ObjectTransform
+        {
+            get => _objectTransform;
+            set { if (!_objectTransform.Equals(value)) { _objectTransform = value; MarkDirty(); } }
+        }
         
         // 形状固有パラメータ
-        public Vector3 Normal { get; set; } = Vector3.UnitY;
+        public Vector3 Normal
+        {
+            get => _normal;
+            set { if (_normal != value) { _normal = value; MarkDirty(); } }
+        }
 
         public PlaneNode() : base("Plane", NodeCategory.Object)
         {

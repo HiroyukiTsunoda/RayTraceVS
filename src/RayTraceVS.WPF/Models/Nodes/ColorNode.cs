@@ -80,7 +80,7 @@ namespace RayTraceVS.WPF.Models.Nodes
             }
         }
 
-        public ColorNode() : base("Color", NodeCategory.Material)
+        public ColorNode() : base("Color", NodeCategory.Math)
         {
             // 入力ソケット（R, G, B, Aを個別に入力可能）
             AddInputSocket("R", SocketType.Float);

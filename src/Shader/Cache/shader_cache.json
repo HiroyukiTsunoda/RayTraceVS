@@ -3,65 +3,65 @@
   "driverVersion": "10DE-2684-51001462-00A1",
   "adapterLUID": 96185,
   "shaders": {
-    "RayGen": {
-      "sourceHash": "dc558e5370642147d5928fe662a184e80fac0debdc6f42141ba2081f1fc573e3",
-      "compiledAt": "",
-      "dependencies": {
-        "Common.hlsli": "30361ceb075de1db4facb85cd5ffe4073834111841e91b8a94d9a03f42e672b8",
-        "NRDEncoding.hlsli": "71603babf2adbf630923d0841f2d5d307ece3fa1f58ccbb4baafe62540b4042a"
-      }
-    },
     "RayTraceCompute": {
       "sourceHash": "358cc970b3eb6910b6dad002cc6c09d7b0314836701035c2e9c18e43edb88734",
-      "compiledAt": "",
+      "compiledAt": "2026-01-21T06:29:49",
       "dependencies": {}
     },
-    "ClosestHit": {
-      "sourceHash": "2abc99fefb93587458f55249c95a26876cdba11a67e4d21c959844b262e96a84",
-      "compiledAt": "2026-01-20T20:32:18",
+    "RayGen": {
+      "sourceHash": "97493d3f54ef5ebc114e0ebf8405ea16328ed3a33bd77544a7faf1015127d3eb",
+      "compiledAt": "2026-01-21T06:29:49",
       "dependencies": {
-        "Common.hlsli": "30361ceb075de1db4facb85cd5ffe4073834111841e91b8a94d9a03f42e672b8",
-        "NRDEncoding.hlsli": "71603babf2adbf630923d0841f2d5d307ece3fa1f58ccbb4baafe62540b4042a"
+        "Common.hlsli": "b1ec3bbd06e891ef0f511f05555c94d7a00401f4eaf2884815640383b8c9875c",
+        "NRDEncoding.hlsli": "bf26d0fea30357df6cd6e099270cb11126f03f8eacfbfb0eea995e5161b8c41c"
+      }
+    },
+    "ClosestHit": {
+      "sourceHash": "3199d5a1f43b8d84c6a50210d0255bf0df3d16280fed0a5c9d21898bfea0c7b8",
+      "compiledAt": "2026-01-21T06:29:49",
+      "dependencies": {
+        "Common.hlsli": "b1ec3bbd06e891ef0f511f05555c94d7a00401f4eaf2884815640383b8c9875c",
+        "NRDEncoding.hlsli": "bf26d0fea30357df6cd6e099270cb11126f03f8eacfbfb0eea995e5161b8c41c"
       }
     },
     "Miss": {
       "sourceHash": "c12af9325fc8a68ba72eb07d9c169aa96a503bb053694f022f2c2d2720408445",
-      "compiledAt": "",
+      "compiledAt": "2026-01-21T06:29:49",
       "dependencies": {
-        "Common.hlsli": "30361ceb075de1db4facb85cd5ffe4073834111841e91b8a94d9a03f42e672b8"
+        "Common.hlsli": "b1ec3bbd06e891ef0f511f05555c94d7a00401f4eaf2884815640383b8c9875c"
       }
     },
     "Intersection": {
       "sourceHash": "627441f5343f0975887c7c3a28eeb6cd2ba425443a345ac950393047ac231eb3",
-      "compiledAt": "",
+      "compiledAt": "2026-01-21T06:29:49",
       "dependencies": {
-        "Common.hlsli": "30361ceb075de1db4facb85cd5ffe4073834111841e91b8a94d9a03f42e672b8"
+        "Common.hlsli": "b1ec3bbd06e891ef0f511f05555c94d7a00401f4eaf2884815640383b8c9875c"
       }
     },
     "AnyHit_Shadow": {
       "sourceHash": "b97d68bc2cf2a1bf59479ade248b230716bee9b706a31c43aec50ab2295f2041",
-      "compiledAt": "",
+      "compiledAt": "2026-01-21T06:29:49",
       "dependencies": {
-        "Common.hlsli": "30361ceb075de1db4facb85cd5ffe4073834111841e91b8a94d9a03f42e672b8"
+        "Common.hlsli": "b1ec3bbd06e891ef0f511f05555c94d7a00401f4eaf2884815640383b8c9875c"
       }
     },
     "PhotonEmit": {
       "sourceHash": "b02cf1aca19b580793082eda4e6cb64d53cfff1ae6fda958a13cc0acf0128d65",
-      "compiledAt": "",
+      "compiledAt": "2026-01-21T06:29:50",
       "dependencies": {
-        "Common.hlsli": "30361ceb075de1db4facb85cd5ffe4073834111841e91b8a94d9a03f42e672b8"
+        "Common.hlsli": "b1ec3bbd06e891ef0f511f05555c94d7a00401f4eaf2884815640383b8c9875c"
       }
     },
     "PhotonTrace": {
       "sourceHash": "7508866e1a99aebf93b326abbef7bb81bf7583e9227a8d914d09b1921d0ba992",
-      "compiledAt": "",
+      "compiledAt": "2026-01-21T06:29:50",
       "dependencies": {
-        "Common.hlsli": "30361ceb075de1db4facb85cd5ffe4073834111841e91b8a94d9a03f42e672b8"
+        "Common.hlsli": "b1ec3bbd06e891ef0f511f05555c94d7a00401f4eaf2884815640383b8c9875c"
       }
     },
     "Composite": {
-      "sourceHash": "892def2d0896f15a0eebdea377d3d39c7e9023a38569798c4b729c3fab4964c0",
-      "compiledAt": "",
+      "sourceHash": "ac116bbbc4d570de7ed4bc3d13076b03a05c32b12772d0154ca4a32e22c8ac9f",
+      "compiledAt": "2026-01-21T06:30:19",
       "dependencies": {}
     }
   }

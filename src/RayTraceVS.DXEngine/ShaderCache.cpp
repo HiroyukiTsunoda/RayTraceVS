@@ -170,6 +170,17 @@ namespace RayTraceVS::DXEngine
             { L"Common.hlsli" }
         };
 
+        // Photon hash table compute shaders (spatial hash for O(1) photon lookup)
+        shaderDefinitions[L"BuildPhotonHashClear"] = {
+            L"BuildPhotonHash", ShaderType::Compute, L"ClearPhotonHash",
+            {}
+        };
+
+        shaderDefinitions[L"BuildPhotonHashBuild"] = {
+            L"BuildPhotonHash", ShaderType::Compute, L"BuildPhotonHash",
+            {}
+        };
+
         // Compute shaders
         shaderDefinitions[L"RayTraceCompute"] = {
             L"RayTraceCompute", ShaderType::Compute, L"CSMain",

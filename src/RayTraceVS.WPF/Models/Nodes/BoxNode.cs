@@ -10,11 +10,22 @@ namespace RayTraceVS.WPF.Models.Nodes
 {
     public class BoxNode : Node, ISerializableNode
     {
+        private Transform _objectTransform = Transform.Identity;
+        private Vector3 _size = new Vector3(1.0f, 1.0f, 1.0f);
+
         // Transform（位置・回転・スケール）
-        public Transform ObjectTransform { get; set; } = Transform.Identity;
+        public Transform ObjectTransform
+        {
+            get => _objectTransform;
+            set { if (!_objectTransform.Equals(value)) { _objectTransform = value; MarkDirty(); } }
+        }
         
-        // 形状固有パラメータ
-        public Vector3 Size { get; set; } = new Vector3(1.0f, 1.0f, 1.0f);  // full size (not half-extents)
+        // 形状固有パラメータ（full size, not half-extents）
+        public Vector3 Size
+        {
+            get => _size;
+            set { if (_size != value) { _size = value; MarkDirty(); } }
+        }
 
         public BoxNode() : base("Box", NodeCategory.Object)
         {
