@@ -1,28 +1,62 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
 
 namespace RayTraceVS.WPF.Models.Nodes
 {
     public partial class Vector3Node : Node
     {
-        [ObservableProperty]
         private float _x = 1.0f;
+        public float X
+        {
+            get => _x;
+            set
+            {
+                if (SetProperty(ref _x, value))
+                {
+                    MarkDirty();
+                }
+            }
+        }
 
-        [ObservableProperty]
         private float _y = 1.0f;
+        public float Y
+        {
+            get => _y;
+            set
+            {
+                if (SetProperty(ref _y, value))
+                {
+                    MarkDirty();
+                }
+            }
+        }
 
-        [ObservableProperty]
         private float _z = 1.0f;
+        public float Z
+        {
+            get => _z;
+            set
+            {
+                if (SetProperty(ref _z, value))
+                {
+                    MarkDirty();
+                }
+            }
+        }
+
+        // ソケットキャッシュ（毎回FirstOrDefaultを呼ばない）
+        private readonly NodeSocket _xSocket;
+        private readonly NodeSocket _ySocket;
+        private readonly NodeSocket _zSocket;
 
         public override bool HasEditableVector3Inputs => true;
 
         public Vector3Node() : base("Vector3", NodeCategory.Math)
         {
-            AddInputSocket("X", SocketType.Float);
-            AddInputSocket("Y", SocketType.Float);
-            AddInputSocket("Z", SocketType.Float);
+            _xSocket = AddInputSocket("X", SocketType.Float);
+            _ySocket = AddInputSocket("Y", SocketType.Float);
+            _zSocket = AddInputSocket("Z", SocketType.Float);
             AddOutputSocket("Vector", SocketType.Vector3);
         }
 
@@ -55,30 +89,25 @@ namespace RayTraceVS.WPF.Models.Nodes
 
         public override object? Evaluate(Dictionary<System.Guid, object?> inputValues)
         {
-            // 入力ソケットから値を取得（接続がある場合）
-            var xSocket = InputSockets.FirstOrDefault(s => s.Name == "X");
-            var ySocket = InputSockets.FirstOrDefault(s => s.Name == "Y");
-            var zSocket = InputSockets.FirstOrDefault(s => s.Name == "Z");
-
             float x = X;
             float y = Y;
             float z = Z;
 
-            // 接続されている場合は入力値を使用し、プロパティも更新
-            if (xSocket != null && inputValues.TryGetValue(xSocket.Id, out var xVal) && xVal is float xFloat)
+            // キャッシュされたソケット参照を使用（FirstOrDefault不要）
+            if (inputValues.TryGetValue(_xSocket.Id, out var xVal) && xVal is float xFloat)
             {
                 x = xFloat;
-                X = xFloat; // 値を保持
+                X = xFloat;
             }
-            if (ySocket != null && inputValues.TryGetValue(ySocket.Id, out var yVal) && yVal is float yFloat)
+            if (inputValues.TryGetValue(_ySocket.Id, out var yVal) && yVal is float yFloat)
             {
                 y = yFloat;
-                Y = yFloat; // 値を保持
+                Y = yFloat;
             }
-            if (zSocket != null && inputValues.TryGetValue(zSocket.Id, out var zVal) && zVal is float zFloat)
+            if (inputValues.TryGetValue(_zSocket.Id, out var zVal) && zVal is float zFloat)
             {
                 z = zFloat;
-                Z = zFloat; // 値を保持
+                Z = zFloat;
             }
 
             return new Vector3(x, y, z);

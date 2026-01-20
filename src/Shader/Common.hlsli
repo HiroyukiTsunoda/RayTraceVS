@@ -34,8 +34,9 @@ struct RayPayload
     
     // NRD denoiser fields
     float3 diffuseRadiance;   // Diffuse lighting component
-    float hitDistance;        // Distance to hit point
+    float hitDistance;        // Distance to hit point (primary ray)
     float3 specularRadiance;  // Specular/reflection component
+    float specularHitDistance;// Distance for specular (reflection ray or primary)
     float roughness;          // Surface roughness
     float3 worldNormal;       // World-space normal at hit
     float viewZ;              // Linear view depth
@@ -106,6 +107,9 @@ struct SceneConstantBuffer
     // DoF (Depth of Field) parameters
     float ApertureSize;         // 0.0 = DoF disabled, larger = stronger bokeh
     float FocusDistance;        // Distance to the focal plane
+    // Shadow parameters
+    float ShadowStrength;       // 0.0 = no shadow, 1.0 = normal, >1.0 = darker
+    uint FrameIndex;            // Frame counter for temporal noise variation
     // Matrices for motion vectors
     float4x4 ViewProjection;
     float4x4 PrevViewProjection;
@@ -241,8 +245,7 @@ RWStructuredBuffer<uint> PhotonCounter : register(u2);  // Atomic counter for ph
 // ============================================
 // G-Buffer Outputs for NRD Denoiser
 // ============================================
-// These are optional - only used when denoising is enabled
-#ifdef ENABLE_NRD_GBUFFER
+// Always enabled - UAV declarations needed for ray tracing output
 RWTexture2D<float4> GBuffer_DiffuseRadianceHitDist : register(u3);   // RGBA16F: Diffuse radiance + hit dist
 RWTexture2D<float4> GBuffer_SpecularRadianceHitDist : register(u4); // RGBA16F: Specular radiance + hit dist
 RWTexture2D<float4> GBuffer_NormalRoughness : register(u5);          // RGBA8: Normal (oct) + roughness
@@ -251,7 +254,6 @@ RWTexture2D<float2> GBuffer_MotionVectors : register(u7);            // RG16F: S
 RWTexture2D<float4> GBuffer_Albedo : register(u8);                   // RGBA8: Albedo color
 RWTexture2D<float2> GBuffer_ShadowData : register(u9);               // RG16F: X = penumbra, Y = visibility
 RWTexture2D<float4> GBuffer_ShadowTranslucency : register(u10);      // RGBA16F: packed translucency
-#endif
 
 // ユーティリティ関数
 float3 CreateCameraRay(float2 ndc, float3 cameraPos, float4x4 invViewProj)
@@ -477,9 +479,10 @@ float TraceSingleShadowRay(float3 rayOrigin, float3 rayDir, float maxDist, out f
     
     RayPayload shadowPayload;
     shadowPayload.color = float3(0, 0, 0);
-    shadowPayload.depth = MAX_RECURSION_DEPTH;
+    shadowPayload.depth = MAX_RECURSION_DEPTH;  // Mark as shadow ray
     shadowPayload.hit = 0;
     shadowPayload.padding = 0.0;
+    // NRD fields not needed for shadow rays
     shadowPayload.diffuseRadiance = float3(0, 0, 0);
     shadowPayload.specularRadiance = float3(0, 0, 0);
     shadowPayload.hitDistance = NRD_FP16_MAX;
@@ -496,12 +499,12 @@ float TraceSingleShadowRay(float3 rayOrigin, float3 rayDir, float maxDist, out f
     shadowPayload.targetObjectIndex = 0;
     shadowPayload.thicknessQuery = 0;
     
-    // Use primary hit group (index 0) with ClosestHit
-    // Note: This works because ClosestHit sets payload.hit = 1
-    // TODO: Add transparent object handling later
+    // Use hit group 0 (primary rays) instead of hit group 1 (shadow rays)
+    // This uses ClosestHit shader which properly sets payload.hit
     TraceRay(SceneBVH, 
              RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,
              0xFF, 0, 0, 0, shadowRay, shadowPayload);
+    
     occluderDistance = shadowPayload.hit ? shadowPayload.hitDistance : NRD_FP16_MAX;
     return shadowPayload.hit ? 0.0 : 1.0;
 }
@@ -639,111 +642,6 @@ SoftShadowResult CalculateSoftShadow(float3 hitPos, float3 normal, LightData lig
     }
 }
 
-// Calculate a SINGLE stochastic shadow ray for SIGMA denoising
-// SIGMA expects noisy single-sample input, NOT averaged samples!
-// This traces ONE ray toward a random point on the light source
-SoftShadowResult CalculateSingleShadowRayForSigma(float3 hitPos, float3 normal, LightData light, inout uint seed)
-{
-    SoftShadowResult result;
-    result.visibility = 1.0;
-    result.penumbra = 0.0;
-    result.occluderDistance = NRD_FP16_MAX;
-    
-    float3 lightDir;
-    float lightDist = 10000.0;
-    float lightRadius = max(light.radius, 0.001);
-    
-    if (light.type == LIGHT_TYPE_DIRECTIONAL)
-    {
-        // Directional light: perturb direction based on angular radius
-        lightDir = normalize(-light.position);
-        
-        // Build tangent space
-        float3 tangent, bitangent;
-        BuildOrthonormalBasis(lightDir, tangent, bitangent);
-        
-        // Random sample on disk -> perturbed direction
-        float2 diskSample = RandomOnDisk(seed);
-        lightDir = normalize(lightDir + (tangent * diskSample.x + bitangent * diskSample.y) * lightRadius);
-    }
-    else if (light.type == LIGHT_TYPE_POINT)
-    {
-        // Point light: sample random point on light sphere
-        float3 toLight = light.position - hitPos;
-        lightDist = length(toLight);
-        float3 baseLightDir = toLight / max(lightDist, 1e-4);
-        
-        // Build tangent space perpendicular to light direction
-        float3 tangent, bitangent;
-        BuildOrthonormalBasis(baseLightDir, tangent, bitangent);
-        
-        // Random point on light surface (sphere)
-        float2 diskSample = RandomOnDisk(seed);
-        float3 lightSamplePos = light.position + 
-            lightRadius * (tangent * diskSample.x + bitangent * diskSample.y);
-        
-        lightDir = normalize(lightSamplePos - hitPos);
-        lightDist = length(lightSamplePos - hitPos);
-    }
-    else
-    {
-        // Ambient light - no shadow
-        return result;
-    }
-    
-    // Check if light is above surface
-    float ndotl = dot(normal, lightDir);
-    if (ndotl <= 0.0)
-    {
-        // Light is below horizon - fully shadowed
-        result.visibility = 0.0;
-        result.occluderDistance = 0.001;  // Very close occluder for SIGMA
-        result.penumbra = 0.0;  // Hard shadow at grazing angles
-        return result;
-    }
-    
-    // Trace single shadow ray with proper bias
-    // Bias too large causes contact light leaks (white halo).
-    // Keep it small to preserve contact shadows.
-    float bias = 0.001;
-    float occluderDistance;
-    result.visibility = TraceSingleShadowRay(hitPos + normal * bias, lightDir, lightDist, occluderDistance);
-    
-    if (result.visibility < 0.5)
-    {
-        result.occluderDistance = occluderDistance;
-        
-        // Calculate penumbra based on geometry
-        // Larger penumbra = softer edge, better SIGMA filtering
-        // penumbra = (lightRadius / occluderDistance) for point lights
-        float basePenumbra;
-        if (light.type == LIGHT_TYPE_POINT)
-        {
-            // Point light: penumbra depends on light size and occluder distance
-            float tanPenumbra = lightRadius / max(occluderDistance, 0.01);
-            basePenumbra = SIGMA_FrontEnd_PackPenumbra(occluderDistance, lightDist, lightRadius * 2.0);
-        }
-        else
-        {
-            // Directional: use angular radius (in radians)
-            float tanAngularRadius = tan(lightRadius);
-            basePenumbra = SIGMA_FrontEnd_PackPenumbra(occluderDistance, tanAngularRadius);
-        }
-        
-        // Ensure minimum penumbra for SIGMA to work effectively
-        // This prevents hard pixel edges from noisy sampling
-        result.penumbra = max(basePenumbra, 0.5);
-    }
-    else
-    {
-        // No occlusion - lit area
-        result.occluderDistance = NRD_FP16_MAX;
-        result.penumbra = 0.0;  // No penumbra needed for lit areas
-    }
-    
-    return result;
-}
-
 // Select a primary light for SIGMA shadow denoising
 bool GetPrimaryShadowForSigma(float3 hitPos, float3 normal, inout uint seed, out SoftShadowResult result)
 {
@@ -752,6 +650,7 @@ bool GetPrimaryShadowForSigma(float3 hitPos, float3 normal, inout uint seed, out
         bool found = false;
         float bestWeight = -1.0;
         LightData bestLight;
+        SoftShadowResult bestShadow;
         
         [loop]
         for (uint i = 0; i < Scene.NumLights; i++)
@@ -782,22 +681,22 @@ bool GetPrimaryShadowForSigma(float3 hitPos, float3 normal, inout uint seed, out
                 attenuation = 1.0 / (1.0 + lightDist * lightDist * 0.01);
             }
             
-            // Calculate weight based on light contribution (not shadow yet)
-            float weight = ndotl * attenuation * light.intensity * Luminance(light.color.rgb);
+            SoftShadowResult shadow = CalculateSoftShadow(hitPos, normal, light, seed);
+            float shadowStrength = 1.0 - shadow.visibility;
+            float weight = shadowStrength * ndotl * attenuation * light.intensity * Luminance(light.color.rgb);
             
             if (!found || weight > bestWeight)
             {
                 found = true;
                 bestWeight = weight;
                 bestLight = light;
+                bestShadow = shadow;
             }
         }
         
         if (found)
         {
-            // Use single stochastic shadow ray for SIGMA
-            // SIGMA will temporally reconstruct from noisy single-sample input
-            result = CalculateSingleShadowRayForSigma(hitPos, normal, bestLight, seed);
+            result = bestShadow;
             return true;
         }
     }
@@ -808,9 +707,9 @@ bool GetPrimaryShadowForSigma(float3 hitPos, float3 normal, inout uint seed, out
     fallbackLight.intensity = Scene.LightIntensity;
     fallbackLight.color = Scene.LightColor;
     fallbackLight.type = LIGHT_TYPE_POINT;
-    fallbackLight.radius = 0.5;  // Give it some radius for soft shadow
+    fallbackLight.radius = 0.0;
     fallbackLight.softShadowSamples = 1.0;
     fallbackLight.padding = 0.0;
-    result = CalculateSingleShadowRayForSigma(hitPos, normal, fallbackLight, seed);
+    result = CalculateSoftShadow(hitPos, normal, fallbackLight, seed);
     return true;
 }

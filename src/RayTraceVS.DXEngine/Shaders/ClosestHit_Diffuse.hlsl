@@ -170,11 +170,13 @@ void ClosestHit_Diffuse(inout RayPayload payload, in ProceduralAttributes attrib
         roughness = box.roughness;
     }
     
-    // Calculate diffuse lighting with caustics and soft shadows (separate lighting from albedo)
+    // Calculate diffuse lighting with caustics and soft shadows
+    // IMPORTANT: Pass white (1,1,1) as objectColor to get RADIANCE ONLY (no albedo)
+    // This is required for proper NRD denoising - albedo is multiplied AFTER denoising
     DiffuseLightingResult lighting = CalculateDiffuseLightingWithCaustics(hitPosition, normal, float3(1.0, 1.0, 1.0), roughness, seed);
-    float3 diffuseLighting = lighting.shadowed;
-    float3 diffuseLightingNoShadow = lighting.unshadowed;
-    float3 diffuseColor = diffuseLighting * color.rgb;
+    float3 diffuseLighting = lighting.shadowed;           // Radiance with shadows
+    float3 diffuseLightingNoShadow = lighting.unshadowed; // Radiance without shadows (for NRD)
+    float3 diffuseColor = diffuseLighting * color.rgb;    // Final color = radiance * albedo
     float3 specularColor = float3(0, 0, 0);
     
     // Subtle Fresnel reflection for dielectrics
@@ -232,8 +234,11 @@ void ClosestHit_Diffuse(inout RayPayload payload, in ProceduralAttributes attrib
     // NRD-specific outputs (only for primary rays, depth == 0)
     if (payload.depth == 0)
     {
-        payload.diffuseRadiance = diffuseLightingNoShadow;
-        payload.specularRadiance = specularColor;
+        // Store RADIANCE ONLY (no albedo) for NRD denoising
+        // Albedo will be multiplied AFTER denoising in Composite shader
+        // This is critical for NRD quality - never denoise albedo-multiplied color
+        payload.diffuseRadiance = diffuseLightingNoShadow;  // Pure radiance, no albedo
+        payload.specularRadiance = specularColor;  // Specular reflection (already radiance-only)
         payload.hitDistance = hitDistance;
         payload.worldNormal = normal;
         payload.roughness = roughness;

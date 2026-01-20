@@ -2,6 +2,7 @@ using System;
 using System.Globalization;
 using System.Windows.Data;
 using System.Windows.Media;
+using RayTraceVS.WPF.Utils;
 
 namespace RayTraceVS.WPF.Converters
 {
@@ -16,10 +17,10 @@ namespace RayTraceVS.WPF.Converters
             if (value is bool isConnected && isConnected)
             {
                 // 接続されている場合は暗い背景
-                return new SolidColorBrush(Color.FromRgb(0x25, 0x25, 0x25));
+                return BrushCache.Get(0x25, 0x25, 0x25);
             }
             // 通常の背景
-            return new SolidColorBrush(Color.FromRgb(0x3A, 0x3A, 0x3A));
+            return BrushCache.Get(0x3A, 0x3A, 0x3A);
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)

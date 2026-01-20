@@ -108,51 +108,43 @@ void SphereIntersection()
             
             if (t >= RayTMin() && t <= RayTCurrent())
             {
-                // Calculate normal based on which face was hit
-                // Use the axis that contributed most to tNear/tFar
+                // Calculate normal using slab method - which axis determines tNear/tFar
+                // This is more robust than hit point method for box intersection
                 float3 normal;
                 
                 if (isEntering)
                 {
-                    // Entering: find which axis gave tNear (maximum of tMin values)
-                    // Compare differences to find the closest match
-                    float3 diff = abs(float3(tNear, tNear, tNear) - tMin);
-                    
-                    if (diff.x <= diff.y && diff.x <= diff.z)
-                        normal = float3(-sign(direction.x), 0, 0);
-                    else if (diff.y <= diff.z)
-                        normal = float3(0, -sign(direction.y), 0);
+                    // Entering: normal points outward from the face we hit
+                    // The face we hit is determined by which component of tMin is largest
+                    if (tMin.x > tMin.y && tMin.x > tMin.z)
+                    {
+                        normal = float3(direction.x > 0 ? -1 : 1, 0, 0);
+                    }
+                    else if (tMin.y > tMin.z)
+                    {
+                        normal = float3(0, direction.y > 0 ? -1 : 1, 0);
+                    }
                     else
-                        normal = float3(0, 0, -sign(direction.z));
+                    {
+                        normal = float3(0, 0, direction.z > 0 ? -1 : 1);
+                    }
                 }
                 else
                 {
-                    // Exiting: find which axis gave tFar (minimum of tMax values)
-                    float3 diff = abs(float3(tFar, tFar, tFar) - tMax);
-                    
-                    if (diff.x <= diff.y && diff.x <= diff.z)
-                        normal = float3(sign(direction.x), 0, 0);
-                    else if (diff.y <= diff.z)
-                        normal = float3(0, sign(direction.y), 0);
+                    // Exiting: normal points outward from exit face
+                    // The exit face is determined by which component of tMax is smallest
+                    if (tMax.x < tMax.y && tMax.x < tMax.z)
+                    {
+                        normal = float3(direction.x > 0 ? 1 : -1, 0, 0);
+                    }
+                    else if (tMax.y < tMax.z)
+                    {
+                        normal = float3(0, direction.y > 0 ? 1 : -1, 0);
+                    }
                     else
-                        normal = float3(0, 0, sign(direction.z));
-                }
-                
-                // Handle edge case where direction component is exactly 0
-                // (sign(0) = 0 would give zero normal)
-                if (length(normal) < 0.5)
-                {
-                    // Fallback: use hit point method
-                    float3 hitPoint = origin + direction * t;
-                    float3 localHit = hitPoint - box.center;
-                    float3 normalizedLocal = abs(localHit) / max(box.size, float3(0.0001, 0.0001, 0.0001));
-                    
-                    if (normalizedLocal.x > normalizedLocal.y && normalizedLocal.x > normalizedLocal.z)
-                        normal = float3(localHit.x > 0 ? 1 : -1, 0, 0);
-                    else if (normalizedLocal.y > normalizedLocal.z)
-                        normal = float3(0, localHit.y > 0 ? 1 : -1, 0);
-                    else
-                        normal = float3(0, 0, localHit.z > 0 ? 1 : -1);
+                    {
+                        normal = float3(0, 0, direction.z > 0 ? 1 : -1);
+                    }
                 }
                 
                 ProceduralAttributes attribs;

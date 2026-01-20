@@ -1,6 +1,8 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
+using RayTraceVS.WPF.Models.Data;
 
 namespace RayTraceVS.WPF.Models.Nodes
 {
@@ -9,26 +11,112 @@ namespace RayTraceVS.WPF.Models.Nodes
         private int objectSocketCount = 0;
         private int lightSocketCount = 0;
 
-        [ObservableProperty]
         private int _samplesPerPixel = 2;
+        public int SamplesPerPixel
+        {
+            get => _samplesPerPixel;
+            set
+            {
+                try { System.IO.File.AppendAllText(@"C:\git\RayTraceVS\debug_log.txt", $"[SceneNode] SamplesPerPixel setter called with: {value}, current: {_samplesPerPixel}\n"); } catch { }
+                if (SetProperty(ref _samplesPerPixel, value))
+                {
+                    MarkDirty();
+                    try { System.IO.File.AppendAllText(@"C:\git\RayTraceVS\debug_log.txt", $"[SceneNode] SamplesPerPixel changed to: {value}, MarkDirty called\n"); } catch { }
+                }
+            }
+        }
 
-        [ObservableProperty]
         private int _maxBounces = 4;
+        public int MaxBounces
+        {
+            get => _maxBounces;
+            set
+            {
+                if (SetProperty(ref _maxBounces, value))
+                {
+                    MarkDirty();
+                }
+            }
+        }
 
-        [ObservableProperty]
         private float _exposure = 1.0f;
+        public float Exposure
+        {
+            get => _exposure;
+            set
+            {
+                if (SetProperty(ref _exposure, value))
+                {
+                    MarkDirty();
+                }
+            }
+        }
 
         /// <summary>
         /// 0 = Reinhard, 1 = ACES, 2 = None
         /// </summary>
-        [ObservableProperty]
         private int _toneMapOperator = 2;
+        public int ToneMapOperator
+        {
+            get => _toneMapOperator;
+            set
+            {
+                if (SetProperty(ref _toneMapOperator, value))
+                {
+                    MarkDirty();
+                }
+            }
+        }
 
         /// <summary>
         /// NRD Reblur stabilizationStrength (1.0 = default)
         /// </summary>
-        [ObservableProperty]
         private float _denoiserStabilization = 1.0f;
+        public float DenoiserStabilization
+        {
+            get => _denoiserStabilization;
+            set
+            {
+                if (SetProperty(ref _denoiserStabilization, value))
+                {
+                    MarkDirty();
+                }
+            }
+        }
+
+        /// <summary>
+        /// 影の濃さ (0.0 = 影なし, 1.0 = 通常, >1.0 = より濃い影)
+        /// </summary>
+        private float _shadowStrength = 1.0f;
+        public float ShadowStrength
+        {
+            get => _shadowStrength;
+            set
+            {
+                if (SetProperty(ref _shadowStrength, value))
+                {
+                    MarkDirty();  // キャッシュを無効化して再評価を促す
+                    try { System.IO.File.AppendAllText(@"C:\git\RayTraceVS\debug_log.txt", $"[SceneNode] ShadowStrength changed to: {value}, MarkDirty called\n"); } catch { }
+                    System.Diagnostics.Debug.WriteLine($"[SceneNode] ShadowStrength changed to: {value}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// デノイザー有効/無効 (true = NRDデノイザー有効)
+        /// </summary>
+        private bool _enableDenoiser = true;
+        public bool EnableDenoiser
+        {
+            get => _enableDenoiser;
+            set
+            {
+                if (SetProperty(ref _enableDenoiser, value))
+                {
+                    MarkDirty();
+                }
+            }
+        }
 
         public SceneNode() : base("Scene", NodeCategory.Scene)
         {
@@ -144,7 +232,7 @@ namespace RayTraceVS.WPF.Models.Nodes
             return false;
         }
 
-        public override object? Evaluate(Dictionary<System.Guid, object?> inputValues)
+        public override object? Evaluate(Dictionary<Guid, object?> inputValues)
         {
             var cameraObj = GetInputValue<object>("Camera", inputValues);
             
@@ -179,20 +267,10 @@ namespace RayTraceVS.WPF.Models.Nodes
                 MaxBounces = MaxBounces,
                 Exposure = Exposure,
                 ToneMapOperator = ToneMapOperator,
-                DenoiserStabilization = DenoiserStabilization
+                DenoiserStabilization = DenoiserStabilization,
+                ShadowStrength = ShadowStrength,
+                EnableDenoiser = EnableDenoiser
             };
         }
-    }
-
-    public struct SceneData
-    {
-        public CameraData Camera;
-        public List<object> Objects;
-        public List<LightData> Lights;
-        public int SamplesPerPixel;
-        public int MaxBounces;
-        public float Exposure;
-        public int ToneMapOperator;
-        public float DenoiserStabilization;
     }
 }

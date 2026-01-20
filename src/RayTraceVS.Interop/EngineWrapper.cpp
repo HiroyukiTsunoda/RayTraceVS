@@ -89,7 +89,9 @@ namespace RayTraceVS::Interop
         int maxBounces,
         float exposure,
         int toneMapOperator,
-        float denoiserStabilization)
+        float denoiserStabilization,
+        float shadowStrength,
+        bool enableDenoiser)
     {
         if (!isInitialized || !nativeScene)
             return;
@@ -102,7 +104,7 @@ namespace RayTraceVS::Interop
         Bridge::SetCamera(nativeScene, nativeCamera);
 
         // Set render settings
-        Bridge::SetRenderSettings(nativeScene, samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization);
+        Bridge::SetRenderSettings(nativeScene, samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization, shadowStrength, enableDenoiser);
 
         // Add spheres
         if (spheres != nullptr)

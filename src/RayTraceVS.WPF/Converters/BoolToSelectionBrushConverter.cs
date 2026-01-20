@@ -2,6 +2,7 @@ using System;
 using System.Globalization;
 using System.Windows.Data;
 using System.Windows.Media;
+using RayTraceVS.WPF.Utils;
 
 namespace RayTraceVS.WPF.Converters
 {
@@ -11,9 +12,9 @@ namespace RayTraceVS.WPF.Converters
         {
             if (value is bool isSelected && isSelected)
             {
-                return new SolidColorBrush(Color.FromRgb(0x00, 0x7A, 0xCC)); // AccentBrush
+                return BrushCache.Get(0x00, 0x7A, 0xCC); // AccentBrush
             }
-            return new SolidColorBrush(Color.FromRgb(0x3F, 0x3F, 0x46)); // BorderBrush
+            return BrushCache.Get(0x3F, 0x3F, 0x46); // BorderBrush
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)

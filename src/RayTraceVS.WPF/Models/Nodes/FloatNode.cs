@@ -8,8 +8,18 @@ namespace RayTraceVS.WPF.Models.Nodes
     /// </summary>
     public partial class FloatNode : Node
     {
-        [ObservableProperty]
         private float _value = 0.0f;
+        public float Value
+        {
+            get => _value;
+            set
+            {
+                if (SetProperty(ref _value, value))
+                {
+                    MarkDirty();
+                }
+            }
+        }
 
         public override bool HasEditableFloat => true;
         

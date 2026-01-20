@@ -143,6 +143,7 @@ void ClosestHit_Glass(inout RayPayload payload, in ProceduralAttributes attribs)
     float3 objectColor = color.rgb;
     float3 finalColor = float3(0, 0, 0);
     float3 specularColor = float3(0, 0, 0);
+    float3 transmittedColor = float3(0, 0, 0);  // Moved to function scope for NRD access
     float3 diffuseLighting = CalculateGlassLighting(hitPosition, normal, float3(1.0, 1.0, 1.0));
     float3 diffuseColor = float3(0, 0, 0);
     
@@ -155,7 +156,6 @@ void ClosestHit_Glass(inout RayPayload payload, in ProceduralAttributes attribs)
         // ============================================
         // Refraction (transmitted color)
         // ============================================
-        float3 transmittedColor = float3(0, 0, 0);
         
         float eta = frontFace ? (1.0 / ior) : ior;
         float3 refractDir = RefractRay(WorldRayDirection(), outwardNormal, eta);
@@ -163,8 +163,11 @@ void ClosestHit_Glass(inout RayPayload payload, in ProceduralAttributes attribs)
         if (length(refractDir) > 0.001)
         {
             RayDesc refractRay;
-            refractRay.Origin = hitPosition - outwardNormal * 0.01;
-            refractRay.Direction = normalize(refractDir);
+            // Use ray direction for offset instead of normal to avoid edge issues
+            // At edges, normal-based offset can push the origin to the wrong side
+            float3 refractDirNorm = normalize(refractDir);
+            refractRay.Origin = hitPosition + refractDirNorm * 0.01;
+            refractRay.Direction = refractDirNorm;
             refractRay.TMin = 0.001;
             refractRay.TMax = 10000.0;
             
@@ -176,26 +179,47 @@ void ClosestHit_Glass(inout RayPayload payload, in ProceduralAttributes attribs)
             InitializeNRDPayload(refractPayload);
             
             TraceRay(SceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, refractRay, refractPayload);
-            transmittedColor = refractPayload.color;
             
-            RayPayload thicknessPayload;
-            thicknessPayload.color = float3(0, 0, 0);
-            thicknessPayload.depth = payload.depth + 1;
-            thicknessPayload.hit = false;
-            thicknessPayload.padding = 0.0;
-            InitializeNRDPayload(thicknessPayload);
-            thicknessPayload.targetObjectType = objectType;
-            thicknessPayload.targetObjectIndex = objectIndex;
-            thicknessPayload.thicknessQuery = 1;
-            
-            TraceRay(SceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, refractRay, thicknessPayload);
-            
-            if (thicknessPayload.hit)
+            // If refraction ray missed (hit sky), use sky color explicitly
+            // This ensures we never get black from uninitialized payload
+            if (refractPayload.hit)
             {
-                float thickness = thicknessPayload.hitDistance;
-                float3 absorption = objectColor;
-                float3 transmittance = exp(-absorption * thickness);
-                transmittedColor *= transmittance;
+                transmittedColor = refractPayload.color;
+                
+                // Only apply absorption if ray hit something inside the glass
+                RayPayload thicknessPayload;
+                thicknessPayload.color = float3(0, 0, 0);
+                thicknessPayload.depth = payload.depth + 1;
+                thicknessPayload.hit = false;
+                thicknessPayload.padding = 0.0;
+                InitializeNRDPayload(thicknessPayload);
+                thicknessPayload.targetObjectType = objectType;
+                thicknessPayload.targetObjectIndex = objectIndex;
+                thicknessPayload.thicknessQuery = 1;
+                
+                TraceRay(SceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, refractRay, thicknessPayload);
+                
+                if (thicknessPayload.hit)
+                {
+                    float thickness = thicknessPayload.hitDistance;
+                    // Use inverted color for absorption (blue glass absorbs red/green, not blue)
+                    // Significantly reduced absorption strength to prevent overly dark results
+                    // when viewing glass through reflections
+                    float3 absorption = (float3(1.0, 1.0, 1.0) - objectColor) * 0.15;
+                    float3 transmittance = exp(-absorption * thickness);
+                    
+                    // Ensure minimum transmittance to prevent complete blackout
+                    transmittance = max(transmittance, float3(0.1, 0.1, 0.1));
+                    
+                    // Apply gentle color tinting based on glass color
+                    float3 tint = lerp(float3(1, 1, 1), objectColor, saturate(thickness * 0.1));
+                    transmittedColor *= transmittance * tint;
+                }
+            }
+            else
+            {
+                // Ray missed - use sky color in refraction direction (no absorption for sky)
+                transmittedColor = GetSkyColor(refractRay.Direction);
             }
         }
         else
@@ -229,7 +253,8 @@ void ClosestHit_Glass(inout RayPayload payload, in ProceduralAttributes attribs)
                 float3 reflectDir = reflect(WorldRayDirection(), outwardNormal);
                 
                 RayDesc reflectRay;
-                reflectRay.Origin = hitPosition + outwardNormal * 0.01;
+                // Use reflection direction for offset to avoid edge issues
+                reflectRay.Origin = hitPosition + reflectDir * 0.01;
                 reflectRay.Direction = reflectDir;
                 reflectRay.TMin = 0.001;
                 reflectRay.TMax = 10000.0;
@@ -243,30 +268,82 @@ void ClosestHit_Glass(inout RayPayload payload, in ProceduralAttributes attribs)
                 
                 TraceRay(SceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, reflectRay, reflectPayload);
                 
+                // If reflection ray missed (hit sky), use sky color explicitly
+                float3 reflectedColor;
+                if (reflectPayload.hit)
+                {
+                    reflectedColor = reflectPayload.color;
+                }
+                else
+                {
+                    reflectedColor = GetSkyColor(reflectDir);
+                }
+                
                 // Blend reflection based on Fresnel and transparency
                 float reflectBlend = fresnel * (1.0 - transmission * 0.5);
-                specularColor = reflectPayload.color * reflectBlend;
-                finalColor = lerp(finalColor, reflectPayload.color, reflectBlend);
+                specularColor = reflectedColor * reflectBlend;
+                finalColor = lerp(finalColor, reflectedColor, reflectBlend);
             }
         }
     }
     else
     {
-        // Max depth reached - use surface lighting only
-        diffuseColor = diffuseLighting * objectColor;
-        finalColor = diffuseColor;
+        // Max depth reached - use approximate transparency with better fallback
+        // For transparent glass, approximate both refraction and reflection
+        float3 V = -WorldRayDirection();
+        bool frontFace = dot(V, normal) > 0;
+        float3 outwardNormal = frontFace ? normal : -normal;
+        
+        // Approximate refraction direction for sky lookup
+        float eta = frontFace ? (1.0 / ior) : ior;
+        float3 approxRefractDir = RefractRay(WorldRayDirection(), outwardNormal, eta);
+        if (length(approxRefractDir) < 0.001)
+        {
+            approxRefractDir = WorldRayDirection();  // Total internal reflection fallback
+        }
+        
+        // Approximate reflection direction
+        float3 reflectDir = reflect(WorldRayDirection(), outwardNormal);
+        
+        // Get sky colors for approximation
+        float3 skyRefraction = GetSkyColor(approxRefractDir);
+        float3 skyReflection = GetSkyColor(reflectDir);
+        
+        // Calculate Fresnel for reflection blend
+        float f0 = pow((1.0 - ior) / (1.0 + ior), 2.0);
+        float cosTheta = abs(dot(V, outwardNormal));
+        float fresnel = FresnelSchlick(cosTheta, f0);
+        
+        // Apply glass tint to transmitted light (but lighter than full absorption)
+        float3 tintedTransmission = skyRefraction * lerp(float3(1, 1, 1), objectColor, 0.5);
+        
+        // Combine: transmitted light + Fresnel reflection
+        float3 approximateTransmitted = tintedTransmission * transmission;
+        float3 approximateReflected = skyReflection * fresnel * 0.5;
+        
+        // Surface lighting contribution (reduced by transmission)
+        float3 opaqueColor = diffuseLighting * objectColor * (1.0 - transmission);
+        
+        // Final blend
+        finalColor = opaqueColor + approximateTransmitted + approximateReflected;
+        diffuseColor = opaqueColor;
+        transmittedColor = approximateTransmitted;
+        specularColor = approximateReflected;
     }
     
     payload.color = saturate(finalColor);
     payload.hit = true;
     
     // NRD-specific outputs (only for primary rays)
-    // Note: Glass is tricky for denoisers - we output the transmitted color as "diffuse"
-    // and the reflected color as "specular"
+    // For glass: transmitted color goes to specular (both are view-dependent effects)
+    // Reflection (specularColor) + Refraction (transmittedColor * transmission)
     if (payload.depth == 0)
     {
-        payload.diffuseRadiance = diffuseLighting;
-        payload.specularRadiance = specularColor;
+        // Store RADIANCE ONLY (no albedo) for NRD denoising
+        // For glass: combine reflection and transmission into specular channel
+        // Both are view-dependent effects that NRD should denoise together
+        payload.diffuseRadiance = diffuseLighting * (1.0 - transmission);  // Surface lighting (reduced by transmission)
+        payload.specularRadiance = specularColor + transmittedColor * transmission;  // Reflection + Refraction
         payload.hitDistance = hitDistance;
         payload.worldNormal = normal;
         payload.roughness = roughness;

@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using RayTraceVS.WPF.Utils;
 using System;
 using System.Windows;
 using System.Windows.Media;
@@ -61,19 +62,19 @@ namespace RayTraceVS.WPF.Models
             PositionChanged?.Invoke(this, EventArgs.Empty);
         }
 
-        // ソケットの型に応じた色を返す
+        // ソケットの型に応じた色を返す（キャッシュ済みBrushを使用）
         public Brush SocketColor => socketType switch
         {
-            SocketType.Object => new SolidColorBrush(Color.FromRgb(0x4A, 0x90, 0xE2)),    // 青
-            SocketType.Vector3 => new SolidColorBrush(Color.FromRgb(0xE7, 0x4C, 0x3C)),   // 赤
-            SocketType.Float => new SolidColorBrush(Color.FromRgb(0x95, 0xA5, 0xA6)),     // グレー
-            SocketType.Color => new SolidColorBrush(Color.FromRgb(0xF3, 0x9C, 0x12)),     // オレンジ
-            SocketType.Material => new SolidColorBrush(Color.FromRgb(0xE6, 0x7E, 0x22)),  // 濃いオレンジ
-            SocketType.Camera => new SolidColorBrush(Color.FromRgb(0x9B, 0x59, 0xB6)),    // 紫
-            SocketType.Light => new SolidColorBrush(Color.FromRgb(0xF1, 0xC4, 0x0F)),     // 黄色
-            SocketType.Scene => new SolidColorBrush(Color.FromRgb(0x2E, 0xCC, 0x71)),     // 緑
-            SocketType.Transform => new SolidColorBrush(Color.FromRgb(0x1A, 0xBC, 0x9C)),  // 青緑
-            _ => new SolidColorBrush(Colors.White)
+            SocketType.Object => BrushCache.Get(0x4A, 0x90, 0xE2),    // 青
+            SocketType.Vector3 => BrushCache.Get(0xE7, 0x4C, 0x3C),   // 赤
+            SocketType.Float => BrushCache.Get(0x95, 0xA5, 0xA6),     // グレー
+            SocketType.Color => BrushCache.Get(0xF3, 0x9C, 0x12),     // オレンジ
+            SocketType.Material => BrushCache.Get(0xE6, 0x7E, 0x22),  // 濃いオレンジ
+            SocketType.Camera => BrushCache.Get(0x9B, 0x59, 0xB6),    // 紫
+            SocketType.Light => BrushCache.Get(0xF1, 0xC4, 0x0F),     // 黄色
+            SocketType.Scene => BrushCache.Get(0x2E, 0xCC, 0x71),     // 緑
+            SocketType.Transform => BrushCache.Get(0x1A, 0xBC, 0x9C), // 青緑
+            _ => BrushCache.Get(Colors.White)
         };
 
         public NodeSocket(string name, SocketType type, bool isInput)

@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Numerics;
+using Newtonsoft.Json.Linq;
+using RayTraceVS.WPF.Models.Data;
+using RayTraceVS.WPF.Models.Serialization;
 
 namespace RayTraceVS.WPF.Models.Nodes
 {
-    public class SphereNode : Node
+    public class SphereNode : Node, ISerializableNode
     {
         // Transform（位置・回転・スケール）
         public Transform ObjectTransform { get; set; } = Transform.Identity;
@@ -24,7 +26,7 @@ namespace RayTraceVS.WPF.Models.Nodes
             AddOutputSocket("Object", SocketType.Object);
         }
 
-        public override object? Evaluate(Dictionary<System.Guid, object?> inputValues)
+        public override object? Evaluate(Dictionary<Guid, object?> inputValues)
         {
             // Transform入力を取得（未接続の場合は内部プロパティを使用）
             var transformSocket = InputSockets.FirstOrDefault(s => s.Name == "Transform");
@@ -51,12 +53,19 @@ namespace RayTraceVS.WPF.Models.Nodes
                 Material = material
             };
         }
-    }
 
-    public struct SphereData
-    {
-        public Vector3 Position;
-        public float Radius;
-        public MaterialData Material;
+        #region ISerializableNode
+        public void SerializeProperties(JObject json)
+        {
+            json["transform"] = ObjectTransform.ToJson();
+            json["radius"] = Radius;
+        }
+
+        public void DeserializeProperties(JObject json)
+        {
+            ObjectTransform = json["transform"].ToTransform();
+            Radius = json.GetFloat("radius", 1.0f);
+        }
+        #endregion
     }
 }

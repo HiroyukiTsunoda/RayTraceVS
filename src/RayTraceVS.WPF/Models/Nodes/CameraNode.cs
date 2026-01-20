@@ -1,35 +1,117 @@
+using System;
 using System.Collections.Generic;
 using System.Numerics;
 using CommunityToolkit.Mvvm.ComponentModel;
+using RayTraceVS.WPF.Models.Data;
 
 namespace RayTraceVS.WPF.Models.Nodes
 {
     public partial class CameraNode : Node
     {
-        [ObservableProperty]
-        private Vector3 cameraPosition = new Vector3(0, 2, -5);
+        private Vector3 _cameraPosition = new Vector3(0, 2, -5);
+        public Vector3 CameraPosition
+        {
+            get => _cameraPosition;
+            set
+            {
+                if (SetProperty(ref _cameraPosition, value))
+                {
+                    MarkDirty();
+                }
+            }
+        }
         
-        [ObservableProperty]
-        private Vector3 lookAt = Vector3.Zero;
+        private Vector3 _lookAt = Vector3.Zero;
+        public Vector3 LookAt
+        {
+            get => _lookAt;
+            set
+            {
+                if (SetProperty(ref _lookAt, value))
+                {
+                    MarkDirty();
+                }
+            }
+        }
         
-        [ObservableProperty]
-        private Vector3 up = Vector3.UnitY;
+        private Vector3 _up = Vector3.UnitY;
+        public Vector3 Up
+        {
+            get => _up;
+            set
+            {
+                if (SetProperty(ref _up, value))
+                {
+                    MarkDirty();
+                }
+            }
+        }
         
-        [ObservableProperty]
-        private float fieldOfView = 60.0f;
+        private float _fieldOfView = 60.0f;
+        public float FieldOfView
+        {
+            get => _fieldOfView;
+            set
+            {
+                if (SetProperty(ref _fieldOfView, value))
+                {
+                    MarkDirty();
+                }
+            }
+        }
         
-        [ObservableProperty]
-        private float near = 0.1f;
+        private float _near = 0.1f;
+        public float Near
+        {
+            get => _near;
+            set
+            {
+                if (SetProperty(ref _near, value))
+                {
+                    MarkDirty();
+                }
+            }
+        }
         
-        [ObservableProperty]
-        private float far = 1000.0f;
+        private float _far = 1000.0f;
+        public float Far
+        {
+            get => _far;
+            set
+            {
+                if (SetProperty(ref _far, value))
+                {
+                    MarkDirty();
+                }
+            }
+        }
         
         // DoF (Depth of Field) parameters
-        [ObservableProperty]
-        private float apertureSize = 0.0f;  // 0.0 = DoF disabled, larger = stronger bokeh
+        private float _apertureSize = 0.0f;  // 0.0 = DoF disabled, larger = stronger bokeh
+        public float ApertureSize
+        {
+            get => _apertureSize;
+            set
+            {
+                if (SetProperty(ref _apertureSize, value))
+                {
+                    MarkDirty();
+                }
+            }
+        }
         
-        [ObservableProperty]
-        private float focusDistance = 5.0f; // Distance to the focal plane
+        private float _focusDistance = 5.0f; // Distance to the focal plane
+        public float FocusDistance
+        {
+            get => _focusDistance;
+            set
+            {
+                if (SetProperty(ref _focusDistance, value))
+                {
+                    MarkDirty();
+                }
+            }
+        }
 
         public CameraNode() : base("Camera", NodeCategory.Camera)
         {
@@ -38,18 +120,18 @@ namespace RayTraceVS.WPF.Models.Nodes
             AddOutputSocket("Camera", SocketType.Camera);
         }
 
-        public override object? Evaluate(Dictionary<System.Guid, object?> inputValues)
+        public override object? Evaluate(Dictionary<Guid, object?> inputValues)
         {
             var positionInput = GetInputValue<Vector3?>("Position", inputValues);
             var lookAtInput = GetInputValue<Vector3?>("Look At", inputValues);
             
             var position = positionInput ?? CameraPosition;
-            var lookAt = lookAtInput ?? LookAt;
+            var lookAtValue = lookAtInput ?? LookAt;
 
             return new CameraData
             {
                 Position = position,
-                LookAt = lookAt,
+                LookAt = lookAtValue,
                 Up = Up,
                 FieldOfView = FieldOfView,
                 Near = Near,
@@ -58,17 +140,5 @@ namespace RayTraceVS.WPF.Models.Nodes
                 FocusDistance = FocusDistance
             };
         }
-    }
-
-    public struct CameraData
-    {
-        public Vector3 Position;
-        public Vector3 LookAt;
-        public Vector3 Up;
-        public float FieldOfView;
-        public float Near;
-        public float Far;
-        public float ApertureSize;
-        public float FocusDistance;
     }
 }

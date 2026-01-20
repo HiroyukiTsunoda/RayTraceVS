@@ -22,6 +22,10 @@ namespace RayTraceVS.WPF.Views
         // 解像度を1920x1080に固定
         private const int RenderWidth = 1920;
         private const int RenderHeight = 1080;
+        
+        // テンポラルデノイズのための最低描画回数
+        // 1回目: 履歴なし、2回目: テンポラル蓄積開始、3回目以降: 安定化
+        private const int MinRenderPassesForTemporal = 5;
 
         public RenderWindow()
         {
@@ -51,8 +55,8 @@ namespace RayTraceVS.WPF.Views
             if (isRendering)
             {
                 needsRedraw = true;
-                // UIスレッドで再描画を実行
-                Dispatcher.BeginInvoke(new Action(() => RenderOnce()), DispatcherPriority.Render);
+                // UIスレッドでテンポラルデノイズのために複数回描画
+                Dispatcher.BeginInvoke(new Action(() => RenderMultiplePasses()), DispatcherPriority.Render);
             }
         }
 
@@ -168,9 +172,22 @@ namespace RayTraceVS.WPF.Views
             isRendering = true;
             StatusText.Text = "状態: レンダリング中";
 
-            // 一回だけレンダリング
-            RenderOnce();
+            // テンポラルデノイズのために最低回数描画
+            RenderMultiplePasses();
             UpdateInfo();
+        }
+        
+        /// <summary>
+        /// テンポラルデノイズのために最低回数描画する
+        /// 最終フレームのみ画面に表示（中間フレームは内部処理のみ）
+        /// </summary>
+        private void RenderMultiplePasses()
+        {
+            for (int i = 0; i < MinRenderPassesForTemporal; i++)
+            {
+                bool isLastPass = (i == MinRenderPassesForTemporal - 1);
+                RenderOnce(updateDisplay: isLastPass);
+            }
         }
 
         private void StopRendering()
@@ -182,7 +199,11 @@ namespace RayTraceVS.WPF.Views
             StatusText.Text = "状態: 停止中";
         }
 
-        private void RenderOnce()
+        /// <summary>
+        /// 1フレーム描画する
+        /// </summary>
+        /// <param name="updateDisplay">trueの場合のみ画面に表示（falseは内部処理のみ）</param>
+        private void RenderOnce(bool updateDisplay = true)
         {
             if (!isRendering || renderService == null || nodeGraph == null || sceneEvaluator == null || renderBitmap == null)
                 return;
@@ -192,15 +213,19 @@ namespace RayTraceVS.WPF.Views
             try
             {
                 // ノードグラフからシーンデータを評価
-                var (spheres, planes, boxes, camera, lights, samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization) = sceneEvaluator.EvaluateScene(nodeGraph);
+                var (spheres, planes, boxes, camera, lights, samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization, shadowStrength, enableDenoiser) = sceneEvaluator.EvaluateScene(nodeGraph);
                 
                 // シーン更新
-                renderService.UpdateScene(spheres, planes, boxes, camera, lights, samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization);
+                renderService.UpdateScene(spheres, planes, boxes, camera, lights, samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization, shadowStrength, enableDenoiser);
                 
-                // レンダリング
+                // レンダリング（GPU側で描画実行）
                 renderService.Render();
                 
-                // ピクセルデータを取得
+                // 最終フレームのみ画面に転送
+                if (!updateDisplay)
+                    return;
+                
+                // ピクセルデータを取得して画面に表示
                 var pixelData = renderService.GetPixelData();
                 
                 if (pixelData != null)

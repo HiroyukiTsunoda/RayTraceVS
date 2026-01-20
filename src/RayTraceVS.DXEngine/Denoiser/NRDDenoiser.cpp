@@ -179,6 +179,11 @@ namespace RayTraceVS::DXEngine
         if (!CreateTexture(m_gBuffer.SpecularRadianceHitDist, DXGI_FORMAT_R16G16B16A16_FLOAT, L"GBuffer_SpecularRadianceHitDist"))
             return false;
 
+        // Create backup buffer for raw specular (before NRD processing)
+        // This is needed because NRD corrupts the original SpecularRadianceHitDist
+        if (!CreateTexture(m_gBuffer.RawSpecularBackup, DXGI_FORMAT_R16G16B16A16_FLOAT, L"GBuffer_RawSpecularBackup"))
+            return false;
+
         if (!CreateTexture(m_gBuffer.NormalRoughness, DXGI_FORMAT_R8G8B8A8_UNORM, L"GBuffer_NormalRoughness"))
             return false;
 
@@ -279,7 +284,8 @@ namespace RayTraceVS::DXEngine
             return false;
 
         // Create denoised shadow output (for SIGMA)
-        if (!CreateTexture(m_output.DenoisedShadow, DXGI_FORMAT_R16G16_FLOAT, L"Output_DenoisedShadow"))
+        // IMPORTANT: SIGMA OUT_SHADOW_TRANSLUCENCY requires RGBA16F (4 channels)
+        if (!CreateTexture(m_output.DenoisedShadow, DXGI_FORMAT_R16G16B16A16_FLOAT, L"Output_DenoisedShadow"))
             return false;
 
         // Create UAV descriptors for output (starting at index 7, after G-Buffer UAVs 0-6)
@@ -300,8 +306,8 @@ namespace RayTraceVS::DXEngine
         device2->CreateUnorderedAccessView(m_output.SpecularRadiance.Get(), nullptr, &uavDesc, cpuHandle);
         cpuHandle.Offset(m_descriptorSize);
 
-        // UAV 9: DenoisedShadow output (for SIGMA)
-        uavDesc.Format = DXGI_FORMAT_R16G16_FLOAT;
+        // UAV 9: DenoisedShadow output (for SIGMA) - RGBA16F required
+        uavDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
         device2->CreateUnorderedAccessView(m_output.DenoisedShadow.Get(), nullptr, &uavDesc, cpuHandle);
 
         return true;
@@ -793,12 +799,13 @@ namespace RayTraceVS::DXEngine
         
         commonSettings.denoisingRange = settings.CameraFar;
         commonSettings.frameIndex = m_frameIndex++;
-        // Temporal accumulation disabled for this product.
-        commonSettings.accumulationMode = nrd::AccumulationMode::CLEAR_AND_RESTART;
+        // Enable temporal accumulation for better denoising quality
+        // CONTINUE = use previous frame's history for temporal filtering
+        commonSettings.accumulationMode = nrd::AccumulationMode::CONTINUE;
         commonSettings.enableValidation = settings.EnableValidation;
         
         // Log NRD settings for debugging
-        sprintf_s(buf, "NRD Settings: frameIndex=%d, denoisingRange=%.1f, accumulationMode=%d (temporal off)",
+        sprintf_s(buf, "NRD Settings: frameIndex=%d, denoisingRange=%.1f, accumulationMode=%d (temporal ON)",
             commonSettings.frameIndex, commonSettings.denoisingRange, (int)commonSettings.accumulationMode);
         LogToFile(buf);
         sprintf_s(buf, "NRD Settings: resourceSize=%ux%u, rectSize=%ux%u",
@@ -819,10 +826,19 @@ namespace RayTraceVS::DXEngine
         // Set REBLUR-specific settings
         nrd::ReblurSettings reblurSettings = {};
         reblurSettings.hitDistanceReconstructionMode = nrd::HitDistanceReconstructionMode::AREA_3X3;
-        // Restore blur strength for NRD.
         reblurSettings.enableAntiFirefly = true;
         reblurSettings.maxBlurRadius = 30.0f;
-        reblurSettings.minBlurRadius = 1.0f;
+        reblurSettings.minBlurRadius = 0.0f;  // Allow roughness=0 to have zero blur (perfect mirrors)
+        
+        // For perfect mirrors (roughness=0), use responsive accumulation to avoid temporal blur
+        reblurSettings.responsiveAccumulationRoughnessThreshold = 0.05f;
+        
+        // Reduce specular prepass blur for sharper reflections
+        reblurSettings.specularPrepassBlurRadius = 10.0f;
+        
+        // Reduce history frames for faster convergence
+        reblurSettings.maxAccumulatedFrameNum = 16;
+        reblurSettings.maxFastAccumulatedFrameNum = 4;
         
         nrd::SetDenoiserSettings(*m_nrdInstance, m_reblurIdentifier, &reblurSettings);
 
@@ -872,21 +888,30 @@ namespace RayTraceVS::DXEngine
         int dispatchedCount = 0;
         int skippedCount = 0;
         
-        // Log first few dispatches for debugging
-        for (uint32_t i = 0; i < min(dispatchDescsNum, 3u); i++)
+        // Log first few dispatches for debugging (and any SIGMA dispatches)
+        for (uint32_t i = 0; i < dispatchDescsNum; i++)
         {
             const nrd::DispatchDesc& dispatch = dispatchDescs[i];
-            sprintf_s(buf, "NRD Dispatch[%d]: name=%s, pipeline=%d, grid=%dx%d, resources=%d",
-                i, dispatch.name ? dispatch.name : "null", dispatch.pipelineIndex,
-                dispatch.gridWidth, dispatch.gridHeight, dispatch.resourcesNum);
-            LogToFile(buf);
             
-            for (uint32_t r = 0; r < min(dispatch.resourcesNum, 5u); r++)
+            // Log first 3, or any SIGMA-related dispatch
+            bool isSigmaDispatch = dispatch.name && strstr(dispatch.name, "SIGMA") != nullptr;
+            if (i < 3 || isSigmaDispatch)
             {
-                const nrd::ResourceDesc& res = dispatch.resources[r];
-                sprintf_s(buf, "  Resource[%d]: type=%d, indexInPool=%d",
-                    r, (int)res.type, res.indexInPool);
+                sprintf_s(buf, "NRD Dispatch[%d]: name=%s, pipeline=%d, grid=%dx%d, resources=%d",
+                    i, dispatch.name ? dispatch.name : "null", dispatch.pipelineIndex,
+                    dispatch.gridWidth, dispatch.gridHeight, dispatch.resourcesNum);
                 LogToFile(buf);
+                
+                if (i < 3)
+                {
+                    for (uint32_t r = 0; r < min(dispatch.resourcesNum, 5u); r++)
+                    {
+                        const nrd::ResourceDesc& res = dispatch.resources[r];
+                        sprintf_s(buf, "  Resource[%d]: type=%d, indexInPool=%d",
+                            r, (int)res.type, res.indexInPool);
+                        LogToFile(buf);
+                    }
+                }
             }
         }
         
@@ -954,6 +979,25 @@ namespace RayTraceVS::DXEngine
                         
                     const nrd::ResourceDesc& resource = dispatch.resources[resourceIdx++];
                     ID3D12Resource* d3dResource = GetResourceForNRD(resource, instanceDesc);
+                    
+                    // DEBUG: Log when OUTPUT resources are bound
+                    if (resource.type == nrd::ResourceType::OUT_DIFF_RADIANCE_HITDIST ||
+                        resource.type == nrd::ResourceType::OUT_SPEC_RADIANCE_HITDIST ||
+                        resource.type == nrd::ResourceType::OUT_SHADOW_TRANSLUCENCY ||
+                        resource.type == nrd::ResourceType::IN_PENUMBRA ||
+                        resource.type == nrd::ResourceType::IN_TRANSLUCENCY)
+                    {
+                        const char* typeName = "UNKNOWN";
+                        if (resource.type == nrd::ResourceType::OUT_DIFF_RADIANCE_HITDIST) typeName = "OUT_DIFF";
+                        else if (resource.type == nrd::ResourceType::OUT_SPEC_RADIANCE_HITDIST) typeName = "OUT_SPEC";
+                        else if (resource.type == nrd::ResourceType::OUT_SHADOW_TRANSLUCENCY) typeName = "OUT_SHADOW";
+                        else if (resource.type == nrd::ResourceType::IN_PENUMBRA) typeName = "IN_PENUMBRA";
+                        else if (resource.type == nrd::ResourceType::IN_TRANSLUCENCY) typeName = "IN_TRANSLUCENCY";
+                        
+                        sprintf_s(buf, "NRD: Binding %s (type=%d), ptr=%p, dispatch=%s",
+                            typeName, (int)resource.type, (void*)d3dResource, dispatch.name);
+                        LogToFile(buf);
+                    }
                     
                     if (!d3dResource)
                     {
@@ -1079,7 +1123,7 @@ namespace RayTraceVS::DXEngine
         
         // SIGMA shadow outputs
         case nrd::ResourceType::OUT_SHADOW_TRANSLUCENCY:
-            result = m_gBuffer.ShadowTranslucency.Get();
+            result = m_output.DenoisedShadow.Get();
             resourceName = "OUT_SHADOW_TRANSLUCENCY";
             break;
         
@@ -1203,6 +1247,7 @@ namespace RayTraceVS::DXEngine
         
         m_gBuffer.DiffuseRadianceHitDist.Reset();
         m_gBuffer.SpecularRadianceHitDist.Reset();
+        m_gBuffer.RawSpecularBackup.Reset();
         m_gBuffer.NormalRoughness.Reset();
         m_gBuffer.ViewZ.Reset();
         m_gBuffer.MotionVectors.Reset();

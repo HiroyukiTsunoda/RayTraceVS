@@ -1,4 +1,5 @@
 // ClosestHit shader - Sphere, Plane, Box
+// Force recompile: FrameIndex temporal variation fix 2026-01-19
 #include "Common.hlsli"
 
 #define SHADOW_RAY_DEPTH 100
@@ -44,6 +45,8 @@ float3 PerturbReflection(float3 reflectDir, float3 normal, float roughness, floa
 void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
 {
     payload.hit = 1;
+    // CRITICAL: Always set hitDistance for shadow ray occlusion distance calculation
+    payload.hitDistance = RayTCurrent();
     
     if (payload.depth >= SHADOW_RAY_DEPTH)
     {
@@ -62,9 +65,9 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
     float3 normal = attribs.normal;
     float3 rayDir = WorldRayDirection();
     
-    // Generate random seed for soft shadow sampling
+    // Generate random seed for soft shadow sampling (include FrameIndex for temporal variation)
     uint seed = asuint(hitPosition.x * 1000.0) ^ asuint(hitPosition.y * 2000.0) ^ asuint(hitPosition.z * 3000.0);
-    seed = WangHash(seed + payload.depth * 7919);
+    seed = WangHash(seed + payload.depth * 7919 + Scene.FrameIndex * 12347);
     
     // Get material properties
     float4 color;
@@ -94,8 +97,21 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
         float scale = 1.0;
         int checkX = (int)floor(hitPosition.x * scale);
         int checkZ = (int)floor(hitPosition.z * scale);
-        bool isWhite = ((checkX + checkZ) & 1) == 0;
-        color.rgb = isWhite ? float3(0.9, 0.9, 0.9) : float3(0.1, 0.1, 0.1);
+        float checker = (float)(((checkX + checkZ) & 1) == 0);
+        
+        // Distance-based contrast reduction to reduce aliasing (pseudo-MIP filtering)
+        float hitDistance = RayTCurrent();
+        float fadeStart = 10.0;   // Distance where fading begins
+        float fadeEnd = 100.0;    // Distance where contrast is minimum
+        float distFactor = saturate((hitDistance - fadeStart) / (fadeEnd - fadeStart));
+        float contrast = lerp(1.0, 0.2, distFactor);
+        
+        // Apply contrast: lerp between gray (0.5) and checker pattern
+        float checkerValue = lerp(0.5, checker, contrast);
+        
+        // Map checker value to color range (0.1 to 0.9)
+        float colorValue = lerp(0.1, 0.9, checkerValue);
+        color.rgb = float3(colorValue, colorValue, colorValue);
     }
     else // OBJECT_TYPE_BOX
     {
@@ -232,8 +248,9 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
     {
         float3 reflectDir = reflect(rayDir, normal);
         
-        // Apply roughness perturbation
-        float2 seed = hitPosition.xy * 1000.0 + float2(payload.depth, payload.depth * 0.5);
+        // Apply roughness perturbation (include FrameIndex for temporal variation)
+        // FrameIndex must have significant impact on seed for temporal averaging to work
+        float2 seed = hitPosition.xy * 1000.0 + float2(payload.depth * 100.0 + Scene.FrameIndex * 1000.0, Scene.FrameIndex * 777.0);
         float3 perturbedDir = PerturbReflection(reflectDir, normal, roughness, seed);
         
         RayDesc reflectRay;
@@ -323,26 +340,27 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
                 // Calculate soft shadow visibility
                 SoftShadowResult shadow = CalculateSoftShadow(hitPosition, normal, light, seed);
                 
+                float3 lightDir;
+                float attenuation = 1.0;
+                
+                if (light.type == LIGHT_TYPE_DIRECTIONAL)
+                {
+                    lightDir = normalize(-light.position);
+                }
+                else // LIGHT_TYPE_POINT
+                {
+                    lightDir = normalize(light.position - hitPosition);
+                    float lightDist = length(light.position - hitPosition);
+                    attenuation = 1.0 / (1.0 + lightDist * lightDist * 0.01);
+                }
+                
+                // Diffuse component (unshadowed for NRD base)
+                float diff = max(0.0, dot(normal, lightDir));
+                diffuseNoShadow += color.rgb * light.color.rgb * light.intensity * diff * attenuation * 0.8;
+                
                 if (shadow.visibility > 0.0)
                 {
-                    float3 lightDir;
-                    float attenuation = 1.0;
-                    
-                    if (light.type == LIGHT_TYPE_DIRECTIONAL)
-                    {
-                        lightDir = normalize(-light.position);
-                    }
-                    else // LIGHT_TYPE_POINT
-                    {
-                        lightDir = normalize(light.position - hitPosition);
-                        float lightDist = length(light.position - hitPosition);
-                        attenuation = 1.0 / (1.0 + lightDist * lightDist * 0.01);
-                    }
-                    
-                    // Diffuse component
-                    float diff = max(0.0, dot(normal, lightDir));
                     diffuse += color.rgb * light.color.rgb * light.intensity * diff * attenuation * shadow.visibility * 0.8;
-                    diffuseNoShadow += color.rgb * light.color.rgb * light.intensity * diff * attenuation * 0.8;
                     
                     // Specular component (Blinn-Phong)
                     float3 viewDir = -rayDir;
@@ -372,11 +390,12 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
         
         SoftShadowResult shadow = CalculateSoftShadow(hitPosition, normal, fallbackLight, seed);
         
+        float diff = max(0.0, dot(normal, lightDir));
+        diffuseNoShadow = color.rgb * diff * 0.8;
+        
         if (shadow.visibility > 0.0)
         {
-            float diff = max(0.0, dot(normal, lightDir));
             diffuse = color.rgb * diff * 0.8 * shadow.visibility;
-            diffuseNoShadow = color.rgb * diff * 0.8;
             
             float3 viewDir = -rayDir;
             float3 halfDir = normalize(lightDir + viewDir);

@@ -598,8 +598,6 @@ namespace RayTraceVS.WPF
                         {
                             encoder.Save(stream);
                         }
-                        
-                        MessageBox.Show($"画像を保存しました。\n\n{dialog.FileName}", "保存完了", MessageBoxButton.OK, MessageBoxImage.Information);
                     }
                     else
                     {

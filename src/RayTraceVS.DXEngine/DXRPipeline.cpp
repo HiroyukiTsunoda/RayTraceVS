@@ -414,6 +414,11 @@ namespace RayTraceVS::DXEngine
         // DoF parameters
         mappedConstantData->ApertureSize = camera.GetApertureSize();
         mappedConstantData->FocusDistance = camera.GetFocusDistance();
+        
+        // Shadow parameters and frame counter for temporal variation
+        mappedConstantData->ShadowStrength = shadowStrength;
+        static UINT s_frameCounter = 0;
+        mappedConstantData->FrameIndex = s_frameCounter++;  // Increment each render call
 
         // View/Projection matrices for motion vectors (column-major for HLSL)
         XMMATRIX viewMatrix = camera.GetViewMatrix();
@@ -525,6 +530,12 @@ namespace RayTraceVS::DXEngine
         exposure = (float)scene->GetExposure();
         toneMapOperator = scene->GetToneMapOperator();
         denoiserStabilization = (float)scene->GetDenoiserStabilization();
+        shadowStrength = (float)scene->GetShadowStrength();
+        denoiserEnabled = scene->GetEnableDenoiser();
+        
+        char logBuf[256];
+        sprintf_s(logBuf, "DXRPipeline: shadowStrength = %.2f, denoiserEnabled = %d", shadowStrength, denoiserEnabled ? 1 : 0);
+        LogToFile(logBuf);
 
 
         // Upload object data to GPU buffers
@@ -858,9 +869,9 @@ namespace RayTraceVS::DXEngine
         ranges[9].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 3);   // u3 - DiffuseRadianceHitDist
         ranges[10].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 4);  // u4 - SpecularRadianceHitDist
         ranges[11].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 5);  // u5 - NormalRoughness
-        ranges[12].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 6);  // u6 - ViewZ
+        ranges[12].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 8);  // u8 - Albedo (moved to index 12 for DXR compatibility)
         ranges[13].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 7);  // u7 - MotionVectors
-        ranges[14].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 8);  // u8 - Albedo
+        ranges[14].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 6);  // u6 - ViewZ
         ranges[15].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 9);  // u9 - ShadowData
         ranges[16].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 10); // u10 - ShadowTranslucency
 
@@ -1420,9 +1431,9 @@ namespace RayTraceVS::DXEngine
             device->CreateUnorderedAccessView(gBuffer.NormalRoughness.Get(), nullptr, &gbufferUavDesc, cpuHandle);
             cpuHandle.Offset(1, dxrDescriptorSize);
             
-            // [12] u6: ViewZ (R32F)
-            gbufferUavDesc.Format = DXGI_FORMAT_R32_FLOAT;
-            device->CreateUnorderedAccessView(gBuffer.ViewZ.Get(), nullptr, &gbufferUavDesc, cpuHandle);
+            // [12] u8: Albedo (RGBA8) - placed at index 12 for DXR compatibility
+            gbufferUavDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+            device->CreateUnorderedAccessView(gBuffer.Albedo.Get(), nullptr, &gbufferUavDesc, cpuHandle);
             cpuHandle.Offset(1, dxrDescriptorSize);
             
             // [13] u7: MotionVectors (RG16F)
@@ -1430,9 +1441,9 @@ namespace RayTraceVS::DXEngine
             device->CreateUnorderedAccessView(gBuffer.MotionVectors.Get(), nullptr, &gbufferUavDesc, cpuHandle);
             cpuHandle.Offset(1, dxrDescriptorSize);
             
-            // [14] u8: Albedo (RGBA8)
-            gbufferUavDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-            device->CreateUnorderedAccessView(gBuffer.Albedo.Get(), nullptr, &gbufferUavDesc, cpuHandle);
+            // [14] u6: ViewZ (R32F) - placed at index 14
+            gbufferUavDesc.Format = DXGI_FORMAT_R32_FLOAT;
+            device->CreateUnorderedAccessView(gBuffer.ViewZ.Get(), nullptr, &gbufferUavDesc, cpuHandle);
             cpuHandle.Offset(1, dxrDescriptorSize);
             
             // [15] u9: ShadowData (RG16F)
@@ -1571,6 +1582,14 @@ namespace RayTraceVS::DXEngine
         // ============================================
         // Pass 3: Denoising (NRD)
         // ============================================
+        char denoiseBuf[256];
+        sprintf_s(denoiseBuf, "RenderWithDXR: denoiserEnabled=%d, denoiser=%p, IsReady=%d, IsSigmaEnabled=%d",
+            denoiserEnabled ? 1 : 0, 
+            denoiser.get(), 
+            (denoiser ? denoiser->IsReady() : 0) ? 1 : 0,
+            (denoiser ? denoiser->IsSigmaEnabled() : 0) ? 1 : 0);
+        LogToFile(denoiseBuf);
+        
         if (denoiserEnabled && denoiser && denoiser->IsReady())
         {
             LogToFile("RenderWithDXR: applying denoising");
@@ -2113,22 +2132,127 @@ namespace RayTraceVS::DXEngine
         settings.EnableValidation = false;
         settings.DenoiserStabilization = denoiserStabilization;
         
+        // SIGMA enabled - let it process shadow data
+        denoiser->SetSigmaEnabled(true);
+        LogToFile("ApplyDenoising: SIGMA ENABLED");
+        
+        // CRITICAL: Copy raw specular data BEFORE NRD processes it
+        // NRD corrupts the original SpecularRadianceHitDist buffer, so we need a backup
+        // for the mirror bypass in Composite.hlsl
+        auto& gBuffer = denoiser->GetGBuffer();
+        if (gBuffer.RawSpecularBackup && gBuffer.SpecularRadianceHitDist)
+        {
+            // Track RawSpecularBackup state across frames
+            static bool rawSpecularInSrvState = false;
+            
+            // CRITICAL: First, flush ALL UAV writes with an explicit UAV barrier
+            // This ensures ray tracing shader has finished writing to SpecularRadianceHitDist
+            D3D12_RESOURCE_BARRIER uavFlush = {};
+            uavFlush.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+            uavFlush.UAV.pResource = gBuffer.SpecularRadianceHitDist.Get();  // Specific resource
+            commandList->ResourceBarrier(1, &uavFlush);
+            
+            // Transition resources for copy operation
+            D3D12_RESOURCE_BARRIER copyBarriers[2] = {};
+            int barrierCount = 0;
+            
+            // Source: UAV -> COPY_SOURCE
+            copyBarriers[barrierCount].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            copyBarriers[barrierCount].Transition.pResource = gBuffer.SpecularRadianceHitDist.Get();
+            copyBarriers[barrierCount].Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+            copyBarriers[barrierCount].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
+            copyBarriers[barrierCount].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+            barrierCount++;
+            
+            // Dest: Previous state -> COPY_DEST
+            copyBarriers[barrierCount].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            copyBarriers[barrierCount].Transition.pResource = gBuffer.RawSpecularBackup.Get();
+            copyBarriers[barrierCount].Transition.StateBefore = rawSpecularInSrvState 
+                ? D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE 
+                : D3D12_RESOURCE_STATE_COMMON;
+            copyBarriers[barrierCount].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST;
+            copyBarriers[barrierCount].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+            barrierCount++;
+            
+            commandList->ResourceBarrier(barrierCount, copyBarriers);
+            
+            // Perform the copy
+            commandList->CopyResource(gBuffer.RawSpecularBackup.Get(), gBuffer.SpecularRadianceHitDist.Get());
+            
+            // Transition back for NRD and Composite usage
+            D3D12_RESOURCE_BARRIER postCopyBarriers[2] = {};
+            
+            // Source: COPY_SOURCE -> UAV (NRD needs it as UAV)
+            postCopyBarriers[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            postCopyBarriers[0].Transition.pResource = gBuffer.SpecularRadianceHitDist.Get();
+            postCopyBarriers[0].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
+            postCopyBarriers[0].Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+            postCopyBarriers[0].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+            
+            // Dest: COPY_DEST -> SRV (Composite reads it)
+            postCopyBarriers[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            postCopyBarriers[1].Transition.pResource = gBuffer.RawSpecularBackup.Get();
+            postCopyBarriers[1].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+            postCopyBarriers[1].Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+            postCopyBarriers[1].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+            
+            commandList->ResourceBarrier(2, postCopyBarriers);
+            
+            rawSpecularInSrvState = true;  // Now in SRV state for next frame
+            
+            LogToFile("ApplyDenoising: RawSpecularBackup copied with proper state transitions");
+        }
+        
         // Apply denoising
         LogToFile("ApplyDenoising: calling denoiser->Denoise()");
         denoiser->Denoise(commandList, settings);
         LogToFile("ApplyDenoising: denoiser->Denoise() returned");
         
         // Transition NRD output from UAV to SRV for CompositeOutput
+        // CRITICAL: Need both UAV barrier (for sync) AND state transition (for read access)
         auto& output = denoiser->GetOutput();
-        D3D12_RESOURCE_BARRIER barriers[3] = {};
-        barriers[0].Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
-        barriers[0].UAV.pResource = output.DiffuseRadiance.Get();
-        barriers[1].Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
-        barriers[1].UAV.pResource = output.SpecularRadiance.Get();
-        barriers[2].Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
-        barriers[2].UAV.pResource = output.DenoisedShadow.Get();
-        commandList->ResourceBarrier(3, barriers);
-        LogToFile("ApplyDenoising: UAV barriers added for NRD outputs");
+        // gBuffer already declared above for the copy operation
+        
+        // First: UAV barriers for synchronization
+        D3D12_RESOURCE_BARRIER uavBarriers[3] = {};
+        uavBarriers[0].Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+        uavBarriers[0].UAV.pResource = output.DiffuseRadiance.Get();
+        uavBarriers[1].Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+        uavBarriers[1].UAV.pResource = output.SpecularRadiance.Get();
+        uavBarriers[2].Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+        uavBarriers[2].UAV.pResource = output.DenoisedShadow.Get();
+        commandList->ResourceBarrier(3, uavBarriers);
+        
+        // Second: State transitions from UAV to SRV for Composite shader read
+        // NOTE: Only transition NRD outputs and Albedo. G-Buffer inputs (t4-t8) are also used by NRD
+        // and NRD manages their state internally. Transitioning them here causes corruption.
+        D3D12_RESOURCE_BARRIER transitionBarriers[4] = {};
+        transitionBarriers[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        transitionBarriers[0].Transition.pResource = output.DiffuseRadiance.Get();
+        transitionBarriers[0].Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        transitionBarriers[0].Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+        transitionBarriers[0].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        
+        transitionBarriers[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        transitionBarriers[1].Transition.pResource = output.SpecularRadiance.Get();
+        transitionBarriers[1].Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        transitionBarriers[1].Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+        transitionBarriers[1].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        
+        transitionBarriers[2].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        transitionBarriers[2].Transition.pResource = output.DenoisedShadow.Get();
+        transitionBarriers[2].Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        transitionBarriers[2].Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+        transitionBarriers[2].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        
+        transitionBarriers[3].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        transitionBarriers[3].Transition.pResource = gBuffer.Albedo.Get();
+        transitionBarriers[3].Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        transitionBarriers[3].Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+        transitionBarriers[3].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        
+        commandList->ResourceBarrier(4, transitionBarriers);
+        LogToFile("ApplyDenoising: UAV barriers + state transitions added for NRD outputs");
         
         // Update previous frame data
         XMStoreFloat4x4(&prevViewMatrix, viewMatrix);
@@ -2185,12 +2309,12 @@ namespace RayTraceVS::DXEngine
         }
         
         // Create root signature for composite pass
-        // Inputs: t0-t9 = DenoisedDiffuse, DenoisedSpecular, Albedo, DenoisedShadow, GBuffer textures
+        // Inputs: t0-t10 = DenoisedDiffuse, DenoisedSpecular, Albedo, DenoisedShadow, GBuffer textures, RawSpecularBackup
         // Output: u0 = FinalOutput
         // Constants: b0 = CompositeConstants (8 values)
         
         CD3DX12_DESCRIPTOR_RANGE1 srvRange;
-        srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 10, 0); // t0-t9
+        srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 11, 0); // t0-t10
         
         CD3DX12_DESCRIPTOR_RANGE1 uavRange;
         uavRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0); // u0
@@ -2209,7 +2333,7 @@ namespace RayTraceVS::DXEngine
         CD3DX12_ROOT_PARAMETER1 rootParams[3];
         rootParams[0].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_ALL);
         rootParams[1].InitAsDescriptorTable(1, &uavRange, D3D12_SHADER_VISIBILITY_ALL);
-        rootParams[2].InitAsConstants(8, 0); // b0: OutputSize (2), ExposureValue, ToneMapOperator, DebugMode, DebugTileScale, UseDenoisedShadow, ShadowStrength
+        rootParams[2].InitAsConstants(7, 0); // b0: OutputSize (2), ExposureValue, ToneMapOperator, DebugTileScale, UseDenoisedShadow, ShadowStrength
         
         CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSigDesc;
         rootSigDesc.Init_1_1(_countof(rootParams), rootParams, 1, &staticSampler,
@@ -2316,59 +2440,64 @@ namespace RayTraceVS::DXEngine
         srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
         srvDesc.Texture2D.MipLevels = 1;
         
-        // t0: DenoisedDiffuse (NRD output)
-        srvDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
-        device->CreateShaderResourceView(output.DiffuseRadiance.Get(), &srvDesc, cpuHandle);
-        cpuHandle.Offset(descriptorSize);
+        // DEBUG: Log resource pointers and GPU descriptor handles
+        {
+            char debugBuf[1024];
+            sprintf_s(debugBuf, "CompositeOutput SRV bindings:\n"
+                "  t0 (DenoisedDiffuse)  Resource=%p\n"
+                "  t1 (DenoisedSpecular) Resource=%p\n"
+                "  t2 (Albedo)           Resource=%p\n"
+                "  t4 (GBuffer_DiffuseIn) Resource=%p\n"
+                "  GPU Handle Base = %llu, DescriptorSize = %u\n"
+                "  t0 GPU Handle = %llu\n"
+                "  t1 GPU Handle = %llu\n"
+                "  t2 GPU Handle = %llu\n"
+                "  Are t0 and t4 different? %s",
+                (void*)output.DiffuseRadiance.Get(), 
+                (void*)output.SpecularRadiance.Get(), 
+                (void*)gBuffer.Albedo.Get(),
+                (void*)gBuffer.DiffuseRadianceHitDist.Get(),
+                gpuHandle.ptr, descriptorSize,
+                gpuHandle.ptr,
+                gpuHandle.ptr + descriptorSize,
+                gpuHandle.ptr + descriptorSize * 2,
+                (output.DiffuseRadiance.Get() != gBuffer.DiffuseRadianceHitDist.Get()) ? "YES (correct)" : "NO (BUG!)");
+            LogToFile(debugBuf);
+        }
         
-        // t1: DenoisedSpecular (NRD output)
-        device->CreateShaderResourceView(output.SpecularRadiance.Get(), &srvDesc, cpuHandle);
-        cpuHandle.Offset(descriptorSize);
-        
-        // t2: Albedo
-        srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-        device->CreateShaderResourceView(gBuffer.Albedo.Get(), &srvDesc, cpuHandle);
-        cpuHandle.Offset(descriptorSize);
-        
-        // t3: DenoisedShadow (SIGMA output) - SIGMA_SHADOW writes into ShadowTranslucency
-        srvDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
-        device->CreateShaderResourceView(gBuffer.ShadowTranslucency.Get(), &srvDesc, cpuHandle);
-        cpuHandle.Offset(descriptorSize);
-        
-        // t4: GBuffer_DiffuseIn (before denoise)
-        srvDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
-        device->CreateShaderResourceView(gBuffer.DiffuseRadianceHitDist.Get(), &srvDesc, cpuHandle);
-        cpuHandle.Offset(descriptorSize);
-        
-        // t5: GBuffer_SpecularIn
-        device->CreateShaderResourceView(gBuffer.SpecularRadianceHitDist.Get(), &srvDesc, cpuHandle);
-        cpuHandle.Offset(descriptorSize);
-        
-        // t6: GBuffer_NormalRoughness
-        srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-        device->CreateShaderResourceView(gBuffer.NormalRoughness.Get(), &srvDesc, cpuHandle);
-        cpuHandle.Offset(descriptorSize);
-        
-        // t7: GBuffer_ViewZ
-        srvDesc.Format = DXGI_FORMAT_R32_FLOAT;
-        device->CreateShaderResourceView(gBuffer.ViewZ.Get(), &srvDesc, cpuHandle);
-        cpuHandle.Offset(descriptorSize);
-        
-        // t8: GBuffer_MotionVectors
-        srvDesc.Format = DXGI_FORMAT_R16G16_FLOAT;
-        device->CreateShaderResourceView(gBuffer.MotionVectors.Get(), &srvDesc, cpuHandle);
-        cpuHandle.Offset(descriptorSize);
-        
-        // t9: GBuffer_ShadowData (SIGMA input)
-        srvDesc.Format = DXGI_FORMAT_R16G16_FLOAT;
-        device->CreateShaderResourceView(gBuffer.ShadowData.Get(), &srvDesc, cpuHandle);
-        cpuHandle.Offset(descriptorSize);
+        struct CompositeSrvBinding
+        {
+            ID3D12Resource* resource;
+            DXGI_FORMAT format;
+        };
+
+        // t0-t10: Match Composite.hlsl SRV expectations (t2 = GBuffer_Albedo)
+        CompositeSrvBinding srvs[] = {
+            { output.DiffuseRadiance.Get(),        DXGI_FORMAT_R16G16B16A16_FLOAT }, // t0 DenoisedDiffuse
+            { output.SpecularRadiance.Get(),       DXGI_FORMAT_R16G16B16A16_FLOAT }, // t1 DenoisedSpecular
+            { gBuffer.Albedo.Get(),                DXGI_FORMAT_R8G8B8A8_UNORM },     // t2 GBuffer_Albedo
+            { output.DenoisedShadow.Get(),         DXGI_FORMAT_R16G16B16A16_FLOAT }, // t3 DenoisedShadow (SIGMA output - RGBA16F required)
+            { gBuffer.DiffuseRadianceHitDist.Get(),DXGI_FORMAT_R16G16B16A16_FLOAT }, // t4 GBuffer_DiffuseIn
+            { gBuffer.SpecularRadianceHitDist.Get(),DXGI_FORMAT_R16G16B16A16_FLOAT },// t5 GBuffer_SpecularIn (corrupted by NRD)
+            { gBuffer.NormalRoughness.Get(),       DXGI_FORMAT_R8G8B8A8_UNORM },     // t6 GBuffer_NormalRoughness
+            { gBuffer.ViewZ.Get(),                 DXGI_FORMAT_R32_FLOAT },          // t7 GBuffer_ViewZ
+            { gBuffer.MotionVectors.Get(),         DXGI_FORMAT_R16G16_FLOAT },       // t8 GBuffer_MotionVectors
+            { gBuffer.ShadowData.Get(),            DXGI_FORMAT_R16G16_FLOAT },       // t9 GBuffer_ShadowData
+            { gBuffer.RawSpecularBackup.Get(),     DXGI_FORMAT_R16G16B16A16_FLOAT }  // t10 RawSpecularBackup (copy before NRD)
+        };
+
+        for (const auto& srv : srvs)
+        {
+            srvDesc.Format = srv.format;
+            device->CreateShaderResourceView(srv.resource, &srvDesc, cpuHandle);
+            cpuHandle.Offset(descriptorSize);
+        }
         
         // Store SRV table GPU handle
         CD3DX12_GPU_DESCRIPTOR_HANDLE srvTableHandle = gpuHandle;
-        gpuHandle.Offset(10, descriptorSize); // Move past 10 SRVs
+        gpuHandle.Offset(11, descriptorSize); // Move past 11 SRVs (t0-t10)
         cpuHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(compositeDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
-        cpuHandle.Offset(10, descriptorSize); // UAV is at index 10, after 10 SRVs (t0-t9)
+        cpuHandle.Offset(11, descriptorSize); // UAV is at index 11, after 11 SRVs (t0-t10)
         
         // u0: Output UAV (render target)
         D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
@@ -2378,7 +2507,7 @@ namespace RayTraceVS::DXEngine
         device->CreateUnorderedAccessView(renderTarget->GetResource(), nullptr, &uavDesc, cpuHandle);
         
         CD3DX12_GPU_DESCRIPTOR_HANDLE uavTableHandle(compositeDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
-        uavTableHandle.Offset(10, descriptorSize);
+        uavTableHandle.Offset(11, descriptorSize);
         
         // Set pipeline state
         commandList->SetPipelineState(compositePipelineState.Get());
@@ -2393,16 +2522,22 @@ namespace RayTraceVS::DXEngine
         commandList->SetComputeRootDescriptorTable(1, uavTableHandle);  // UAV
         
         // Set constants: OutputSize (2 uints), ExposureValue, ToneMapOperator, DebugMode, DebugTileScale, UseDenoisedShadow, ShadowStrength
+        // Shadow source: 0 = InputShadow(t9/noisy), 1 = DenoisedShadow(t3/SIGMA), 2 = No shadow (debug)
+        UINT forceUseDenoisedShadow = 1;  // Use SIGMA denoised shadow
+        
         struct CompositeConstants {
             UINT width;
             UINT height;
             float exposureValue;
             float toneMapOperator;
-            UINT debugMode;
             float debugTileScale;
             UINT useDenoisedShadow;
             float shadowStrength;
-        } constants = { width, height, exposure, (float)toneMapOperator, 0, 0.15f, denoiser->IsSigmaEnabled() ? 1u : 0u, 1.5f }; // Debug mode 1: show debug tiles for diagnosis
+        } constants = { width, height, exposure, (float)toneMapOperator, 0.15f, forceUseDenoisedShadow, shadowStrength };
+        
+        char compositeBuf[256];
+        sprintf_s(compositeBuf, "CompositeOutput: shadowStrength=%.2f, useDenoisedShadow=%u", constants.shadowStrength, constants.useDenoisedShadow);
+        LogToFile(compositeBuf);
         
         commandList->SetComputeRoot32BitConstants(2, sizeof(constants) / 4, &constants, 0);
         
@@ -2411,6 +2546,34 @@ namespace RayTraceVS::DXEngine
         UINT dispatchY = (height + 7) / 8;
         
         commandList->Dispatch(dispatchX, dispatchY, 1);
+        
+        // Transition resources back to UAV state for next frame's NRD pass
+        D3D12_RESOURCE_BARRIER backToUavBarriers[4] = {};
+        backToUavBarriers[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        backToUavBarriers[0].Transition.pResource = output.DiffuseRadiance.Get();
+        backToUavBarriers[0].Transition.StateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+        backToUavBarriers[0].Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        backToUavBarriers[0].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        
+        backToUavBarriers[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        backToUavBarriers[1].Transition.pResource = output.SpecularRadiance.Get();
+        backToUavBarriers[1].Transition.StateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+        backToUavBarriers[1].Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        backToUavBarriers[1].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        
+        backToUavBarriers[2].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        backToUavBarriers[2].Transition.pResource = output.DenoisedShadow.Get();
+        backToUavBarriers[2].Transition.StateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+        backToUavBarriers[2].Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        backToUavBarriers[2].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        
+        backToUavBarriers[3].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        backToUavBarriers[3].Transition.pResource = gBuffer.Albedo.Get();
+        backToUavBarriers[3].Transition.StateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+        backToUavBarriers[3].Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        backToUavBarriers[3].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        
+        commandList->ResourceBarrier(4, backToUavBarriers);
         
         LogToFile("CompositeOutput: dispatched composite shader");
     }

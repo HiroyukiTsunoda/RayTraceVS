@@ -4,12 +4,14 @@ using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using RayTraceVS.WPF.ViewModels;
 using RayTraceVS.WPF.Models;
 using RayTraceVS.WPF.Models.Nodes;
+using RayTraceVS.WPF.Utils;
 
 namespace RayTraceVS.WPF.Views
 {
@@ -272,6 +274,9 @@ namespace RayTraceVS.WPF.Views
 
         private void Canvas_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
+            // フォーカスされている TextBox があればバインディングを更新してから処理を続ける
+            UpdateFocusedTextBoxBinding();
+            
             var viewModel = GetViewModel();
             if (viewModel == null) return;
 
@@ -657,6 +662,9 @@ namespace RayTraceVS.WPF.Views
         // ノード上でのマウスイベント
         private void Node_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
+            // フォーカスされている TextBox があればバインディングを更新してから処理を続ける
+            UpdateFocusedTextBoxBinding();
+            
             var viewModel = GetViewModel();
             if (viewModel == null) return;
 
@@ -1243,7 +1251,7 @@ namespace RayTraceVS.WPF.Views
             else
             {
                 // 接続不可能：実線、赤色、不透明度0.5
-                previewLine.Stroke = new SolidColorBrush(Colors.Red);
+                previewLine.Stroke = BrushCache.Get(Colors.Red);
                 previewLine.StrokeDashArray = null; // 実線
                 previewLine.Opacity = 0.5;
             }
@@ -1497,9 +1505,9 @@ namespace RayTraceVS.WPF.Views
 
             selectionRectangle = new Rectangle
             {
-                Stroke = new SolidColorBrush(Color.FromRgb(100, 150, 255)),
+                Stroke = BrushCache.Get(100, 150, 255),
                 StrokeThickness = 1,
-                Fill = new SolidColorBrush(Color.FromArgb(30, 100, 150, 255)),
+                Fill = BrushCache.Get(30, 100, 150, 255),
                 IsHitTestVisible = false
             };
 
@@ -2069,6 +2077,20 @@ namespace RayTraceVS.WPF.Views
                     // パース失敗時は現在の値に戻す
                     textBox.Text = colorNode.GetSocketValue(socket.Name).ToString("G");
                 }
+            }
+        }
+
+        /// <summary>
+        /// 現在フォーカスされている TextBox のバインディングを即座に更新
+        /// ノードエディター上をクリックした時に、プロパティパネルの入力値を確定させる
+        /// </summary>
+        private void UpdateFocusedTextBoxBinding()
+        {
+            var focusedElement = Keyboard.FocusedElement as TextBox;
+            if (focusedElement != null)
+            {
+                var binding = BindingOperations.GetBindingExpression(focusedElement, TextBox.TextProperty);
+                binding?.UpdateSource();
             }
         }
     }

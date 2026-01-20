@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using RayTraceVS.WPF.Models;
+using RayTraceVS.WPF.Models.Data;
 using RayTraceVS.WPF.Models.Nodes;
 using InteropSphereData = RayTraceVS.Interop.SphereData;
 using InteropPlaneData = RayTraceVS.Interop.PlaneData;
@@ -12,12 +13,21 @@ using InteropLightData = RayTraceVS.Interop.LightData;
 using InteropVector3 = RayTraceVS.Interop.Vector3;
 using InteropVector4 = RayTraceVS.Interop.Vector4;
 using InteropLightType = RayTraceVS.Interop.LightType;
+// データ型のエイリアス（Models.Data名前空間）
+using SphereData = RayTraceVS.WPF.Models.Data.SphereData;
+using PlaneData = RayTraceVS.WPF.Models.Data.PlaneData;
+using BoxData = RayTraceVS.WPF.Models.Data.BoxData;
+using CameraData = RayTraceVS.WPF.Models.Data.CameraData;
+using LightData = RayTraceVS.WPF.Models.Data.LightData;
+using LightType = RayTraceVS.WPF.Models.Data.LightType;
+using SceneData = RayTraceVS.WPF.Models.Data.SceneData;
+using MaterialData = RayTraceVS.WPF.Models.Data.MaterialData;
 
 namespace RayTraceVS.WPF.Services
 {
     public class SceneEvaluator
     {
-        public (InteropSphereData[], InteropPlaneData[], InteropBoxData[], InteropCameraData, InteropLightData[], int SamplesPerPixel, int MaxBounces, float Exposure, int ToneMapOperator, float DenoiserStabilization) EvaluateScene(NodeGraph nodeGraph)
+        public (InteropSphereData[], InteropPlaneData[], InteropBoxData[], InteropCameraData, InteropLightData[], int SamplesPerPixel, int MaxBounces, float Exposure, int ToneMapOperator, float DenoiserStabilization, float ShadowStrength, bool EnableDenoiser) EvaluateScene(NodeGraph nodeGraph)
         {
             var spheres = new List<InteropSphereData>();
             var planes = new List<InteropPlaneData>();
@@ -28,6 +38,8 @@ namespace RayTraceVS.WPF.Services
             float exposure = 1.0f;
             int toneMapOperator = 2;
             float denoiserStabilization = 1.0f;
+            float shadowStrength = 1.0f;
+            bool enableDenoiser = true;
             InteropCameraData camera = new InteropCameraData
             {
                 Position = new InteropVector3(0, 2, -5),
@@ -43,14 +55,18 @@ namespace RayTraceVS.WPF.Services
             // SceneNodeが存在するか確認
             var sceneNode = allNodes.OfType<Models.Nodes.SceneNode>().FirstOrDefault();
             
+            try { System.IO.File.AppendAllText(@"C:\git\RayTraceVS\debug_log.txt", $"[SceneEvaluator] sceneNode={sceneNode != null}, connections={connections.Count()}\n"); } catch { }
+            
             if (sceneNode != null && connections.Any())
             {
                 // SceneNodeが存在する場合：グラフを評価してSceneNodeの出力を使用
-                // 常に完全再評価を行い、キャッシュの問題を回避
-                var results = nodeGraph.EvaluateGraphFull();
+                // 増分評価を使用（Dirtyなノードのみ再評価）
+                var results = nodeGraph.EvaluateGraph();
+                
+                try { System.IO.File.AppendAllText(@"C:\git\RayTraceVS\debug_log.txt", $"[SceneEvaluator] results.Count={results.Count}, hasSceneNode={results.ContainsKey(sceneNode.Id)}\n"); } catch { }
                 
                 // SceneNodeの評価結果を取得
-                if (results.TryGetValue(sceneNode.Id, out var sceneResult) && sceneResult is Models.Nodes.SceneData sceneData)
+                if (results.TryGetValue(sceneNode.Id, out var sceneResult) && sceneResult is SceneData sceneData)
                 {
                     // カメラの設定（デフォルト値でなければ使用）
                     if (sceneData.Camera.FieldOfView > 0)
@@ -61,15 +77,15 @@ namespace RayTraceVS.WPF.Services
                     // SceneNodeに接続されたオブジェクトのみを追加
                     foreach (var obj in sceneData.Objects)
                     {
-                        if (obj is Models.Nodes.SphereData sd && sd.Radius > 0)
+                        if (obj is SphereData sd && sd.Radius > 0)
                         {
                             spheres.Add(ConvertSphereData(sd));
                         }
-                        else if (obj is Models.Nodes.PlaneData pd)
+                        else if (obj is PlaneData pd)
                         {
                             planes.Add(ConvertPlaneData(pd));
                         }
-                        else if (obj is Models.Nodes.BoxData bd)
+                        else if (obj is BoxData bd)
                         {
                             boxes.Add(ConvertBoxData(bd));
                         }
@@ -87,8 +103,13 @@ namespace RayTraceVS.WPF.Services
                     exposure = sceneData.Exposure > 0 ? sceneData.Exposure : 1.0f;
                     toneMapOperator = sceneData.ToneMapOperator;
                     denoiserStabilization = sceneData.DenoiserStabilization > 0 ? sceneData.DenoiserStabilization : 1.0f;
+                    shadowStrength = sceneData.ShadowStrength >= 0 ? sceneData.ShadowStrength : 1.0f;
+                    enableDenoiser = sceneData.EnableDenoiser;
                     
-                    System.Diagnostics.Debug.WriteLine($"[SceneEvaluator] SceneNode経由: Spheres={spheres.Count}, Planes={planes.Count}, Boxes={boxes.Count}, Lights={lights.Count}, Samples={samplesPerPixel}, Bounces={maxBounces}");
+                    // ファイルログで確認
+                    try { System.IO.File.AppendAllText(@"C:\git\RayTraceVS\debug_log.txt", $"[SceneEvaluator] sceneData.ShadowStrength={sceneData.ShadowStrength}, final={shadowStrength}\n"); } catch { }
+                    System.Diagnostics.Debug.WriteLine($"[SceneEvaluator] sceneData.ShadowStrength={sceneData.ShadowStrength}, final shadowStrength={shadowStrength}");
+                    System.Diagnostics.Debug.WriteLine($"[SceneEvaluator] SceneNode経由: Spheres={spheres.Count}, Planes={planes.Count}, Boxes={boxes.Count}, Lights={lights.Count}, Samples={samplesPerPixel}, Bounces={maxBounces}, ShadowStrength={shadowStrength}");
                     
                     // デバッグ：詳細情報を出力
                     foreach (var s in spheres)
@@ -115,18 +136,18 @@ namespace RayTraceVS.WPF.Services
                     // グラフ評価結果があればそれを使用、なければノードプロパティから取得
                     if (node is Models.Nodes.SphereNode sphereNode)
                     {
-                        Models.Nodes.SphereData sphereData;
-                        if (results != null && results.TryGetValue(sphereNode.Id, out var evalResult) && evalResult is Models.Nodes.SphereData sd)
+                        SphereData sphereData;
+                        if (results != null && results.TryGetValue(sphereNode.Id, out var evalResult) && evalResult is SphereData sd)
                         {
                             sphereData = sd;
                         }
                         else
                         {
-                            sphereData = new Models.Nodes.SphereData
+                            sphereData = new SphereData
                             {
                                 Position = sphereNode.ObjectTransform.Position,
                                 Radius = sphereNode.Radius,
-                                Material = Models.Nodes.MaterialData.Default
+                                Material = MaterialData.Default
                             };
                         }
                         if (sphereData.Radius > 0)
@@ -136,50 +157,50 @@ namespace RayTraceVS.WPF.Services
                     }
                     else if (node is Models.Nodes.PlaneNode planeNode)
                     {
-                        Models.Nodes.PlaneData planeData;
-                        if (results != null && results.TryGetValue(planeNode.Id, out var evalResult) && evalResult is Models.Nodes.PlaneData pd)
+                        PlaneData planeData;
+                        if (results != null && results.TryGetValue(planeNode.Id, out var evalResult) && evalResult is PlaneData pd)
                         {
                             planeData = pd;
                         }
                         else
                         {
-                            planeData = new Models.Nodes.PlaneData
+                            planeData = new PlaneData
                             {
                                 Position = planeNode.ObjectTransform.Position,
                                 Normal = planeNode.Normal,
-                                Material = Models.Nodes.MaterialData.Default
+                                Material = MaterialData.Default
                             };
                         }
                         planes.Add(ConvertPlaneData(planeData));
                     }
                     else if (node is Models.Nodes.BoxNode boxNode)
                     {
-                        Models.Nodes.BoxData boxData;
-                        if (results != null && results.TryGetValue(boxNode.Id, out var evalResult) && evalResult is Models.Nodes.BoxData bd)
+                        BoxData boxData;
+                        if (results != null && results.TryGetValue(boxNode.Id, out var evalResult) && evalResult is BoxData bd)
                         {
                             boxData = bd;
                         }
                         else
                         {
-                            boxData = new Models.Nodes.BoxData
+                            boxData = new BoxData
                             {
                                 Center = boxNode.ObjectTransform.Position,
                                 Size = boxNode.Size * 0.5f,  // half-extents
-                                Material = Models.Nodes.MaterialData.Default
+                                Material = MaterialData.Default
                             };
                         }
                         boxes.Add(ConvertBoxData(boxData));
                     }
                     else if (node is Models.Nodes.CameraNode cameraNode)
                     {
-                        Models.Nodes.CameraData cameraData;
-                        if (results != null && results.TryGetValue(cameraNode.Id, out var evalResult) && evalResult is Models.Nodes.CameraData cd)
+                        CameraData cameraData;
+                        if (results != null && results.TryGetValue(cameraNode.Id, out var evalResult) && evalResult is CameraData cd)
                         {
                             cameraData = cd;
                         }
                         else
                         {
-                            cameraData = new Models.Nodes.CameraData
+                            cameraData = new CameraData
                             {
                                 Position = cameraNode.CameraPosition,
                                 LookAt = cameraNode.LookAt,
@@ -195,9 +216,9 @@ namespace RayTraceVS.WPF.Services
                     }
                     else if (node is Models.Nodes.PointLightNode pointLightNode)
                     {
-                        var lightData = new Models.Nodes.LightData
+                        var lightData = new LightData
                         {
-                            Type = Models.Nodes.LightType.Point,
+                            Type = LightType.Point,
                             Position = pointLightNode.LightPosition,
                             Direction = Vector3.Zero,
                             Color = pointLightNode.Color,
@@ -208,9 +229,9 @@ namespace RayTraceVS.WPF.Services
                     }
                     else if (node is Models.Nodes.AmbientLightNode ambientLightNode)
                     {
-                        var lightData = new Models.Nodes.LightData
+                        var lightData = new LightData
                         {
-                            Type = Models.Nodes.LightType.Ambient,
+                            Type = LightType.Ambient,
                             Position = Vector3.Zero,
                             Direction = Vector3.Zero,
                             Color = ambientLightNode.Color,
@@ -221,9 +242,9 @@ namespace RayTraceVS.WPF.Services
                     }
                     else if (node is Models.Nodes.DirectionalLightNode directionalLightNode)
                     {
-                        var lightData = new Models.Nodes.LightData
+                        var lightData = new LightData
                         {
-                            Type = Models.Nodes.LightType.Directional,
+                            Type = LightType.Directional,
                             Position = Vector3.Zero,
                             Direction = directionalLightNode.Direction,
                             Color = directionalLightNode.Color,
@@ -237,10 +258,10 @@ namespace RayTraceVS.WPF.Services
                 System.Diagnostics.Debug.WriteLine($"[SceneEvaluator] フォールバック: Spheres={spheres.Count}, Planes={planes.Count}, Boxes={boxes.Count}, Lights={lights.Count}");
             }
 
-            return (spheres.ToArray(), planes.ToArray(), boxes.ToArray(), camera, lights.ToArray(), samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization);
+            return (spheres.ToArray(), planes.ToArray(), boxes.ToArray(), camera, lights.ToArray(), samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization, shadowStrength, enableDenoiser);
         }
 
-        private InteropSphereData ConvertSphereData(Models.Nodes.SphereData data)
+        private InteropSphereData ConvertSphereData(SphereData data)
         {
             var material = data.Material;
             
@@ -258,7 +279,7 @@ namespace RayTraceVS.WPF.Services
             };
         }
 
-        private InteropPlaneData ConvertPlaneData(Models.Nodes.PlaneData data)
+        private InteropPlaneData ConvertPlaneData(PlaneData data)
         {
             // MaterialDataから旧形式のパラメータに変換
             var material = data.Material;
@@ -294,7 +315,7 @@ namespace RayTraceVS.WPF.Services
             };
         }
 
-        private InteropBoxData ConvertBoxData(Models.Nodes.BoxData data)
+        private InteropBoxData ConvertBoxData(BoxData data)
         {
             var material = data.Material;
             
@@ -312,7 +333,7 @@ namespace RayTraceVS.WPF.Services
             };
         }
 
-        private InteropCameraData ConvertCameraData(Models.Nodes.CameraData data)
+        private InteropCameraData ConvertCameraData(CameraData data)
         {
             return new InteropCameraData
             {
@@ -328,19 +349,19 @@ namespace RayTraceVS.WPF.Services
             };
         }
 
-        private InteropLightData ConvertLightData(Models.Nodes.LightData data)
+        private InteropLightData ConvertLightData(LightData data)
         {
             // LightTypeを正しく変換
             var interopType = data.Type switch
             {
-                Models.Nodes.LightType.Ambient => InteropLightType.Ambient,
-                Models.Nodes.LightType.Directional => InteropLightType.Directional,
-                Models.Nodes.LightType.Point => InteropLightType.Point,
+                LightType.Ambient => InteropLightType.Ambient,
+                LightType.Directional => InteropLightType.Directional,
+                LightType.Point => InteropLightType.Point,
                 _ => InteropLightType.Point
             };
             
             // Directionalライトの場合、Positionに方向ベクトルを格納
-            var position = data.Type == Models.Nodes.LightType.Directional 
+            var position = data.Type == LightType.Directional 
                 ? data.Direction 
                 : data.Position;
             

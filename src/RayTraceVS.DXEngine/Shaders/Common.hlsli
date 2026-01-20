@@ -106,6 +106,9 @@ struct SceneConstantBuffer
     // DoF (Depth of Field) parameters
     float ApertureSize;         // 0.0 = DoF disabled, larger = stronger bokeh
     float FocusDistance;        // Distance to the focal plane
+    // Shadow parameters
+    float ShadowStrength;       // 0.0 = no shadow, 1.0 = normal, >1.0 = darker
+    uint FrameIndex;            // Frame counter for temporal noise variation
     // Matrices for motion vectors
     float4x4 ViewProjection;
     float4x4 PrevViewProjection;
@@ -241,8 +244,7 @@ RWStructuredBuffer<uint> PhotonCounter : register(u2);  // Atomic counter for ph
 // ============================================
 // G-Buffer Outputs for NRD Denoiser
 // ============================================
-// These are optional - only used when denoising is enabled
-#ifdef ENABLE_NRD_GBUFFER
+// Always enabled - UAV declarations needed for ray tracing output
 RWTexture2D<float4> GBuffer_DiffuseRadianceHitDist : register(u3);   // RGBA16F: Diffuse radiance + hit dist
 RWTexture2D<float4> GBuffer_SpecularRadianceHitDist : register(u4); // RGBA16F: Specular radiance + hit dist
 RWTexture2D<float4> GBuffer_NormalRoughness : register(u5);          // RGBA8: Normal (oct) + roughness
@@ -251,7 +253,6 @@ RWTexture2D<float2> GBuffer_MotionVectors : register(u7);            // RG16F: S
 RWTexture2D<float4> GBuffer_Albedo : register(u8);                   // RGBA8: Albedo color
 RWTexture2D<float2> GBuffer_ShadowData : register(u9);               // RG16F: X = penumbra, Y = visibility
 RWTexture2D<float4> GBuffer_ShadowTranslucency : register(u10);      // RGBA16F: packed translucency
-#endif
 
 // ユーティリティ関数
 float3 CreateCameraRay(float2 ndc, float3 cameraPos, float4x4 invViewProj)
