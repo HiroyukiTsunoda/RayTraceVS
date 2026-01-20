@@ -15,7 +15,8 @@ WPFベースのビジュアルスクリプティングUIと、DirectX12 DXRを�
 - リアルタイムGPUレイトレーシング (DirectX 12 DXR)
 - 球、平面、ボックスのプロシージャルジオメトリ
 - 複数光源のサポート（ポイントライト、ディレクショナルライト、アンビエントライト）
-- 物理ベースマテリアル（PBR: Metallic/Roughness/Transmission/IOR）
+- 物理ベースマテリアル（PBR: Metallic/Roughness/Transmission/IOR/Emission）
+- 発光マテリアル（Emission）による自己発光オブジェクト
 - 鏡面反射（Fresnelシュリック近似）
 - ソフトシャドウ（エリアライトサンプリング）
 - フォトンマッピングによるコースティクス
@@ -135,7 +136,7 @@ RayTraceVS/
 - **DiffuseMaterial**: 拡散反射マテリアル
 - **MetalMaterial**: 金属マテリアル（反射）
 - **GlassMaterial**: ガラスマテリアル（屈折）
-- **EmissionMaterial**: 発光マテリアル
+- **EmissionMaterial**: 発光マテリアル（全オブジェクトでEmissionパラメータ対応）
 - **MaterialBSDF**: BSDFマテリアル
 
 ### ライトノード
@@ -203,26 +204,28 @@ RayTraceVS/
 | **シェーダーコンパイラ** | DXC (DirectX Shader Compiler) → DXIL出力 |
 | **アクセラレーション構造** | BLAS/TLAS (BVH)、プロシージャルAABB |
 | **レイタイプ** | プライマリレイ、シャドウレイ、反射レイ |
-| **最大再帰深度** | 5 (MAX_RECURSION_DEPTH) |
+| **最大再帰深度** | Scene.MaxBounces（デフォルト5、設定可能） |
+| **反射モデル** | GGX-like roughness perturbation |
 | **デノイザー** | NRD (NVIDIA Real-time Denoiser) |
 | ├─ REBLUR | Diffuse/Specularデノイズ |
 | └─ SIGMA | シャドウデノイズ |
+| **フォトンマップ最適化** | 空間ハッシュ（O(1)ルックアップ） |
 
 ### シェーダー構成
 
 | シェーダー | 役割 |
 |------------|------|
 | **RayGen.hlsl** | レイ生成、カメラからのプライマリレイ発射、G-Buffer出力 |
-| **ClosestHit.hlsl** | 基本ヒット処理 |
-| **ClosestHit_Diffuse.hlsl** | 拡散反射マテリアル処理（コースティクス対応） |
-| **ClosestHit_Metal.hlsl** | 金属マテリアル（反射）処理 |
+| **ClosestHit.hlsl** | 統合マテリアル処理（Diffuse/Metal/Glass/Emission対応） |
+| **ClosestHit_Diffuse.hlsl** | 拡散反射マテリアル処理（レガシー、コースティクス対応） |
+| **ClosestHit_Metal.hlsl** | 金属マテリアル処理（レガシー、反射） |
 | **AnyHit_Shadow.hlsl** | シャドウレイ判定 |
 | **Miss.hlsl** | レイミス時の背景色処理 |
 | **Intersection.hlsl** | プロシージャル交差判定（球、平面、ボックス） |
 | **PhotonEmit.hlsl** | フォトン放出（コースティクス用） |
 | **PhotonTrace.hlsl** | フォトントレース |
 | **Composite.hlsl** | 最終合成、トーンマッピング、ガンマ補正 |
-| **Common.hlsli** | 共通定義・構造体・ユーティリティ関数 |
+| **Common.hlsli** | 共通定義・構造体（80/80/96 bytes）・ユーティリティ関数 |
 | **NRDEncoding.hlsli** | NRDデノイザー用エンコーディング（Oct法線、SIGMA等） |
 
 ### レンダリングパイプライン
@@ -240,10 +243,11 @@ RayTraceVS/
         ↓
 6. 交差判定（Intersection: 球/平面/ボックス）
         ↓
-7. シェーディング（ClosestHit_Diffuse / ClosestHit_Metal）
+7. シェーディング（ClosestHit: 統合マテリアル処理）
    ├─ ライティング計算（ソフトシャドウ対応）
-   ├─ コースティクス（フォトンマップ参照）
-   └─ 反射レイ発射（再帰、最大5回）
+   ├─ コースティクス（空間ハッシュによるO(1)フォトン検索）
+   ├─ 反射レイ発射（GGX-like摂動、Scene.MaxBounces設定可能）
+   └─ Emission（自己発光）加算
         ↓
 8. デノイズ（NRD）
    ├─ REBLUR: Diffuse/Specularデノイズ

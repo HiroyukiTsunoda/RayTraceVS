@@ -7,7 +7,7 @@ using RayTraceVS.WPF.Models.Serialization;
 
 namespace RayTraceVS.WPF.Models.Nodes
 {
-    public class SphereNode : Node, ISerializableNode
+    public partial class SphereNode : Node, ISerializableNode
     {
         private Transform _objectTransform = Transform.Identity;
         private float _radius = 1.0f;
@@ -16,14 +16,28 @@ namespace RayTraceVS.WPF.Models.Nodes
         public Transform ObjectTransform
         {
             get => _objectTransform;
-            set { if (!_objectTransform.Equals(value)) { _objectTransform = value; MarkDirty(); } }
+            set
+            {
+                if (!_objectTransform.Equals(value))
+                {
+                    _objectTransform = value;
+                    OnPropertyChanged(nameof(ObjectTransform));
+                    MarkDirty();
+                }
+            }
         }
         
         // 形状固有パラメータ
         public float Radius
         {
             get => _radius;
-            set { if (_radius != value) { _radius = value; MarkDirty(); } }
+            set
+            {
+                if (SetProperty(ref _radius, value))
+                {
+                    MarkDirty();
+                }
+            }
         }
 
         public SphereNode() : base("Sphere", NodeCategory.Object)

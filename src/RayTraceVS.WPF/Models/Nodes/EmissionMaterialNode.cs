@@ -9,7 +9,7 @@ namespace RayTraceVS.WPF.Models.Nodes
     /// 発光（Emission）マテリアルノード
     /// 光源として機能するマテリアル
     /// </summary>
-    public class EmissionMaterialNode : Node
+    public partial class EmissionMaterialNode : Node
     {
         private Vector4 _emissionColor = new Vector4(1.0f, 1.0f, 1.0f, 1.0f);
         private float _strength = 1.0f;
@@ -21,7 +21,15 @@ namespace RayTraceVS.WPF.Models.Nodes
         public Vector4 EmissionColor
         {
             get => _emissionColor;
-            set { if (_emissionColor != value) { _emissionColor = value; MarkDirty(); } }
+            set
+            {
+                if (_emissionColor != value)
+                {
+                    _emissionColor = value;
+                    OnPropertyChanged(nameof(EmissionColor));
+                    MarkDirty();
+                }
+            }
         }
 
         /// <summary>
@@ -30,7 +38,13 @@ namespace RayTraceVS.WPF.Models.Nodes
         public float Strength
         {
             get => _strength;
-            set { if (_strength != value) { _strength = value; MarkDirty(); } }
+            set
+            {
+                if (SetProperty(ref _strength, value))
+                {
+                    MarkDirty();
+                }
+            }
         }
 
         /// <summary>
@@ -39,7 +53,15 @@ namespace RayTraceVS.WPF.Models.Nodes
         public Vector4 BaseColor
         {
             get => _baseColor;
-            set { if (_baseColor != value) { _baseColor = value; MarkDirty(); } }
+            set
+            {
+                if (_baseColor != value)
+                {
+                    _baseColor = value;
+                    OnPropertyChanged(nameof(BaseColor));
+                    MarkDirty();
+                }
+            }
         }
 
         public EmissionMaterialNode() : base("Emission", NodeCategory.Material)
@@ -72,8 +94,6 @@ namespace RayTraceVS.WPF.Models.Nodes
                 emissionColor.Z * strength,
                 emissionColor.W
             );
-
-            System.Diagnostics.Debug.WriteLine($"[EmissionMaterialNode] Evaluate: EmissionColor=({emissionColor.X:F2},{emissionColor.Y:F2},{emissionColor.Z:F2}), Strength={strength:F2}, Emission=({emission.X:F2},{emission.Y:F2},{emission.Z:F2}), BaseColor=({baseColor.X:F2},{baseColor.Y:F2},{baseColor.Z:F2})");
 
             return new MaterialData
             {

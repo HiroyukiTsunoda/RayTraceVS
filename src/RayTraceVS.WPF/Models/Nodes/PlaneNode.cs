@@ -8,7 +8,7 @@ using RayTraceVS.WPF.Models.Serialization;
 
 namespace RayTraceVS.WPF.Models.Nodes
 {
-    public class PlaneNode : Node, ISerializableNode
+    public partial class PlaneNode : Node, ISerializableNode
     {
         private Transform _objectTransform = Transform.Identity;
         private Vector3 _normal = Vector3.UnitY;
@@ -17,14 +17,30 @@ namespace RayTraceVS.WPF.Models.Nodes
         public Transform ObjectTransform
         {
             get => _objectTransform;
-            set { if (!_objectTransform.Equals(value)) { _objectTransform = value; MarkDirty(); } }
+            set
+            {
+                if (!_objectTransform.Equals(value))
+                {
+                    _objectTransform = value;
+                    OnPropertyChanged(nameof(ObjectTransform));
+                    MarkDirty();
+                }
+            }
         }
         
         // 形状固有パラメータ
         public Vector3 Normal
         {
             get => _normal;
-            set { if (_normal != value) { _normal = value; MarkDirty(); } }
+            set
+            {
+                if (_normal != value)
+                {
+                    _normal = value;
+                    OnPropertyChanged(nameof(Normal));
+                    MarkDirty();
+                }
+            }
         }
 
         public PlaneNode() : base("Plane", NodeCategory.Object)

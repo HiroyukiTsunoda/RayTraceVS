@@ -1,21 +1,10 @@
 #include "NRDDenoiser.h"
 #include "../DXContext.h"
 #include "../d3dx12.h"
+#include "../DebugLog.h"
 #include <d3dcompiler.h>
 #include <fstream>
 #include <cstdio>
-
-static void LogToFile(const char* message)
-{
-    std::ofstream log("C:\\git\\RayTraceVS\\debug_log.txt", std::ios::app);
-    if (log.is_open())
-    {
-        log << message << std::endl;
-        log.close();
-    }
-    OutputDebugStringA(message);
-    OutputDebugStringA("\n");
-}
 
 namespace RayTraceVS::DXEngine
 {
@@ -36,10 +25,10 @@ namespace RayTraceVS::DXEngine
 
         char buf[256];
         sprintf_s(buf, "NRDDenoiser::Initialize - NRD_ENABLED=%d, width=%u, height=%u", NRD_ENABLED, width, height);
-        LogToFile(buf);
+        LOG_DEBUG(buf);
 
 #if NRD_ENABLED
-        LogToFile("NRDDenoiser::Initialize - NRD path active, creating instance...");
+        LOG_DEBUG("NRDDenoiser::Initialize - NRD path active, creating instance...");
         
         // Full NRD initialization - requires NRD library to be built
         // See README for instructions on building NRD with CMake
@@ -63,14 +52,14 @@ namespace RayTraceVS::DXEngine
         if (result != nrd::Result::SUCCESS)
         {
             sprintf_s(buf, "NRD: Failed to create instance, result=%d", (int)result);
-            LogToFile(buf);
+            LOG_DEBUG(buf);
             return false;
         }
         sprintf_s(buf, "NRD: Instance created successfully with %d denoisers (REBLUR + %s)", 
             instanceDesc.denoisersNum, m_sigmaEnabled ? "SIGMA" : "none");
-        LogToFile(buf);
+        LOG_DEBUG(buf);
 #else
-        LogToFile("NRDDenoiser::Initialize - NRD_ENABLED=0, stub mode");
+        LOG_DEBUG("NRDDenoiser::Initialize - NRD_ENABLED=0, stub mode");
 #endif
 
         // Create resources (always needed for G-Buffer output)
@@ -334,7 +323,7 @@ namespace RayTraceVS::DXEngine
         char buf[256];
         sprintf_s(buf, "NRD: Creating resources - permanentPoolSize=%u, transientPoolSize=%u", 
             instanceDesc.permanentPoolSize, instanceDesc.transientPoolSize);
-        LogToFile(buf);
+        LOG_DEBUG(buf);
 
         // Create NRD internal textures
         m_nrdTextures.resize(instanceDesc.permanentPoolSize + instanceDesc.transientPoolSize);
@@ -594,7 +583,7 @@ namespace RayTraceVS::DXEngine
         char buf[128];
         sprintf_s(buf, "NRD: Pipelines created - total PSOs: %zu out of %u pipelines", 
             m_pipelineStates.size(), instanceDesc.pipelinesNum);
-        LogToFile(buf);
+        LOG_DEBUG(buf);
         return m_pipelineStates.size() > 0;
     }
 
@@ -759,23 +748,23 @@ namespace RayTraceVS::DXEngine
     {
         if (!m_initialized)
         {
-            LogToFile("NRDDenoiser::Denoise - not initialized, returning");
+            LOG_DEBUG("NRDDenoiser::Denoise - not initialized, returning");
             return;
         }
 
         char buf[256];
         sprintf_s(buf, "NRDDenoiser::Denoise - NRD_ENABLED=%d, m_initialized=%d", NRD_ENABLED, m_initialized ? 1 : 0);
-        LogToFile(buf);
+        LOG_DEBUG(buf);
 
 #if NRD_ENABLED
         if (!m_nrdInstance || m_pipelineStates.empty())
         {
             sprintf_s(buf, "NRD: Denoise not ready - instance=%p, pipelineStates.size=%zu", 
                 m_nrdInstance, m_pipelineStates.size());
-            LogToFile(buf);
+            LOG_DEBUG(buf);
             return;
         }
-        LogToFile("NRDDenoiser::Denoise - NRD path active, proceeding...");
+        LOG_DEBUG("NRDDenoiser::Denoise - NRD path active, proceeding...");
 
         const nrd::InstanceDesc& instanceDesc = nrd::GetInstanceDesc(*m_nrdInstance);
 
@@ -816,19 +805,19 @@ namespace RayTraceVS::DXEngine
         // Log NRD settings for debugging
         sprintf_s(buf, "NRD Settings: frameIndex=%d, denoisingRange=%.1f, accumulationMode=%d (temporal ON)",
             commonSettings.frameIndex, commonSettings.denoisingRange, (int)commonSettings.accumulationMode);
-        LogToFile(buf);
+        LOG_DEBUG(buf);
         sprintf_s(buf, "NRD Settings: resourceSize=%ux%u, rectSize=%ux%u",
             commonSettings.resourceSize[0], commonSettings.resourceSize[1],
             commonSettings.rectSize[0], commonSettings.rectSize[1]);
-        LogToFile(buf);
+        LOG_DEBUG(buf);
         sprintf_s(buf, "NRD Settings: viewToClip[0]=[%.3f, %.3f, %.3f, %.3f]",
             commonSettings.viewToClipMatrix[0], commonSettings.viewToClipMatrix[1],
             commonSettings.viewToClipMatrix[2], commonSettings.viewToClipMatrix[3]);
-        LogToFile(buf);
+        LOG_DEBUG(buf);
         sprintf_s(buf, "NRD Settings: worldToView[0]=[%.3f, %.3f, %.3f, %.3f]",
             commonSettings.worldToViewMatrix[0], commonSettings.worldToViewMatrix[1],
             commonSettings.worldToViewMatrix[2], commonSettings.worldToViewMatrix[3]);
-        LogToFile(buf);
+        LOG_DEBUG(buf);
 
         nrd::SetCommonSettings(*m_nrdInstance, commonSettings);
 
@@ -867,7 +856,7 @@ namespace RayTraceVS::DXEngine
             sigmaSettings.maxStabilizedFrameNum = 2;
             
             nrd::SetDenoiserSettings(*m_nrdInstance, m_sigmaIdentifier, &sigmaSettings);
-            LogToFile("NRD: SIGMA shadow denoiser settings applied");
+            LOG_DEBUG("NRD: SIGMA shadow denoiser settings applied");
         }
 
         // Get compute dispatches for active denoisers
@@ -881,11 +870,11 @@ namespace RayTraceVS::DXEngine
         nrd::Result result = nrd::GetComputeDispatches(*m_nrdInstance, identifiers, numIdentifiers, dispatchDescs, dispatchDescsNum);
         
         sprintf_s(buf, "NRD: GetComputeDispatches result=%d, dispatchDescsNum=%u", (int)result, dispatchDescsNum);
-        LogToFile(buf);
+        LOG_DEBUG(buf);
         
         if (result != nrd::Result::SUCCESS || dispatchDescsNum == 0)
         {
-            LogToFile("NRD: GetComputeDispatches failed, returning");
+            LOG_DEBUG("NRD: GetComputeDispatches failed, returning");
             return;
         }
 
@@ -910,7 +899,7 @@ namespace RayTraceVS::DXEngine
                 sprintf_s(buf, "NRD Dispatch[%d]: name=%s, pipeline=%d, grid=%dx%d, resources=%d",
                     i, dispatch.name ? dispatch.name : "null", dispatch.pipelineIndex,
                     dispatch.gridWidth, dispatch.gridHeight, dispatch.resourcesNum);
-                LogToFile(buf);
+                LOG_DEBUG(buf);
                 
                 if (i < 3)
                 {
@@ -919,7 +908,7 @@ namespace RayTraceVS::DXEngine
                         const nrd::ResourceDesc& res = dispatch.resources[r];
                         sprintf_s(buf, "  Resource[%d]: type=%d, indexInPool=%d",
                             r, (int)res.type, res.indexInPool);
-                        LogToFile(buf);
+                        LOG_DEBUG(buf);
                     }
                 }
             }
@@ -934,7 +923,7 @@ namespace RayTraceVS::DXEngine
             if (psoIt == m_pipelineStates.end())
             {
                 sprintf_s(buf, "NRD: Missing PSO for pipeline %d", dispatch.pipelineIndex);
-                LogToFile(buf);
+                LOG_DEBUG(buf);
                 skippedCount++;
                 continue;
             }
@@ -1006,13 +995,13 @@ namespace RayTraceVS::DXEngine
                         
                         sprintf_s(buf, "NRD: Binding %s (type=%d), ptr=%p, dispatch=%s",
                             typeName, (int)resource.type, (void*)d3dResource, dispatch.name);
-                        LogToFile(buf);
+                        LOG_DEBUG(buf);
                     }
                     
                     if (!d3dResource)
                     {
                         sprintf_s(buf, "NRD: NULL resource for type=%d, indexInPool=%d", (int)resource.type, resource.indexInPool);
-                        LogToFile(buf);
+                        LOG_DEBUG(buf);
                         continue;
                     }
 
@@ -1073,7 +1062,7 @@ namespace RayTraceVS::DXEngine
 
         sprintf_s(buf, "NRD: Dispatched %d, Skipped %d (PSO count=%zu)", 
             dispatchedCount, skippedCount, m_pipelineStates.size());
-        LogToFile(buf);
+        LOG_DEBUG(buf);
         return;
 #endif
 
@@ -1152,7 +1141,7 @@ namespace RayTraceVS::DXEngine
             {
                 char buf[128];
                 sprintf_s(buf, "NRD: Unknown resource type %d requested", (int)resource.type);
-                LogToFile(buf);
+                LOG_DEBUG(buf);
             }
             break;
         }
@@ -1163,7 +1152,7 @@ namespace RayTraceVS::DXEngine
             char buf[256];
             sprintf_s(buf, "NRD WARNING: NULL resource for %s (type=%d, indexInPool=%d)", 
                 resourceName, (int)resource.type, resource.indexInPool);
-            LogToFile(buf);
+            LOG_DEBUG(buf);
         }
         
         return result;

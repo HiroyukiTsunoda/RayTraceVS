@@ -97,7 +97,7 @@ namespace RayTraceVS::DXEngine
     // AoS (Array of Structures) - Original format for Compute Shader fallback
     // ============================================
     
-    // GPU sphere data (with PBR material) - 64 bytes, 16-byte aligned (TEST: emission removed)
+    // GPU sphere data (with PBR material) - 80 bytes, 16-byte aligned
     struct alignas(16) GPUSphere
     {
         XMFLOAT3 Center;        // 12
@@ -111,23 +111,27 @@ namespace RayTraceVS::DXEngine
         float Padding1;         // 4
         float Padding2;         // 4
         float Padding3;         // 4  -> 64
+        XMFLOAT3 Emission;      // 12
+        float Padding4;         // 4  -> 80
     };
 
-    // GPU plane data (with PBR material) - 64 bytes (TEST: emission removed)
+    // GPU plane data (with PBR material) - 80 bytes, 16-byte aligned
     struct alignas(16) GPUPlane
     {
-        XMFLOAT3 Position;
-        float Metallic;
-        XMFLOAT3 Normal;
-        float Roughness;
-        XMFLOAT4 Color;
-        float Transmission;
-        float IOR;
-        float Specular;     // Specular intensity (0.0 = none, 1.0 = full)
-        float Padding1;
+        XMFLOAT3 Position;      // 12
+        float Metallic;         // 4  -> 16
+        XMFLOAT3 Normal;        // 12
+        float Roughness;        // 4  -> 32
+        XMFLOAT4 Color;         // 16 -> 48
+        float Transmission;     // 4
+        float IOR;              // 4
+        float Specular;         // 4
+        float Padding1;         // 4  -> 64
+        XMFLOAT3 Emission;      // 12
+        float Padding2;         // 4  -> 80
     };
 
-    // GPU box data (with PBR material) - 80 bytes, 16-byte aligned (TEST: emission removed)
+    // GPU box data (with PBR material) - 96 bytes, 16-byte aligned
     struct alignas(16) GPUBox
     {
         XMFLOAT3 Center;        // 12
@@ -143,6 +147,8 @@ namespace RayTraceVS::DXEngine
         float Padding3;         // 4
         float Padding4;         // 4
         float Padding5;         // 4  -> 80
+        XMFLOAT3 Emission;      // 12
+        float Padding6;         // 4  -> 96
     };
 
     // ============================================

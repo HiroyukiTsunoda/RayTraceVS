@@ -55,15 +55,11 @@ namespace RayTraceVS.WPF.Services
             // SceneNodeが存在するか確認
             var sceneNode = allNodes.OfType<Models.Nodes.SceneNode>().FirstOrDefault();
             
-            try { System.IO.File.AppendAllText(@"C:\git\RayTraceVS\debug_log.txt", $"[SceneEvaluator] sceneNode={sceneNode != null}, connections={connections.Count()}\n"); } catch { }
-            
             if (sceneNode != null && connections.Any())
             {
                 // SceneNodeが存在する場合：グラフを評価してSceneNodeの出力を使用
                 // 増分評価を使用（Dirtyなノードのみ再評価）
                 var results = nodeGraph.EvaluateGraph();
-                
-                try { System.IO.File.AppendAllText(@"C:\git\RayTraceVS\debug_log.txt", $"[SceneEvaluator] results.Count={results.Count}, hasSceneNode={results.ContainsKey(sceneNode.Id)}\n"); } catch { }
                 
                 // SceneNodeの評価結果を取得
                 if (results.TryGetValue(sceneNode.Id, out var sceneResult) && sceneResult is SceneData sceneData)
@@ -105,18 +101,6 @@ namespace RayTraceVS.WPF.Services
                     denoiserStabilization = sceneData.DenoiserStabilization > 0 ? sceneData.DenoiserStabilization : 1.0f;
                     shadowStrength = sceneData.ShadowStrength >= 0 ? sceneData.ShadowStrength : 1.0f;
                     enableDenoiser = sceneData.EnableDenoiser;
-                    
-                    // ファイルログで確認
-                    try { System.IO.File.AppendAllText(@"C:\git\RayTraceVS\debug_log.txt", $"[SceneEvaluator] sceneData.ShadowStrength={sceneData.ShadowStrength}, final={shadowStrength}\n"); } catch { }
-                    System.Diagnostics.Debug.WriteLine($"[SceneEvaluator] sceneData.ShadowStrength={sceneData.ShadowStrength}, final shadowStrength={shadowStrength}");
-                    System.Diagnostics.Debug.WriteLine($"[SceneEvaluator] SceneNode経由: Spheres={spheres.Count}, Planes={planes.Count}, Boxes={boxes.Count}, Lights={lights.Count}, Samples={samplesPerPixel}, Bounces={maxBounces}, ShadowStrength={shadowStrength}");
-                    
-                    // デバッグ：詳細情報を出力
-                    foreach (var s in spheres)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"  Sphere: Pos=({s.Position.X}, {s.Position.Y}, {s.Position.Z}), Radius={s.Radius}");
-                    }
-                    System.Diagnostics.Debug.WriteLine($"  Camera: Pos=({camera.Position.X}, {camera.Position.Y}, {camera.Position.Z}), LookAt=({camera.LookAt.X}, {camera.LookAt.Y}, {camera.LookAt.Z}), FOV={camera.FieldOfView}");
                 }
             }
             else
@@ -254,8 +238,6 @@ namespace RayTraceVS.WPF.Services
                         lights.Add(ConvertLightData(lightData));
                     }
                 }
-                
-                System.Diagnostics.Debug.WriteLine($"[SceneEvaluator] フォールバック: Spheres={spheres.Count}, Planes={planes.Count}, Boxes={boxes.Count}, Lights={lights.Count}");
             }
 
             return (spheres.ToArray(), planes.ToArray(), boxes.ToArray(), camera, lights.ToArray(), samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization, shadowStrength, enableDenoiser);
@@ -264,9 +246,6 @@ namespace RayTraceVS.WPF.Services
         private InteropSphereData ConvertSphereData(SphereData data)
         {
             var material = data.Material;
-            
-            System.Diagnostics.Debug.WriteLine($"[SceneEvaluator] Sphere Material: Color=({material.BaseColor.X:F2},{material.BaseColor.Y:F2},{material.BaseColor.Z:F2}), Metallic={material.Metallic:F2}, Roughness={material.Roughness:F2}, Transmission={material.Transmission:F2}, IOR={material.IOR:F2}, Specular={material.Specular:F2}, Emission=({material.Emission.X:F2},{material.Emission.Y:F2},{material.Emission.Z:F2})");
-            
             return new InteropSphereData
             {
                 Position = new InteropVector3(data.Position.X, data.Position.Y, data.Position.Z),
@@ -322,9 +301,6 @@ namespace RayTraceVS.WPF.Services
         private InteropBoxData ConvertBoxData(BoxData data)
         {
             var material = data.Material;
-            
-            System.Diagnostics.Debug.WriteLine($"[SceneEvaluator] Box Material: Color=({material.BaseColor.X:F2},{material.BaseColor.Y:F2},{material.BaseColor.Z:F2}), Metallic={material.Metallic:F2}, Roughness={material.Roughness:F2}, Transmission={material.Transmission:F2}, IOR={material.IOR:F2}, Specular={material.Specular:F2}, Emission=({material.Emission.X:F2},{material.Emission.Y:F2},{material.Emission.Z:F2})");
-            
             return new InteropBoxData
             {
                 Center = new InteropVector3(data.Center.X, data.Center.Y, data.Center.Z),

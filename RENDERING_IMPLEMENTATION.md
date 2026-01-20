@@ -109,8 +109,9 @@ D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE
 | `NRDEncoding.hlsli` | ヘッダー | NRD用エンコード/デコード関数 |
 | `RayGen.hlsl` | RayGeneration | プライマリレイ生成、G-Buffer出力 |
 | `Intersection.hlsl` | Intersection | プロシージャル交差判定 |
-| `ClosestHit_Diffuse.hlsl` | ClosestHit | ディフューズマテリアル処理 |
-| `ClosestHit_Metal.hlsl` | ClosestHit | 金属マテリアル処理 |
+| `ClosestHit.hlsl` | ClosestHit | 統合マテリアル処理（Diffuse/Metal/Glass/Emission対応） |
+| `ClosestHit_Diffuse.hlsl` | ClosestHit | ディフューズ専用（レガシー） |
+| `ClosestHit_Metal.hlsl` | ClosestHit | 金属専用（レガシー） |
 | `Miss.hlsl` | Miss | 空の色計算 |
 | `AnyHit_Shadow.hlsl` | AnyHit | シャドウレイ処理 |
 | `Composite.hlsl` | Compute | 最終合成、トーンマッピング |
@@ -240,7 +241,16 @@ float SIGMA_BackEnd_UnpackShadow(float4 packedShadow);
 | **Roughness** | 0.0-1.0 | 粗さ (0=鏡面, 1=完全拡散) |
 | **Transmission** | 0.0-1.0 | 透過度 (ガラス用) |
 | **IOR** | 1.0-3.0 | 屈折率 (Index of Refraction) |
+| **Specular** | 0.0-1.0 | スペキュラ強度 |
 | **Albedo** | RGB | ベースカラー |
+| **Emission** | RGB | 発光色（自己発光マテリアル用） |
+
+**GPU構造体サイズ**:
+| 構造体 | サイズ | アライメント |
+|--------|--------|-------------|
+| `GPUSphere` | 80 bytes | 16-byte |
+| `GPUPlane` | 80 bytes | 16-byte |
+| `GPUBox` | 96 bytes | 16-byte |
 
 ---
 
@@ -318,12 +328,25 @@ struct Photon
 };
 ```
 
+**空間ハッシュ (Spatial Hash) - O(1)ルックアップ最適化**:
+```hlsl
+#define PHOTON_HASH_TABLE_SIZE 65536    // 2^16 ハッシュバケット
+#define MAX_PHOTONS_PER_CELL 64         // セルあたり最大フォトン数
+#define PHOTON_HASH_CELL_SIZE 1.0       // デフォルトセルサイズ
+
+struct PhotonHashCell
+{
+    uint count;                                     // このセルのフォトン数
+    uint photonIndices[MAX_PHOTONS_PER_CELL];       // PhotonMapへのインデックス
+};
+```
+
 **フォトン収集** (`GatherPhotons`):
 ```hlsl
 float3 GatherPhotons(float3 hitPosition, float3 normal, float radius)
 {
-    // PhotonMapを検索、距離内のフォトンを収集
-    // フォトン密度推定でコースティクス計算
+    // 空間ハッシュを使用してO(1)でフォトンを検索
+    // 距離内のフォトンを収集、密度推定でコースティクス計算
     return causticColor * Scene.CausticIntensity;
 }
 ```
@@ -650,7 +673,69 @@ void NRD_FrontEnd_UnpackNormalAndRoughness(float4 packed, out float3 normal, out
 
 ---
 
-### 5. ClosestHit_Metal.hlsl (金属マテリアル)
+### 4.5 ClosestHit.hlsl (統合マテリアルシェーダー)
+
+#### 4.5.1 再帰深度制御
+| ID | 条件 | 処理 | タイプ | 備考 |
+|----|------|------|--------|------|
+| CH-000 | `payload.depth >= SHADOW_RAY_DEPTH (100)` | シャドウレイ処理、即リターン | [EARLY-OUT] | シャドウレイ判定 |
+| CH-001 | `payload.depth >= Scene.MaxBounces` | 最大深度到達、空+マテリアルカラーで近似 | [FALLBACK] | デフォルト5 |
+
+#### 4.5.2 マテリアルタイプ判定
+| ID | 条件 | 処理 | タイプ |
+|----|------|------|--------|
+| CH-002 | `objectType == OBJECT_TYPE_SPHERE` | 球マテリアル取得（Emission含む） | [BRANCH] |
+| CH-003 | `objectType == OBJECT_TYPE_PLANE` | 平面マテリアル+チェッカーパターン | [BRANCH] |
+| CH-004 | `objectType == OBJECT_TYPE_BOX` | ボックスマテリアル取得 | [BRANCH] |
+
+#### 4.5.3 マテリアル分岐
+| ID | 条件 | 処理 | タイプ | 閾値 |
+|----|------|------|--------|------|
+| CH-005 | `transmission > 0.01` | ガラスマテリアル処理 | [THRESHOLD] | 0.01 |
+| CH-006 | `metallic > 0.5` | 金属マテリアル処理 | [THRESHOLD] | 0.5 |
+| CH-007 | それ以外 | ディフューズマテリアル処理 | [FALLBACK] | - |
+
+#### 4.5.4 ラフネス摂動 (GGX-like)
+| ID | 条件 | 処理 | タイプ | 閾値 |
+|----|------|------|--------|------|
+| CH-008 | `roughness < 0.01` | 完全鏡面反射（摂動なし） | [THRESHOLD] | 0.01 |
+| CH-009 | `roughness >= 0.01` | GGX近似の摂動適用 | [BRANCH] | - |
+
+```hlsl
+// GGX-like roughness perturbation
+float3 PerturbReflection(float3 reflectDir, float3 normal, float roughness, float2 seed)
+{
+    if (roughness < 0.01) return reflectDir;
+    
+    float angle = r1 * 6.28318;
+    float radius = roughness * roughness * r2;  // perceptually linear
+    float3 perturbed = normalize(reflectDir + offset);
+    
+    // Ensure hemisphere
+    if (dot(perturbed, normal) < 0.0)
+        perturbed = reflect(perturbed, normal);
+    return perturbed;
+}
+```
+
+#### 4.5.5 Emission（発光）処理
+| ID | 条件 | 処理 | タイプ |
+|----|------|------|--------|
+| CH-010 | `emission != (0,0,0)` | 最終カラーにEmission加算 | [BRANCH] |
+| CH-011 | NRD出力時 | `diffuseRadiance += emission` | [BRANCH] |
+
+#### 4.5.6 最終カラー合成
+```hlsl
+float3 finalColor = ambient 
+                  + directDiffuse * directWeight 
+                  + directSpecular 
+                  + reflectColor * reflectionWeight
+                  + emission;  // 発光マテリアル
+```
+
+---
+
+### 5. ClosestHit_Metal.hlsl (金属マテリアル・レガシー)
 
 #### 5.1 ラフネス摂動
 | ID | 条件 | 処理 | タイプ | 閾値 |
@@ -782,7 +867,7 @@ void NRD_FrontEnd_UnpackNormalAndRoughness(float4 packed, out float3 normal, out
 | ID | 問題 | 現状 | 推奨 |
 |----|------|------|------|
 | ISSUE-001 | ミラーバイパス閾値 | `roughness < 0.05` | 調整可能にするか検討 |
-| ISSUE-002 | MAX_RECURSION_DEPTH | 固定値5 | シーン複雑度に応じて動的に |
+| ~~ISSUE-002~~ | ~~MAX_RECURSION_DEPTH~~ | ~~固定値5~~ | ✅ **解決済み**: Scene.MaxBouncesで動的設定可能 |
 | ISSUE-003 | フォールバックライト | 常に使用可能 | 明示的なライトなし警告 |
 | ISSUE-004 | チェッカーパターン | 平面のみ | オブジェクトごとにUV対応 |
 | ISSUE-005 | ソフトシャドウサンプル数 | `clamp(1, 16)` | 品質設定で調整可能に |
@@ -791,11 +876,14 @@ void NRD_FrontEnd_UnpackNormalAndRoughness(float4 packed, out float3 normal, out
 
 | チェック項目 | 状態 | 備考 |
 |-------------|------|------|
-| NRD出力は`depth==0`のみ | ✅ 一貫 | Diffuse, Metal両方で確認 |
+| NRD出力は`depth==0`のみ | ✅ 一貫 | Diffuse, Metal, 統合シェーダー全てで確認 |
 | ミラーバイパス閾値統一 | ✅ 一貫 | Composite.hlslで0.05 |
 | フォールバックライト条件 | ✅ 一貫 | `NumLights==0`で発動 |
 | 空の色取得 | ✅ 一貫 | `GetSkyColor()` 使用 |
-| hitDistance設定 | ⚠️ 要確認 | Metalは全レイで設定、Diffuseはプライマリのみ |
+| hitDistance設定 | ✅ 一貫 | 統合シェーダーで全レイに対応 |
+| MaxBounces対応 | ✅ 一貫 | `Scene.MaxBounces`（デフォルト5） |
+| Emission対応 | ✅ 一貫 | 全オブジェクト（Sphere/Plane/Box）で対応 |
+| 空間ハッシュ | ✅ 実装済み | フォトンマッピングO(1)ルックアップ |
 
 ---
 
@@ -937,11 +1025,15 @@ void DXRPipeline::Render(RenderTarget* renderTarget, Scene* scene)
 **定数**:
 
 ```hlsl
-#define MAX_RECURSION_DEPTH 5
-#define MAX_PHOTONS 262144
+#define MAX_RECURSION_DEPTH 5           // デフォルト再帰深度（Scene.MaxBouncesで上書き可能）
+#define MAX_PHOTONS 262144              // 256K フォトン
+#define PHOTON_HASH_TABLE_SIZE 65536    // 空間ハッシュテーブルサイズ
+#define MAX_PHOTONS_PER_CELL 64         // セルあたり最大フォトン数
+
 #define OBJECT_TYPE_SPHERE 0
 #define OBJECT_TYPE_PLANE 1
 #define OBJECT_TYPE_BOX 2
+
 #define LIGHT_TYPE_AMBIENT 0
 #define LIGHT_TYPE_POINT 1
 #define LIGHT_TYPE_DIRECTIONAL 2
