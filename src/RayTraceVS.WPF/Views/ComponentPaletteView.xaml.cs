@@ -23,6 +23,15 @@ namespace RayTraceVS.WPF.Views
         }
         
         /// <summary>
+        /// NodeEditorViewを取得
+        /// </summary>
+        private NodeEditorView? GetNodeEditor()
+        {
+            var mainWindow = Window.GetWindow(this) as MainWindow;
+            return mainWindow?.FindName("NodeEditor") as NodeEditorView;
+        }
+        
+        /// <summary>
         /// Expanderの開閉状態を取得
         /// </summary>
         public ExpanderStates GetExpanderStates()
@@ -53,9 +62,20 @@ namespace RayTraceVS.WPF.Views
             SceneExpander.IsExpanded = states.IsSceneExpanded;
         }
 
-        private Point GetRandomPosition()
+        private Point GetViewportCenterPosition()
         {
-            // ノードエディタの中央付近にランダムに配置
+            // ノードエディタのビューポート中央にランダムなオフセットを加えて配置
+            var nodeEditor = GetNodeEditor();
+            if (nodeEditor != null)
+            {
+                var center = nodeEditor.GetViewportCenterInCanvas();
+                return new Point(
+                    center.X + random.Next(-50, 50),
+                    center.Y + random.Next(-50, 50)
+                );
+            }
+            
+            // フォールバック: デフォルト位置
             return new Point(
                 400 + random.Next(-100, 100),
                 300 + random.Next(-100, 100)
@@ -68,7 +88,7 @@ namespace RayTraceVS.WPF.Views
             if (viewModel != null)
             {
                 var node = new SphereNode();
-                ((Node)node).Position = GetRandomPosition();
+                ((Node)node).Position = GetViewportCenterPosition();
                 viewModel.AddNode(node);
             }
         }
@@ -79,7 +99,7 @@ namespace RayTraceVS.WPF.Views
             if (viewModel != null)
             {
                 var node = new PlaneNode();
-                ((Node)node).Position = GetRandomPosition();
+                ((Node)node).Position = GetViewportCenterPosition();
                 viewModel.AddNode(node);
             }
         }
@@ -90,7 +110,7 @@ namespace RayTraceVS.WPF.Views
             if (viewModel != null)
             {
                 var node = new BoxNode();
-                ((Node)node).Position = GetRandomPosition();
+                ((Node)node).Position = GetViewportCenterPosition();
                 viewModel.AddNode(node);
             }
         }
@@ -101,37 +121,7 @@ namespace RayTraceVS.WPF.Views
             var viewModel = GetViewModel();
             if (viewModel != null)
             {
-                var node = new ColorNode { Position = GetRandomPosition() };
-                viewModel.AddNode(node);
-            }
-        }
-
-        private void AddDiffuse_Click(object sender, RoutedEventArgs e)
-        {
-            var viewModel = GetViewModel();
-            if (viewModel != null)
-            {
-                var node = new DiffuseMaterialNode { Position = GetRandomPosition() };
-                viewModel.AddNode(node);
-            }
-        }
-
-        private void AddMetal_Click(object sender, RoutedEventArgs e)
-        {
-            var viewModel = GetViewModel();
-            if (viewModel != null)
-            {
-                var node = new MetalMaterialNode { Position = GetRandomPosition() };
-                viewModel.AddNode(node);
-            }
-        }
-
-        private void AddGlass_Click(object sender, RoutedEventArgs e)
-        {
-            var viewModel = GetViewModel();
-            if (viewModel != null)
-            {
-                var node = new GlassMaterialNode { Position = GetRandomPosition() };
+                var node = new ColorNode { Position = GetViewportCenterPosition() };
                 viewModel.AddNode(node);
             }
         }
@@ -141,7 +131,7 @@ namespace RayTraceVS.WPF.Views
             var viewModel = GetViewModel();
             if (viewModel != null)
             {
-                var node = new EmissionMaterialNode { Position = GetRandomPosition() };
+                var node = new EmissionMaterialNode { Position = GetViewportCenterPosition() };
                 viewModel.AddNode(node);
             }
         }
@@ -151,7 +141,17 @@ namespace RayTraceVS.WPF.Views
             var viewModel = GetViewModel();
             if (viewModel != null)
             {
-                var node = new MaterialBSDFNode { Position = GetRandomPosition() };
+                var node = new MaterialBSDFNode { Position = GetViewportCenterPosition() };
+                viewModel.AddNode(node);
+            }
+        }
+
+        private void AddUniversalPBR_Click(object sender, RoutedEventArgs e)
+        {
+            var viewModel = GetViewModel();
+            if (viewModel != null)
+            {
+                var node = new UniversalPBRNode { Position = GetViewportCenterPosition() };
                 viewModel.AddNode(node);
             }
         }
@@ -161,7 +161,7 @@ namespace RayTraceVS.WPF.Views
             var viewModel = GetViewModel();
             if (viewModel != null)
             {
-                var node = new FloatNode { Position = GetRandomPosition() };
+                var node = new FloatNode { Position = GetViewportCenterPosition() };
                 viewModel.AddNode(node);
             }
         }
@@ -171,7 +171,7 @@ namespace RayTraceVS.WPF.Views
             var viewModel = GetViewModel();
             if (viewModel != null)
             {
-                var node = new Vector3Node { Position = GetRandomPosition() };
+                var node = new Vector3Node { Position = GetViewportCenterPosition() };
                 viewModel.AddNode(node);
             }
         }
@@ -181,7 +181,7 @@ namespace RayTraceVS.WPF.Views
             var viewModel = GetViewModel();
             if (viewModel != null)
             {
-                var node = new Vector4Node { Position = GetRandomPosition() };
+                var node = new Vector4Node { Position = GetViewportCenterPosition() };
                 viewModel.AddNode(node);
             }
         }
@@ -191,7 +191,7 @@ namespace RayTraceVS.WPF.Views
             var viewModel = GetViewModel();
             if (viewModel != null)
             {
-                var node = new AddNode { Position = GetRandomPosition() };
+                var node = new AddNode { Position = GetViewportCenterPosition() };
                 viewModel.AddNode(node);
             }
         }
@@ -201,7 +201,7 @@ namespace RayTraceVS.WPF.Views
             var viewModel = GetViewModel();
             if (viewModel != null)
             {
-                var node = new SubNode { Position = GetRandomPosition() };
+                var node = new SubNode { Position = GetViewportCenterPosition() };
                 viewModel.AddNode(node);
             }
         }
@@ -211,7 +211,7 @@ namespace RayTraceVS.WPF.Views
             var viewModel = GetViewModel();
             if (viewModel != null)
             {
-                var node = new MulNode { Position = GetRandomPosition() };
+                var node = new MulNode { Position = GetViewportCenterPosition() };
                 viewModel.AddNode(node);
             }
         }
@@ -221,7 +221,7 @@ namespace RayTraceVS.WPF.Views
             var viewModel = GetViewModel();
             if (viewModel != null)
             {
-                var node = new DivNode { Position = GetRandomPosition() };
+                var node = new DivNode { Position = GetViewportCenterPosition() };
                 viewModel.AddNode(node);
             }
         }
@@ -231,7 +231,7 @@ namespace RayTraceVS.WPF.Views
             var viewModel = GetViewModel();
             if (viewModel != null)
             {
-                var node = new TransformNode { Position = GetRandomPosition() };
+                var node = new TransformNode { Position = GetViewportCenterPosition() };
                 viewModel.AddNode(node);
             }
         }
@@ -241,7 +241,7 @@ namespace RayTraceVS.WPF.Views
             var viewModel = GetViewModel();
             if (viewModel != null)
             {
-                var node = new CombineTransformNode { Position = GetRandomPosition() };
+                var node = new CombineTransformNode { Position = GetViewportCenterPosition() };
                 viewModel.AddNode(node);
             }
         }
@@ -252,7 +252,7 @@ namespace RayTraceVS.WPF.Views
             if (viewModel != null)
             {
                 var node = new CameraNode();
-                ((Node)node).Position = GetRandomPosition();
+                ((Node)node).Position = GetViewportCenterPosition();
                 viewModel.AddNode(node);
             }
         }
@@ -263,7 +263,7 @@ namespace RayTraceVS.WPF.Views
             if (viewModel != null)
             {
                 var node = new AmbientLightNode();
-                ((Node)node).Position = GetRandomPosition();
+                ((Node)node).Position = GetViewportCenterPosition();
                 viewModel.AddNode(node);
             }
         }
@@ -274,7 +274,7 @@ namespace RayTraceVS.WPF.Views
             if (viewModel != null)
             {
                 var node = new DirectionalLightNode();
-                ((Node)node).Position = GetRandomPosition();
+                ((Node)node).Position = GetViewportCenterPosition();
                 viewModel.AddNode(node);
             }
         }
@@ -285,7 +285,7 @@ namespace RayTraceVS.WPF.Views
             if (viewModel != null)
             {
                 var node = new PointLightNode();
-                ((Node)node).Position = GetRandomPosition();
+                ((Node)node).Position = GetViewportCenterPosition();
                 viewModel.AddNode(node);
             }
         }
@@ -295,7 +295,7 @@ namespace RayTraceVS.WPF.Views
             var viewModel = GetViewModel();
             if (viewModel != null)
             {
-                var node = new SceneNode { Position = GetRandomPosition() };
+                var node = new SceneNode { Position = GetViewportCenterPosition() };
                 viewModel.AddNode(node);
             }
         }

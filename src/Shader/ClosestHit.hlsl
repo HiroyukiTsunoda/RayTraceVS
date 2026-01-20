@@ -85,6 +85,8 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
     float roughness = 0.5;  // Default roughness
     float transmission = 0.0;
     float ior = 1.5;
+    float specular = 0.5;   // Specular intensity
+    float3 emission = float3(0.0, 0.0, 0.0);  // Emissive color
     
     if (attribs.objectType == OBJECT_TYPE_SPHERE)
     {
@@ -94,6 +96,8 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
         roughness = s.roughness;
         transmission = s.transmission;
         ior = s.ior;
+        specular = s.specular;
+        // emission = s.emission; // TEST: temporarily disabled
     }
     else if (attribs.objectType == OBJECT_TYPE_PLANE)
     {
@@ -102,6 +106,8 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
         metallic = p.metallic;
         roughness = p.roughness;
         transmission = 0.0;
+        specular = p.specular;
+        // emission = p.emission; // TEST: temporarily disabled
         
         // Checkerboard pattern for floor (world space coordinates)
         // Use hitPosition.xz directly for horizontal floor
@@ -122,10 +128,11 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
         roughness = b.roughness;
         transmission = b.transmission;
         ior = b.ior;
+        specular = b.specular;
+        // emission = b.emission; // TEST: temporarily disabled
     }
     
     bool isGlass = transmission > 0.01;
-    bool isMetal = metallic > 0.5;
     
     // Glass (sphere or box) with Fresnel and reflection/refraction
     if (isGlass && (attribs.objectType == OBJECT_TYPE_SPHERE || attribs.objectType == OBJECT_TYPE_BOX))
@@ -144,6 +151,22 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
         if (!tir)
         {
             refractDir = normalize(refractDir);
+        }
+        
+        // Apply roughness perturbation for frosted glass effect
+        if (roughness > 0.01)
+        {
+            float2 roughSeed = hitPosition.xy * 1000.0 + float2(payload.depth, payload.depth * 0.5);
+            
+            // Perturb reflection direction
+            reflectDir = PerturbReflection(reflectDir, N, roughness, roughSeed);
+            
+            // Perturb refraction direction (use negative normal since refraction goes through)
+            if (!tir)
+            {
+                float2 refractSeed = roughSeed + float2(123.456, 789.012);
+                refractDir = PerturbReflection(refractDir, -N, roughness, refractSeed);
+            }
         }
         
         float3 reflectColor = float3(0, 0, 0);
@@ -264,6 +287,50 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
         // Blend refraction and reflection using Fresnel
         payload.color = lerp(tintedRefract, reflectColor, fresnel);
         
+        // ★ Specular highlight for glass surface
+        if (specular > 0.01)
+        {
+            float3 specularHighlight = float3(0, 0, 0);
+            float3 viewDir = -rayDir;
+            
+            for (uint li = 0; li < Scene.NumLights; li++)
+            {
+                LightData light = Lights[li];
+                if (light.type == LIGHT_TYPE_AMBIENT)
+                    continue;
+                
+                float3 lightDir;
+                float attenuation = 1.0;
+                
+                if (light.type == LIGHT_TYPE_DIRECTIONAL)
+                {
+                    lightDir = normalize(-light.position);
+                }
+                else // POINT
+                {
+                    lightDir = normalize(light.position - hitPosition);
+                    float lightDist = length(light.position - hitPosition);
+                    attenuation = 1.0 / (1.0 + lightDist * lightDist * 0.01);
+                }
+                
+                float ndotl = max(0.0, dot(N, lightDir));
+                if (ndotl > 0.0)
+                {
+                    float3 halfDir = normalize(lightDir + viewDir);
+                    // Glass has high specular exponent (smooth surface)
+                    float shininess = max(64.0, 512.0 * (1.0 - roughness));
+                    float spec = pow(max(0.0, dot(N, halfDir)), shininess);
+                    
+                    // Fresnel for specular
+                    float specFresnel = FresnelSchlick(max(0.0, dot(halfDir, viewDir)), f0);
+                    specularHighlight += light.color.rgb * light.intensity * spec * specFresnel * attenuation;
+                }
+            }
+            
+            // Add specular highlight to final color
+            payload.color += specularHighlight * specular * (1.0 - roughness);
+        }
+        
         // For secondary rays only: ensure minimum brightness to prevent black artifacts
         if (payload.depth > 0)
         {
@@ -300,14 +367,33 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
         return;
     }
     
-    // Metal material with roughness-based reflection blur
-    if (isMetal && payload.depth < maxBounces)
+    // ============================================
+    // Universal PBR Shading (Metallic-Roughness Workflow)
+    // ============================================
+    // F0: 非金属 = 0.04, 金属 = baseColor, 連続補間
+    // diffuseColor = baseColor * (1 - metallic)
+    // ============================================
+    
+    float3 N = normal;
+    float3 V = -rayDir;
+    
+    // Universal PBR: F0 interpolation based on metallic
+    // Non-metal: F0 = 0.04 (dielectric)
+    // Metal: F0 = baseColor
+    float3 F0 = lerp(0.04.xxx, color.rgb, metallic);
+    
+    // Diffuse color (metals have no diffuse)
+    float3 diffuseColor = color.rgb * (1.0 - metallic);
+    
+    // Reflection for metallic surfaces (scaled by metallic value)
+    float3 reflectColor = float3(0, 0, 0);
+    if (metallic > 0.1 && payload.depth < maxBounces)
     {
         float3 reflectDir = reflect(rayDir, normal);
         
-        // Apply roughness perturbation
-        float2 seed = hitPosition.xy * 1000.0 + float2(payload.depth, payload.depth * 0.5);
-        float3 perturbedDir = PerturbReflection(reflectDir, normal, roughness, seed);
+        // Apply roughness perturbation for blurry reflections
+        float2 reflectSeed = hitPosition.xy * 1000.0 + float2(payload.depth, payload.depth * 0.5);
+        float3 perturbedDir = PerturbReflection(reflectDir, normal, roughness, reflectSeed);
         
         RayDesc reflectRay;
         reflectRay.Origin = hitPosition + normal * 0.01;
@@ -320,7 +406,6 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
         reflectPayload.depth = payload.depth + 1;
         reflectPayload.hit = 0;
         reflectPayload.padding = 0.0;
-        // Initialize NRD fields
         reflectPayload.diffuseRadiance = float3(0, 0, 0);
         reflectPayload.specularRadiance = float3(0, 0, 0);
         reflectPayload.hitDistance = 10000.0;
@@ -339,65 +424,23 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
         
         TraceRay(SceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, reflectRay, reflectPayload);
         
-        float3 reflectColor = reflectPayload.color * color.rgb;
-        float3 diffuseColor = float3(0, 0, 0);
-        
-        // For rough metals, blend with a diffuse-like component
-        if (roughness > 0.1)
-        {
-            // Simple diffuse lighting for rough metal blend
-            float3 lightDir = normalize(Scene.LightPosition - hitPosition);
-            float diff = max(0.0, dot(normal, lightDir));
-            diffuseColor = color.rgb * diff * 0.5 + color.rgb * 0.1;  // diffuse + ambient
-            
-            float diffuseBlend = roughness * roughness;  // Perceptually linear
-            reflectColor = lerp(reflectColor, diffuseColor, diffuseBlend * 0.5);
-        }
-        
-        payload.color = reflectColor;
-        
-        // NRD outputs for metal (primary rays only)
-        if (payload.depth == 0)
-        {
-            float hitDistance = RayTCurrent();
-            // For metal, diffuseRadiance contains the FULL reflection (already colored)
-            // This is what we see - metallic reflection with the metal's color
-            payload.diffuseRadiance = reflectColor;  // Full metal appearance
-            payload.specularRadiance = float3(0, 0, 0);  // Already included above
-            payload.hitDistance = hitDistance;
-            payload.worldNormal = normal;
-            payload.roughness = roughness;
-            payload.worldPosition = hitPosition;
-            payload.viewZ = hitDistance;
-            payload.metallic = 1.0;
-            payload.albedo = color.rgb;
-            
-            // Calculate shadow for metal surface
-            uint shadowSeed = uint(hitPosition.x * 12345.0 + hitPosition.y * 67890.0);
-            SoftShadowResult sigmaShadow;
-            if (GetPrimaryShadowForSigma(hitPosition, normal, shadowSeed, sigmaShadow))
-            {
-                payload.shadowVisibility = sigmaShadow.visibility;
-                payload.shadowPenumbra = sigmaShadow.penumbra;
-                payload.shadowDistance = sigmaShadow.occluderDistance;
-            }
-            else
-            {
-                payload.shadowVisibility = 1.0;
-                payload.shadowPenumbra = 0.0;
-                payload.shadowDistance = NRD_FP16_MAX;
-            }
-        }
-        return;
+        // Reflection color tinted by material color (for metals)
+        reflectColor = reflectPayload.color * color.rgb;
     }
     
-    // Diffuse material with specular highlight and soft shadows
-    float3 ambient = color.rgb * 0.2;
-    float3 diffuse = float3(0, 0, 0);
-    float3 diffuseNoShadow = float3(0, 0, 0);
-    float3 specular = float3(0, 0, 0);
+    // Direct lighting accumulation
+    float3 ambient = float3(0, 0, 0);
+    float3 directDiffuse = float3(0, 0, 0);
+    float3 directSpecular = float3(0, 0, 0);
     
-    // Process all lights with soft shadows
+    // Track the strongest shadow for SIGMA denoiser
+    SoftShadowResult bestShadowForSigma;
+    bestShadowForSigma.visibility = 1.0;
+    bestShadowForSigma.penumbra = 0.0;
+    bestShadowForSigma.occluderDistance = NRD_FP16_MAX;
+    float bestShadowWeight = -1.0;
+    
+    // Process all lights with Universal PBR BRDF
     if (Scene.NumLights > 0)
     {
         for (uint li = 0; li < Scene.NumLights; li++)
@@ -406,40 +449,64 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
             
             if (light.type == LIGHT_TYPE_AMBIENT)
             {
-                ambient += color.rgb * light.color.rgb * light.intensity;
+                // Ambient light affects both diffuse and metallic surfaces
+                ambient += light.color.rgb * light.intensity * lerp(diffuseColor, color.rgb * 0.3, metallic);
             }
             else
             {
-                // Calculate soft shadow visibility
-                SoftShadowResult shadow = CalculateSoftShadow(hitPosition, normal, light, seed);
+                float3 L;
+                float attenuation = 1.0;
                 
-                if (shadow.visibility > 0.0)
+                if (light.type == LIGHT_TYPE_DIRECTIONAL)
                 {
-                    float3 lightDir;
-                    float attenuation = 1.0;
+                    L = normalize(-light.position);
+                }
+                else // LIGHT_TYPE_POINT
+                {
+                    L = normalize(light.position - hitPosition);
+                    float lightDist = length(light.position - hitPosition);
+                    attenuation = 1.0 / (1.0 + lightDist * lightDist * 0.01);
+                }
+                
+                float NdotL = max(dot(N, L), 0.0);
+                
+                if (NdotL > 0.0)
+                {
+                    // Calculate soft shadow
+                    SoftShadowResult shadow = CalculateSoftShadow(hitPosition, normal, light, seed);
                     
-                    if (light.type == LIGHT_TYPE_DIRECTIONAL)
+                    // Track strongest shadow for SIGMA
+                    float weight = NdotL * attenuation * light.intensity;
+                    if (weight > bestShadowWeight)
                     {
-                        lightDir = normalize(-light.position);
-                    }
-                    else // LIGHT_TYPE_POINT
-                    {
-                        lightDir = normalize(light.position - hitPosition);
-                        float lightDist = length(light.position - hitPosition);
-                        attenuation = 1.0 / (1.0 + lightDist * lightDist * 0.01);
+                        bestShadowWeight = weight;
+                        bestShadowForSigma = shadow;
                     }
                     
-                    // Diffuse component
-                    float diff = max(0.0, dot(normal, lightDir));
-                    diffuse += color.rgb * light.color.rgb * light.intensity * diff * attenuation * shadow.visibility * 0.8;
-                    diffuseNoShadow += color.rgb * light.color.rgb * light.intensity * diff * attenuation * 0.8;
+                    float3 radiance = light.color.rgb * light.intensity * attenuation * shadow.visibility;
                     
-                    // Specular component (Blinn-Phong)
-                    float3 viewDir = -rayDir;
-                    float3 halfDir = normalize(lightDir + viewDir);
-                    float shininess = max(1.0, 128.0 * (1.0 - roughness));
-                    float spec = pow(max(0.0, dot(normal, halfDir)), shininess);
-                    specular += light.color.rgb * light.intensity * spec * (1.0 - roughness) * 0.3 * attenuation * shadow.visibility;
+                    // Half vector
+                    float3 H = normalize(V + L);
+                    float NdotV = max(dot(N, V), 0.001);
+                    float NdotH = max(dot(N, H), 0.0);
+                    float VdotH = max(dot(V, H), 0.0);
+                    
+                    // Fresnel
+                    float3 F = Fresnel_Schlick3(VdotH, F0);
+                    
+                    // Cook-Torrance Specular BRDF
+                    float D = GGX_D(NdotH, max(roughness, 0.04));  // Clamp roughness to avoid division issues
+                    float G = Smith_G(NdotV, NdotL, roughness);
+                    float3 specBRDF = (D * G * F) / (4.0 * NdotV * NdotL + 0.001);
+                    
+                    // Diffuse BRDF (energy conserving)
+                    // kD = (1 - F) * (1 - metallic) ensures energy conservation
+                    float3 kD = (1.0 - F) * (1.0 - metallic);
+                    float3 diffBRDF = kD * diffuseColor / PI;
+                    
+                    // Accumulate lighting
+                    directDiffuse += diffBRDF * radiance * NdotL;
+                    directSpecular += specBRDF * radiance * NdotL;
                 }
             }
         }
@@ -447,46 +514,70 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
     else
     {
         // Fallback: use Scene.LightPosition for backward compatibility
-        float3 lightDir = normalize(Scene.LightPosition - hitPosition);
+        float3 L = normalize(Scene.LightPosition - hitPosition);
         float lightDist = length(Scene.LightPosition - hitPosition);
+        float attenuation = 1.0 / (1.0 + lightDist * lightDist * 0.01);
         
-        // Create temporary light data for soft shadow calculation
+        float NdotL = max(dot(N, L), 0.0);
+        
+        // Create temporary light data for shadow calculation
         LightData fallbackLight;
         fallbackLight.position = Scene.LightPosition;
         fallbackLight.intensity = Scene.LightIntensity;
         fallbackLight.color = Scene.LightColor;
         fallbackLight.type = LIGHT_TYPE_POINT;
-        fallbackLight.radius = 0.0;  // Hard shadow for fallback
+        fallbackLight.radius = 0.0;
         fallbackLight.softShadowSamples = 1.0;
         fallbackLight.padding = 0.0;
         
         SoftShadowResult shadow = CalculateSoftShadow(hitPosition, normal, fallbackLight, seed);
+        bestShadowForSigma = shadow;
         
-        if (shadow.visibility > 0.0)
+        if (NdotL > 0.0)
         {
-            float diff = max(0.0, dot(normal, lightDir));
-            diffuse = color.rgb * diff * 0.8 * shadow.visibility;
-            diffuseNoShadow = color.rgb * diff * 0.8;
+            float3 radiance = Scene.LightColor.rgb * Scene.LightIntensity * attenuation * shadow.visibility;
             
-            float3 viewDir = -rayDir;
-            float3 halfDir = normalize(lightDir + viewDir);
-            float shininess = max(1.0, 128.0 * (1.0 - roughness));
-            float spec = pow(max(0.0, dot(normal, halfDir)), shininess);
-            specular = Scene.LightColor.rgb * Scene.LightIntensity * spec * (1.0 - roughness) * 0.3 * shadow.visibility;
+            float3 H = normalize(V + L);
+            float NdotV = max(dot(N, V), 0.001);
+            float NdotH = max(dot(N, H), 0.0);
+            float VdotH = max(dot(V, H), 0.0);
+            
+            float3 F = Fresnel_Schlick3(VdotH, F0);
+            float D = GGX_D(NdotH, max(roughness, 0.04));
+            float G = Smith_G(NdotV, NdotL, roughness);
+            float3 specBRDF = (D * G * F) / (4.0 * NdotV * NdotL + 0.001);
+            
+            float3 kD = (1.0 - F) * (1.0 - metallic);
+            float3 diffBRDF = kD * diffuseColor / PI;
+            
+            directDiffuse = diffBRDF * radiance * NdotL;
+            directSpecular = specBRDF * radiance * NdotL;
         }
+        
+        // Simple ambient
+        ambient = lerp(diffuseColor, color.rgb * 0.3, metallic) * 0.2;
     }
     
-    payload.color = saturate(ambient + diffuse + specular);
+    // Combine reflection and direct lighting
+    // Higher metallic = more reflection, less diffuse
+    // Higher roughness = less sharp reflection
+    float reflectionWeight = metallic * (1.0 - roughness * 0.5);
+    float directWeight = 1.0 - reflectionWeight * 0.5;
     
-    // NRD outputs for diffuse (primary rays only)
+    float3 finalColor = ambient 
+                      + directDiffuse * directWeight 
+                      + directSpecular 
+                      + reflectColor * reflectionWeight;
+                      // + emission removed for TEST
+    
+    payload.color = saturate(finalColor);
+    
+    // NRD outputs (primary rays only)
     if (payload.depth == 0)
     {
         float hitDistance = RayTCurrent();
-        // Output UNSHADOWED full lighting (diffuse + specular) WITH albedo
-        // This will be used as base image, SIGMA shadow will be applied in Composite
-        // Include specular so metal surfaces look correct
-        payload.diffuseRadiance = (ambient + diffuseNoShadow) * color.rgb + specular;
-        payload.specularRadiance = specular;
+        payload.diffuseRadiance = ambient + directDiffuse * directWeight + reflectColor * reflectionWeight;
+        payload.specularRadiance = directSpecular;
         payload.hitDistance = hitDistance;
         payload.worldNormal = normal;
         payload.roughness = roughness;
@@ -495,20 +586,9 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
         payload.metallic = metallic;
         payload.albedo = color.rgb;
         
-        // SIGMA shadow input (single primary light)
-        SoftShadowResult sigmaShadow;
-        if (GetPrimaryShadowForSigma(hitPosition, normal, seed, sigmaShadow))
-        {
-            // Use direct shadow visibility from ray trace
-            payload.shadowVisibility = sigmaShadow.visibility;
-            payload.shadowPenumbra = sigmaShadow.penumbra;
-            payload.shadowDistance = sigmaShadow.occluderDistance;
-        }
-        else
-        {
-            payload.shadowVisibility = 1.0;
-            payload.shadowPenumbra = 0.0;
-            payload.shadowDistance = NRD_FP16_MAX;
-        }
+        // SIGMA shadow input
+        payload.shadowVisibility = bestShadowForSigma.visibility;
+        payload.shadowPenumbra = bestShadowForSigma.penumbra;
+        payload.shadowDistance = bestShadowForSigma.occluderDistance;
     }
 }

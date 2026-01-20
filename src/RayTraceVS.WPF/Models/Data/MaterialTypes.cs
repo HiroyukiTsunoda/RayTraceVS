@@ -14,6 +14,7 @@ namespace RayTraceVS.WPF.Models.Data
         public float Transmission;
         public float IOR;
         public Vector4 Emission;
+        public float Specular;  // Specular intensity (0.0 = none, 1.0 = full)
 
         /// <summary>
         /// デフォルトマテリアル（白色Diffuse）
@@ -25,7 +26,8 @@ namespace RayTraceVS.WPF.Models.Data
             Roughness = 0.5f,
             Transmission = 0.0f,
             IOR = 1.5f,
-            Emission = Vector4.Zero
+            Emission = Vector4.Zero,
+            Specular = 0.5f
         };
     }
 }

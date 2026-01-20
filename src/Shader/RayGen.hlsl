@@ -190,11 +190,12 @@ void RayGen()
     float3 finalColor = accumulatedColor * invSampleCount;
     RenderTarget[launchIndex] = float4(finalColor, 1.0);
     
-    // Output NRD G-Buffer data (always enabled for denoising)
-    GBuffer_DiffuseRadianceHitDist[launchIndex] = float4(accumulatedDiffuse * invSampleCount, accumulatedHitDist * invSampleCount);
-    // CRITICAL: Write finalColor to specular buffer for mirror bypass
-    // This ensures glass/mirror surfaces bypass NRD and show correct refraction
-    GBuffer_SpecularRadianceHitDist[launchIndex] = float4(finalColor, accumulatedHitDist * invSampleCount);
+    // Output NRD G-Buffer data for SIGMA workflow
+    // diffuseRadiance = lighting WITHOUT shadow (albedo handling depends on material shader)
+    // Shadow will be applied from SIGMA denoiser in Composite.hlsl
+    float3 diffuseForNRD = accumulatedDiffuse * invSampleCount;
+    GBuffer_DiffuseRadianceHitDist[launchIndex] = float4(diffuseForNRD, accumulatedHitDist * invSampleCount);
+    GBuffer_SpecularRadianceHitDist[launchIndex] = float4(accumulatedSpecular * invSampleCount, accumulatedHitDist * invSampleCount);
     
     // For primary normal/roughness/albedo, use hit data if available, else defaults
     float3 worldNormal = anyHit ? primaryNormal : float3(0, 1, 0);
@@ -211,31 +212,57 @@ void RayGen()
     
     // Calculate correct linear view depth (ViewZ)
     // NRD/SIGMA expects POSITIVE view depth (distance along camera forward)
+    // IMPORTANT: For miss pixels, use a large value (not 0) so SIGMA can properly
+    // handle edge filtering. Zero viewZ causes discontinuities that confuse SIGMA.
     float outViewZ;
+    float outAlbedoAlpha;  // 1.0 for hits, 0.0 for misses (used in Composite for sky detection)
     if (anyHit)
     {
         float3 hitOffset = primaryPosition - cameraPos;
         outViewZ = dot(hitOffset, cameraForward);  // Positive distance along forward
         outViewZ = max(outViewZ, 0.01);  // Minimum positive depth (avoid zero)
+        outAlbedoAlpha = 1.0;
     }
     else
     {
-        outViewZ = 10000.0;  // Far plane for misses (positive, large)
+        // Use large depth for misses - this helps SIGMA handle edges properly
+        // by avoiding sharp depth discontinuities (0 vs large value)
+        outViewZ = 10000.0;  // Far distance for sky/miss pixels
+        outAlbedoAlpha = 0.0;  // Mark as miss for Composite shader
     }
     
     // Pack normal and roughness for NRD (using view space normal)
     GBuffer_NormalRoughness[launchIndex] = NRD_FrontEnd_PackNormalAndRoughness(viewSpaceNormal, outRoughness);
     GBuffer_ViewZ[launchIndex] = outViewZ;
-    GBuffer_Albedo[launchIndex] = float4(outAlbedo, 1.0);
+    GBuffer_Albedo[launchIndex] = float4(outAlbedo, outAlbedoAlpha);
     
     // SIGMA shadow inputs - Use RAW PRIMARY SAMPLE data, NOT averaged!
     // SIGMA expects noisy single-sample input for temporal reconstruction
     // Averaging before SIGMA destroys the temporal coherence SIGMA needs
     
-    // Penumbra: use fixed value for testing SIGMA blur behavior
-    // If SIGMA blurs with this, then penumbra calculation is the issue
-    // Typical values: 1-10 pixels of penumbra radius
-    float sigmaPenumbra = 3.0;  // Fixed 3px penumbra for testing
+    // SIGMA penumbra encoding:
+    // - NRD_FP16_MAX (65504) = fully lit (no shadow, no occluder)
+    // - Small value (0.1 to ~100) = shadow with penumbra size in world units
+    // IMPORTANT: SIGMA expects penumbra to be much smaller than NRD_FP16_MAX
+    // Values > ~1000 are treated as "almost no shadow"
+    float sigmaPenumbra;
+    if (primaryShadowVisibility > 0.99)
+    {
+        sigmaPenumbra = NRD_FP16_MAX;  // Fully lit - no shadow
+    }
+    else
+    {
+        // Shadow area - clamp penumbra to reasonable range for SIGMA
+        // primaryShadowPenumbra can be very large due to light size calculations
+        // Clamp to max 100 to ensure SIGMA recognizes it as shadow
+        sigmaPenumbra = clamp(primaryShadowPenumbra, 0.1, 100.0);
+    }
+    
+    // Sanitize shadow values before SIGMA - NaN/Inf or out-of-range values cause white sparkles
+    primaryShadowVisibility = saturate(primaryShadowVisibility);
+    primaryShadowVisibility = isfinite(primaryShadowVisibility) ? primaryShadowVisibility : 1.0;
+    sigmaPenumbra = isfinite(sigmaPenumbra) ? sigmaPenumbra : NRD_FP16_MAX;
+    
     GBuffer_ShadowData[launchIndex] = float2(sigmaPenumbra, primaryShadowVisibility);
     
     // Pack translucency using NRD format:

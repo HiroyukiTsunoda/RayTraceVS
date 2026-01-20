@@ -72,22 +72,48 @@ namespace RayTraceVS::DXEngine
     };
 
     // ============================================
+    // Spatial Hash for Photon Gathering
+    // ============================================
+    
+    static constexpr UINT PHOTON_HASH_TABLE_SIZE = 65536;   // 2^16 hash buckets
+    static constexpr UINT MAX_PHOTONS_PER_CELL = 64;        // Max photons per cell
+    
+    // Photon hash cell structure (must match HLSL)
+    struct PhotonHashCell
+    {
+        UINT Count;
+        UINT PhotonIndices[MAX_PHOTONS_PER_CELL];
+    };
+    
+    // Constants for photon hash compute shader
+    struct alignas(16) PhotonHashConstants
+    {
+        UINT PhotonCount;
+        float CellSize;
+        float Padding[2];
+    };
+
+    // ============================================
     // AoS (Array of Structures) - Original format for Compute Shader fallback
     // ============================================
     
-    // GPU sphere data (with PBR material)
+    // GPU sphere data (with PBR material) - 64 bytes, 16-byte aligned (TEST: emission removed)
     struct alignas(16) GPUSphere
     {
-        XMFLOAT3 Center;
-        float Radius;
-        XMFLOAT4 Color;
-        float Metallic;
-        float Roughness;
-        float Transmission;
-        float IOR;
+        XMFLOAT3 Center;        // 12
+        float Radius;           // 4  -> 16
+        XMFLOAT4 Color;         // 16 -> 32
+        float Metallic;         // 4
+        float Roughness;        // 4
+        float Transmission;     // 4
+        float IOR;              // 4  -> 48
+        float Specular;         // 4
+        float Padding1;         // 4
+        float Padding2;         // 4
+        float Padding3;         // 4  -> 64
     };
 
-    // GPU plane data (with PBR material)
+    // GPU plane data (with PBR material) - 64 bytes (TEST: emission removed)
     struct alignas(16) GPUPlane
     {
         XMFLOAT3 Position;
@@ -97,22 +123,26 @@ namespace RayTraceVS::DXEngine
         XMFLOAT4 Color;
         float Transmission;
         float IOR;
+        float Specular;     // Specular intensity (0.0 = none, 1.0 = full)
         float Padding1;
-        float Padding2;
     };
 
-    // GPU box data (with PBR material)
+    // GPU box data (with PBR material) - 80 bytes, 16-byte aligned (TEST: emission removed)
     struct alignas(16) GPUBox
     {
-        XMFLOAT3 Center;
-        float Padding1;
-        XMFLOAT3 Size;       // half-extents
-        float Padding2;
-        XMFLOAT4 Color;
-        float Metallic;
-        float Roughness;
-        float Transmission;
-        float IOR;
+        XMFLOAT3 Center;        // 12
+        float Padding1;         // 4  -> 16
+        XMFLOAT3 Size;          // 12
+        float Padding2;         // 4  -> 32
+        XMFLOAT4 Color;         // 16 -> 48
+        float Metallic;         // 4
+        float Roughness;        // 4
+        float Transmission;     // 4
+        float IOR;              // 4  -> 64
+        float Specular;         // 4
+        float Padding3;         // 4
+        float Padding4;         // 4
+        float Padding5;         // 4  -> 80
     };
 
     // ============================================
@@ -336,6 +366,27 @@ namespace RayTraceVS::DXEngine
         UINT photonsPerLight = 65536;
         bool causticsEnabled = true;
         
+        // ============================================
+        // Photon Hash Table Resources (Spatial Hash)
+        // ============================================
+        
+        // Hash table buffer
+        ComPtr<ID3D12Resource> photonHashTableBuffer;
+        
+        // Constants buffer for hash compute shaders
+        ComPtr<ID3D12Resource> photonHashConstantBuffer;
+        PhotonHashConstants* mappedPhotonHashConstants = nullptr;
+        
+        // Compute pipeline for hash table construction
+        ComPtr<ID3D12RootSignature> photonHashRootSignature;
+        ComPtr<ID3D12PipelineState> photonHashClearPipeline;
+        ComPtr<ID3D12PipelineState> photonHashBuildPipeline;
+        ComPtr<ID3DBlob> photonHashClearShader;
+        ComPtr<ID3DBlob> photonHashBuildShader;
+        
+        // Descriptor heap for hash compute shaders
+        ComPtr<ID3D12DescriptorHeap> photonHashDescriptorHeap;
+        
         // Cached scene pointer for acceleration structure rebuild
         Scene* lastScene = nullptr;
         bool needsAccelerationStructureRebuild = true;
@@ -363,6 +414,19 @@ namespace RayTraceVS::DXEngine
         ComPtr<ID3D12PipelineState> compositePipelineState;
         ComPtr<ID3D12RootSignature> compositeRootSignature;
         ComPtr<ID3D12DescriptorHeap> compositeDescriptorHeap;
+        
+        // ============================================
+        // Custom Shadow Denoiser (replaces SIGMA)
+        // ============================================
+        
+        ComPtr<ID3D12PipelineState> shadowDenoisePipelineState;
+        ComPtr<ID3D12RootSignature> shadowDenoiseRootSignature;
+        ComPtr<ID3D12DescriptorHeap> shadowDenoiseDescriptorHeap;
+        ComPtr<ID3D12Resource> shadowDenoiseConstantBuffer;
+        bool useCustomShadowDenoiser = true;  // Use custom denoiser instead of SIGMA
+        
+        bool CreateShadowDenoisePipeline();
+        void ApplyCustomShadowDenoising();
 
         // ============================================
         // Helper Functions
@@ -398,6 +462,10 @@ namespace RayTraceVS::DXEngine
         void EmitPhotons(Scene* scene);
         void UpdatePhotonDescriptors();
         void ClearPhotonMap();
+        
+        // Photon hash table (spatial hash for O(1) lookup)
+        bool CreatePhotonHashResources();
+        void BuildPhotonHashTable();
         
         // Denoiser (NRD)
         bool InitializeDenoiser(UINT width, UINT height);

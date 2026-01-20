@@ -200,6 +200,10 @@ namespace RayTraceVS::DXEngine
             return false;
         if (!CreateTexture(m_gBuffer.ShadowTranslucency, DXGI_FORMAT_R16G16B16A16_FLOAT, L"GBuffer_ShadowTranslucency"))
             return false;
+        
+        // Create Object ID buffer for custom shadow denoiser
+        if (!CreateTexture(m_gBuffer.ObjectID, DXGI_FORMAT_R32_UINT, L"GBuffer_ObjectID"))
+            return false;
 
         // Create UAV descriptors for G-Buffer
         CD3DX12_CPU_DESCRIPTOR_HANDLE cpuHandle(m_descriptorHeap->GetCPUDescriptorHandleForHeapStart());
@@ -239,6 +243,11 @@ namespace RayTraceVS::DXEngine
         // UAV 6: ShadowTranslucency (for SIGMA)
         uavDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
         device->CreateUnorderedAccessView(m_gBuffer.ShadowTranslucency.Get(), nullptr, &uavDesc, cpuHandle);
+        cpuHandle.Offset(m_descriptorSize);
+        
+        // UAV 7: ObjectID (for custom shadow denoiser)
+        uavDesc.Format = DXGI_FORMAT_R32_UINT;
+        device->CreateUnorderedAccessView(m_gBuffer.ObjectID.Get(), nullptr, &uavDesc, cpuHandle);
 
         return true;
     }
@@ -853,8 +862,9 @@ namespace RayTraceVS::DXEngine
             sigmaSettings.lightDirection[2] = 0.0f;
             // Plane distance sensitivity (controls edge preservation)
             sigmaSettings.planeDistanceSensitivity = 0.02f;
-            // Maximum stabilization frames
-            sigmaSettings.maxStabilizedFrameNum = 5;
+            // Maximum stabilization frames - lower = less history, faster response to changes
+            // High values can cause white artifacts to persist at edges
+            sigmaSettings.maxStabilizedFrameNum = 2;
             
             nrd::SetDenoiserSettings(*m_nrdInstance, m_sigmaIdentifier, &sigmaSettings);
             LogToFile("NRD: SIGMA shadow denoiser settings applied");
@@ -1253,6 +1263,7 @@ namespace RayTraceVS::DXEngine
         m_gBuffer.MotionVectors.Reset();
         m_gBuffer.ShadowData.Reset();
         m_gBuffer.ShadowTranslucency.Reset();
+        m_gBuffer.ObjectID.Reset();
 
         m_output.DiffuseRadiance.Reset();
         m_output.SpecularRadiance.Reset();

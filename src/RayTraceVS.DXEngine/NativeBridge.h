@@ -41,6 +41,8 @@ namespace RayTraceVS::Interop::Bridge
         float roughness;    // 0.0 = smooth, 1.0 = rough
         float transmission; // 0.0 = opaque, 1.0 = transparent (glass)
         float ior;          // Index of Refraction (1.5 for glass)
+        float specular;     // Specular intensity (0.0 = none, 1.0 = full)
+        Vector3Native emission; // Emissive color (self-illumination)
     };
 
     struct CameraDataNative

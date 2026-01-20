@@ -113,10 +113,8 @@ namespace RayTraceVS.WPF.Services
                 nameof(DirectionalLightNode) => new DirectionalLightNode(),
                 nameof(MaterialBSDFNode) => new MaterialBSDFNode(),
                 nameof(ColorNode) => new ColorNode(),
-                nameof(DiffuseMaterialNode) => new DiffuseMaterialNode(),
-                nameof(GlassMaterialNode) => new GlassMaterialNode(),
-                nameof(MetalMaterialNode) => new MetalMaterialNode(),
                 nameof(EmissionMaterialNode) => new EmissionMaterialNode(),
+                nameof(UniversalPBRNode) => new UniversalPBRNode(),
                 nameof(SceneNode) => new SceneNode(),
                 nameof(Vector3Node) => new Vector3Node(),
                 nameof(Vector4Node) => new Vector4Node(),
@@ -207,27 +205,17 @@ namespace RayTraceVS.WPF.Services
                     properties["A"] = color.A;
                     break;
 
-                case DiffuseMaterialNode diffuse:
-                    properties["BaseColor"] = diffuse.BaseColor;
-                    properties["Roughness"] = diffuse.Roughness;
-                    break;
-
-                case GlassMaterialNode glass:
-                    properties["Color"] = glass.Color;
-                    properties["Roughness"] = glass.Roughness;
-                    properties["IOR"] = glass.IOR;
-                    properties["Transparency"] = glass.Transparency;
-                    break;
-
-                case MetalMaterialNode metal:
-                    properties["BaseColor"] = metal.BaseColor;
-                    properties["Roughness"] = metal.Roughness;
-                    break;
-
                 case EmissionMaterialNode emission:
                     properties["EmissionColor"] = emission.EmissionColor;
                     properties["Strength"] = emission.Strength;
                     properties["BaseColor"] = emission.BaseColor;
+                    break;
+
+                case UniversalPBRNode universalPBR:
+                    properties["BaseColor"] = universalPBR.BaseColor;
+                    properties["Metallic"] = universalPBR.Metallic;
+                    properties["Roughness"] = universalPBR.Roughness;
+                    properties["Emissive"] = universalPBR.Emissive;
                     break;
 
                 case SceneNode sceneNode:
@@ -419,31 +407,6 @@ namespace RayTraceVS.WPF.Services
                         color.A = Convert.ToSingle(a);
                     break;
 
-                case DiffuseMaterialNode diffuse:
-                    if (properties.TryGetValue("BaseColor", out var diffuseBaseColor))
-                        diffuse.BaseColor = ConvertToVector4(diffuseBaseColor);
-                    if (properties.TryGetValue("Roughness", out var diffuseRoughness))
-                        diffuse.Roughness = Convert.ToSingle(diffuseRoughness);
-                    break;
-
-                case GlassMaterialNode glass:
-                    if (properties.TryGetValue("Color", out var glassColor))
-                        glass.Color = ConvertToVector4(glassColor);
-                    if (properties.TryGetValue("Roughness", out var glassRoughness))
-                        glass.Roughness = Convert.ToSingle(glassRoughness);
-                    if (properties.TryGetValue("IOR", out var glassIor))
-                        glass.IOR = Convert.ToSingle(glassIor);
-                    if (properties.TryGetValue("Transparency", out var glassTransparency))
-                        glass.Transparency = Convert.ToSingle(glassTransparency);
-                    break;
-
-                case MetalMaterialNode metal:
-                    if (properties.TryGetValue("BaseColor", out var metalBaseColor))
-                        metal.BaseColor = ConvertToVector4(metalBaseColor);
-                    if (properties.TryGetValue("Roughness", out var metalRoughness))
-                        metal.Roughness = Convert.ToSingle(metalRoughness);
-                    break;
-
                 case EmissionMaterialNode emissionMat:
                     if (properties.TryGetValue("EmissionColor", out var emissionColor))
                         emissionMat.EmissionColor = ConvertToVector4(emissionColor);
@@ -451,6 +414,17 @@ namespace RayTraceVS.WPF.Services
                         emissionMat.Strength = Convert.ToSingle(strength);
                     if (properties.TryGetValue("BaseColor", out var emissionBaseColor))
                         emissionMat.BaseColor = ConvertToVector4(emissionBaseColor);
+                    break;
+
+                case UniversalPBRNode universalPBR:
+                    if (properties.TryGetValue("BaseColor", out var pbrBaseColor))
+                        universalPBR.BaseColor = ConvertToVector4(pbrBaseColor);
+                    if (properties.TryGetValue("Metallic", out var pbrMetallic))
+                        universalPBR.Metallic = Convert.ToSingle(pbrMetallic);
+                    if (properties.TryGetValue("Roughness", out var pbrRoughness))
+                        universalPBR.Roughness = Convert.ToSingle(pbrRoughness);
+                    if (properties.TryGetValue("Emissive", out var pbrEmissive))
+                        universalPBR.Emissive = ConvertToVector3(pbrEmissive);
                     break;
 
                 case SceneNode sceneNode:

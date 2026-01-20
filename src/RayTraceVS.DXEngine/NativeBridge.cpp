@@ -48,6 +48,8 @@ namespace RayTraceVS::Interop::Bridge
         material.roughness = m.roughness;
         material.transmission = m.transmission;
         material.ior = m.ior;
+        material.specular = m.specular;
+        material.emission = ToXMFLOAT3(m.emission);
         return material;
     }
 

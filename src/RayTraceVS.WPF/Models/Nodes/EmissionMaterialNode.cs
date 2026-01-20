@@ -11,20 +11,36 @@ namespace RayTraceVS.WPF.Models.Nodes
     /// </summary>
     public class EmissionMaterialNode : Node
     {
+        private Vector4 _emissionColor = new Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+        private float _strength = 1.0f;
+        private Vector4 _baseColor = new Vector4(0.0f, 0.0f, 0.0f, 1.0f);
+
         /// <summary>
         /// 発光色
         /// </summary>
-        public Vector4 EmissionColor { get; set; } = new Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+        public Vector4 EmissionColor
+        {
+            get => _emissionColor;
+            set { if (_emissionColor != value) { _emissionColor = value; MarkDirty(); } }
+        }
 
         /// <summary>
         /// 発光強度（0以上の値、1.0が標準）
         /// </summary>
-        public float Strength { get; set; } = 1.0f;
+        public float Strength
+        {
+            get => _strength;
+            set { if (_strength != value) { _strength = value; MarkDirty(); } }
+        }
 
         /// <summary>
         /// ベースカラー（発光していない部分の色）
         /// </summary>
-        public Vector4 BaseColor { get; set; } = new Vector4(0.0f, 0.0f, 0.0f, 1.0f);
+        public Vector4 BaseColor
+        {
+            get => _baseColor;
+            set { if (_baseColor != value) { _baseColor = value; MarkDirty(); } }
+        }
 
         public EmissionMaterialNode() : base("Emission", NodeCategory.Material)
         {
@@ -57,6 +73,8 @@ namespace RayTraceVS.WPF.Models.Nodes
                 emissionColor.W
             );
 
+            System.Diagnostics.Debug.WriteLine($"[EmissionMaterialNode] Evaluate: EmissionColor=({emissionColor.X:F2},{emissionColor.Y:F2},{emissionColor.Z:F2}), Strength={strength:F2}, Emission=({emission.X:F2},{emission.Y:F2},{emission.Z:F2}), BaseColor=({baseColor.X:F2},{baseColor.Y:F2},{baseColor.Z:F2})");
+
             return new MaterialData
             {
                 BaseColor = baseColor,
@@ -64,7 +82,8 @@ namespace RayTraceVS.WPF.Models.Nodes
                 Roughness = 1.0f,
                 Transmission = 0.0f,
                 IOR = 1.5f,
-                Emission = emission
+                Emission = emission,
+                Specular = 0.5f
             };
         }
     }

@@ -38,6 +38,8 @@ namespace RayTraceVS::DXEngine
         ComPtr<ID3D12Resource> ShadowTranslucency;       // RGBA16F: shadow translucency for SIGMA
         // Raw specular backup (copy before NRD corrupts the original)
         ComPtr<ID3D12Resource> RawSpecularBackup;        // RGBA16F: copy of SpecularRadianceHitDist before NRD
+        // Object ID for custom shadow denoiser
+        ComPtr<ID3D12Resource> ObjectID;                 // R32UI: object type + index
     };
 
     // Denoised output structure

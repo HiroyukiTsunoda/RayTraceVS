@@ -28,7 +28,7 @@ namespace RayTraceVS::Interop
         Vector4(float x, float y, float z, float w) : X(x), Y(y), Z(z), W(w) {}
     };
 
-    // Sphere data (with PBR material)
+    // Sphere data (with PBR material) - 80 bytes, 16-byte aligned
     [StructLayout(LayoutKind::Sequential)]
     public value struct SphereData
     {
@@ -39,6 +39,12 @@ namespace RayTraceVS::Interop
         float Roughness;    // 0.0 = smooth, 1.0 = rough
         float Transmission; // 0.0 = opaque, 1.0 = transparent (glass)
         float IOR;          // Index of Refraction (1.5 for glass)
+        float Specular;     // Specular intensity (0.0 = none, 1.0 = full)
+        float Padding1;
+        float Padding2;
+        float Padding3;
+        Vector3 Emission;   // Emissive color (self-illumination)
+        float Padding4;
     };
 
     // Plane data (with PBR material)
@@ -46,25 +52,37 @@ namespace RayTraceVS::Interop
     public value struct PlaneData
     {
         Vector3 Position;
-        Vector3 Normal;
-        Vector4 Color;
         float Metallic;
+        Vector3 Normal;
         float Roughness;
+        Vector4 Color;
         float Transmission;
         float IOR;
+        float Specular;     // Specular intensity (0.0 = none, 1.0 = full)
+        float Padding1;     // Padding for 16-byte alignment
+        Vector3 Emission;   // Emissive color (self-illumination)
+        float Padding2;
     };
 
-    // Box data (with PBR material)
+    // Box data (with PBR material) - 96 bytes, 16-byte aligned
     [StructLayout(LayoutKind::Sequential)]
     public value struct BoxData
     {
         Vector3 Center;
-        Vector3 Size;      // half-extents (width/2, height/2, depth/2)
+        float Padding1;
+        Vector3 Size;       // half-extents (width/2, height/2, depth/2)
+        float Padding2;
         Vector4 Color;
         float Metallic;
         float Roughness;
         float Transmission;
         float IOR;
+        float Specular;     // Specular intensity (0.0 = none, 1.0 = full)
+        float Padding3;
+        float Padding4;
+        float Padding5;
+        Vector3 Emission;   // Emissive color (self-illumination)
+        float Padding6;
     };
 
     // Camera data

@@ -366,6 +366,16 @@ namespace RayTraceVS::DXEngine
         if (!scene || !mappedConstantData)
             return;
 
+        // DEBUG: Log struct sizes to verify alignment
+        static bool loggedOnce = false;
+        if (!loggedOnce) {
+            char buf[256];
+            sprintf_s(buf, "STRUCT SIZES: GPUSphere=%zu, GPUPlane=%zu, GPUBox=%zu", 
+                sizeof(GPUSphere), sizeof(GPUPlane), sizeof(GPUBox));
+            LogToFile(buf);
+            loggedOnce = true;
+        }
+
         auto device = dxContext->GetDevice();
         auto commandList = dxContext->GetCommandList();
 
@@ -453,6 +463,10 @@ namespace RayTraceVS::DXEngine
                 gs.Roughness = mat.roughness;
                 gs.Transmission = mat.transmission;
                 gs.IOR = mat.ior;
+                gs.Specular = mat.specular;
+                gs.Padding1 = 0;
+                gs.Padding2 = 0;
+                gs.Padding3 = 0;
                 spheres.push_back(gs);
             }
             else if (auto plane = dynamic_cast<Plane*>(obj.get()))
@@ -466,8 +480,8 @@ namespace RayTraceVS::DXEngine
                 gp.Roughness = mat.roughness;
                 gp.Transmission = mat.transmission;
                 gp.IOR = mat.ior;
+                gp.Specular = mat.specular;
                 gp.Padding1 = 0;
-                gp.Padding2 = 0;
                 planes.push_back(gp);
             }
             else if (auto box = dynamic_cast<Box*>(obj.get()))
@@ -483,6 +497,10 @@ namespace RayTraceVS::DXEngine
                 gb.Roughness = mat.roughness;
                 gb.Transmission = mat.transmission;
                 gb.IOR = mat.ior;
+                gb.Specular = mat.specular;
+                gb.Padding3 = 0;
+                gb.Padding4 = 0;
+                gb.Padding5 = 0;
                 Boxes.push_back(gb);
             }
         }
@@ -831,7 +849,16 @@ namespace RayTraceVS::DXEngine
             if (CreatePhotonStateObject())
             {
                 CreatePhotonShaderTables();
-                LogToFile("Photon mapping (caustics) initialized successfully");
+                
+                // Initialize spatial hash resources for O(1) photon lookup
+                if (CreatePhotonHashResources())
+                {
+                    LogToFile("Photon mapping with spatial hash initialized successfully");
+                }
+                else
+                {
+                    LogToFile("Photon mapping initialized (without spatial hash - will use brute force)");
+                }
             }
         }
         
@@ -854,8 +881,9 @@ namespace RayTraceVS::DXEngine
         // [7] UAV - Photon map buffer (u1)
         // [8] UAV - Photon counter (u2)
         // [9-16] UAV - G-Buffer for NRD (u3-u10)
+        // [17] UAV - Photon hash table (u11)
         
-        CD3DX12_DESCRIPTOR_RANGE1 ranges[17];
+        CD3DX12_DESCRIPTOR_RANGE1 ranges[18];
         ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);  // u0 - Output
         ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);  // t0 - TLAS
         ranges[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0);  // b0 - Constants
@@ -874,9 +902,10 @@ namespace RayTraceVS::DXEngine
         ranges[14].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 6);  // u6 - ViewZ
         ranges[15].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 9);  // u9 - ShadowData
         ranges[16].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 10); // u10 - ShadowTranslucency
+        ranges[17].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 11); // u11 - PhotonHashTable
 
-        CD3DX12_ROOT_PARAMETER1 rootParameters[17];
-        for (int i = 0; i < 17; i++)
+        CD3DX12_ROOT_PARAMETER1 rootParameters[18];
+        for (int i = 0; i < 18; i++)
         {
             rootParameters[i].InitAsDescriptorTable(1, &ranges[i]);
         }
@@ -1224,8 +1253,9 @@ namespace RayTraceVS::DXEngine
         // [3-6] SRVs: spheres, planes, Boxes, lights (t1-t4)
         // [7-8] UAVs: photon map, photon counter (u1-u2)
         // [9-16] UAVs: G-Buffer for NRD (u3-u10)
+        // [17] UAV: Photon hash table (u11)
         D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
-        heapDesc.NumDescriptors = 17;  // 9 + 8 for G-Buffer
+        heapDesc.NumDescriptors = 18;  // 9 + 8 for G-Buffer + 1 for photon hash
         heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
         heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
@@ -1454,6 +1484,19 @@ namespace RayTraceVS::DXEngine
             // [16] u10: ShadowTranslucency (RGBA16F)
             gbufferUavDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
             device->CreateUnorderedAccessView(gBuffer.ShadowTranslucency.Get(), nullptr, &gbufferUavDesc, cpuHandle);
+            cpuHandle.Offset(1, dxrDescriptorSize);
+        }
+        
+        // [17] UAV for photon hash table (u11)
+        if (photonHashTableBuffer)
+        {
+            D3D12_UNORDERED_ACCESS_VIEW_DESC hashUavDesc = {};
+            hashUavDesc.Format = DXGI_FORMAT_UNKNOWN;
+            hashUavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+            hashUavDesc.Buffer.FirstElement = 0;
+            hashUavDesc.Buffer.NumElements = PHOTON_HASH_TABLE_SIZE;
+            hashUavDesc.Buffer.StructureByteStride = sizeof(PhotonHashCell);
+            device->CreateUnorderedAccessView(photonHashTableBuffer.Get(), nullptr, &hashUavDesc, cpuHandle);
         }
     }
 
@@ -1546,10 +1589,10 @@ namespace RayTraceVS::DXEngine
         LogToFile("RenderWithDXR: setting root signature");
         commandList->SetComputeRootSignature(globalRootSignature.Get());
         
-        // Set root descriptor tables (including photon map UAVs and G-Buffer UAVs)
+        // Set root descriptor tables (including photon map UAVs, G-Buffer UAVs, and photon hash table)
         LogToFile("RenderWithDXR: setting descriptor tables");
         CD3DX12_GPU_DESCRIPTOR_HANDLE gpuHandle(dxrSrvUavHeap->GetGPUDescriptorHandleForHeapStart());
-        for (int i = 0; i < 17; i++)
+        for (int i = 0; i < 18; i++)
         {
             commandList->SetComputeRootDescriptorTable(i, gpuHandle);
             gpuHandle.Offset(1, dxrDescriptorSize);
@@ -1604,11 +1647,13 @@ namespace RayTraceVS::DXEngine
             ApplyDenoising(renderTarget, scene);
             
             // Composite denoised output to final render target
-            LogToFile("RenderWithDXR: compositing output");
+            LogToFile("RenderWithDXR: compositing output (with SIGMA shadow)");
             CompositeOutput(renderTarget);
             
             LogToFile("RenderWithDXR: denoising complete");
         }
+        // Without denoising: RenderTarget already contains final image with shadows
+        // (shadows are applied in ClosestHit shaders via payload.color)
     }
 
     // ============================================
@@ -1904,6 +1949,163 @@ namespace RayTraceVS::DXEngine
         commandList->ResourceBarrier(1, &barrier);
     }
 
+    // ============================================
+    // Photon Spatial Hash Implementation
+    // ============================================
+
+    bool DXRPipeline::CreatePhotonHashResources()
+    {
+        LogToFile("CreatePhotonHashResources started");
+        
+        auto device = dxContext->GetDevice();
+        if (!device)
+            return false;
+        
+        // Create hash table buffer
+        // Size = PHOTON_HASH_TABLE_SIZE * sizeof(PhotonHashCell)
+        UINT64 hashTableSize = PHOTON_HASH_TABLE_SIZE * sizeof(PhotonHashCell);
+        
+        CD3DX12_HEAP_PROPERTIES defaultHeapProps(D3D12_HEAP_TYPE_DEFAULT);
+        CD3DX12_RESOURCE_DESC hashTableDesc = CD3DX12_RESOURCE_DESC::Buffer(
+            hashTableSize, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+        
+        HRESULT hr = device->CreateCommittedResource(
+            &defaultHeapProps,
+            D3D12_HEAP_FLAG_NONE,
+            &hashTableDesc,
+            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+            nullptr,
+            IID_PPV_ARGS(&photonHashTableBuffer));
+        
+        if (FAILED(hr))
+        {
+            LogToFile("Failed to create photon hash table buffer", hr);
+            return false;
+        }
+        
+        // Create constant buffer for hash compute shader
+        CD3DX12_HEAP_PROPERTIES uploadHeapProps(D3D12_HEAP_TYPE_UPLOAD);
+        CD3DX12_RESOURCE_DESC constBufferDesc = CD3DX12_RESOURCE_DESC::Buffer(
+            (sizeof(PhotonHashConstants) + 255) & ~255);  // 256-byte aligned
+        
+        hr = device->CreateCommittedResource(
+            &uploadHeapProps,
+            D3D12_HEAP_FLAG_NONE,
+            &constBufferDesc,
+            D3D12_RESOURCE_STATE_GENERIC_READ,
+            nullptr,
+            IID_PPV_ARGS(&photonHashConstantBuffer));
+        
+        if (FAILED(hr))
+        {
+            LogToFile("Failed to create photon hash constant buffer", hr);
+            return false;
+        }
+        
+        // Map constant buffer
+        photonHashConstantBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mappedPhotonHashConstants));
+        
+        // Create root signature for hash compute shaders
+        CD3DX12_ROOT_PARAMETER1 rootParams[3];
+        rootParams[0].InitAsUnorderedAccessView(0);  // u0 - PhotonMap
+        rootParams[1].InitAsUnorderedAccessView(1);  // u1 - PhotonHashTable
+        rootParams[2].InitAsConstantBufferView(0);   // b0 - Constants
+        
+        CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSigDesc;
+        rootSigDesc.Init_1_1(3, rootParams, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_NONE);
+        
+        ComPtr<ID3DBlob> signature;
+        ComPtr<ID3DBlob> error;
+        hr = D3DX12SerializeVersionedRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1_1, &signature, &error);
+        if (FAILED(hr))
+        {
+            if (error)
+                LogToFile((std::string("Root signature serialization failed: ") + (char*)error->GetBufferPointer()).c_str());
+            return false;
+        }
+        
+        hr = device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(),
+            IID_PPV_ARGS(&photonHashRootSignature));
+        if (FAILED(hr))
+        {
+            LogToFile("Failed to create photon hash root signature", hr);
+            return false;
+        }
+        
+        // Compile hash compute shaders
+        if (!LoadOrCompileDXRShader(L"BuildPhotonHashClear", &photonHashClearShader) ||
+            !LoadOrCompileDXRShader(L"BuildPhotonHashBuild", &photonHashBuildShader))
+        {
+            LogToFile("Failed to compile photon hash shaders");
+            return false;
+        }
+        
+        // Create clear pipeline state
+        D3D12_COMPUTE_PIPELINE_STATE_DESC clearPipelineDesc = {};
+        clearPipelineDesc.pRootSignature = photonHashRootSignature.Get();
+        clearPipelineDesc.CS = { photonHashClearShader->GetBufferPointer(), photonHashClearShader->GetBufferSize() };
+        
+        hr = device->CreateComputePipelineState(&clearPipelineDesc, IID_PPV_ARGS(&photonHashClearPipeline));
+        if (FAILED(hr))
+        {
+            LogToFile("Failed to create photon hash clear pipeline", hr);
+            return false;
+        }
+        
+        // Create build pipeline state
+        D3D12_COMPUTE_PIPELINE_STATE_DESC buildPipelineDesc = {};
+        buildPipelineDesc.pRootSignature = photonHashRootSignature.Get();
+        buildPipelineDesc.CS = { photonHashBuildShader->GetBufferPointer(), photonHashBuildShader->GetBufferSize() };
+        
+        hr = device->CreateComputePipelineState(&buildPipelineDesc, IID_PPV_ARGS(&photonHashBuildPipeline));
+        if (FAILED(hr))
+        {
+            LogToFile("Failed to create photon hash build pipeline", hr);
+            return false;
+        }
+        
+        LogToFile("CreatePhotonHashResources completed successfully");
+        return true;
+    }
+
+    void DXRPipeline::BuildPhotonHashTable()
+    {
+        if (!photonHashClearPipeline || !photonHashBuildPipeline)
+            return;
+        
+        auto commandList = dxContext->GetCommandList();
+        
+        // Update constants
+        mappedPhotonHashConstants->PhotonCount = mappedConstantData->PhotonMapSize;
+        mappedPhotonHashConstants->CellSize = photonRadius * 2.0f;
+        
+        // Set root signature and resources
+        commandList->SetComputeRootSignature(photonHashRootSignature.Get());
+        commandList->SetComputeRootUnorderedAccessView(0, photonMapBuffer->GetGPUVirtualAddress());
+        commandList->SetComputeRootUnorderedAccessView(1, photonHashTableBuffer->GetGPUVirtualAddress());
+        commandList->SetComputeRootConstantBufferView(2, photonHashConstantBuffer->GetGPUVirtualAddress());
+        
+        // Step 1: Clear hash table
+        commandList->SetPipelineState(photonHashClearPipeline.Get());
+        UINT clearDispatchX = (PHOTON_HASH_TABLE_SIZE + 255) / 256;
+        commandList->Dispatch(clearDispatchX, 1, 1);
+        
+        // UAV barrier between clear and build
+        CD3DX12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::UAV(photonHashTableBuffer.Get());
+        commandList->ResourceBarrier(1, &barrier);
+        
+        // Step 2: Build hash table
+        commandList->SetPipelineState(photonHashBuildPipeline.Get());
+        UINT buildDispatchX = (mappedConstantData->PhotonMapSize + 255) / 256;
+        if (buildDispatchX > 0)
+        {
+            commandList->Dispatch(buildDispatchX, 1, 1);
+        }
+        
+        // UAV barrier to ensure hash table is ready for reading
+        commandList->ResourceBarrier(1, &barrier);
+    }
+
     void DXRPipeline::UpdatePhotonDescriptors()
     {
         auto device = dxContext->GetDevice();
@@ -2037,6 +2239,9 @@ namespace RayTraceVS::DXEngine
         mappedConstantData->PhotonMapSize = totalPhotons;
         mappedConstantData->PhotonRadius = photonRadius;
         mappedConstantData->CausticIntensity = causticIntensity;
+        
+        // Build spatial hash table for O(1) photon lookup
+        BuildPhotonHashTable();
         
         LogToFile("EmitPhotons completed");
     }
@@ -2319,24 +2524,36 @@ namespace RayTraceVS::DXEngine
         CD3DX12_DESCRIPTOR_RANGE1 uavRange;
         uavRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0); // u0
         
-        // Use static sampler instead of descriptor table
-        D3D12_STATIC_SAMPLER_DESC staticSampler = {};
-        staticSampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
-        staticSampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-        staticSampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-        staticSampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-        staticSampler.MaxLOD = D3D12_FLOAT32_MAX;
-        staticSampler.ShaderRegister = 0;
-        staticSampler.RegisterSpace = 0;
-        staticSampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+        // Use static samplers instead of descriptor table
+        D3D12_STATIC_SAMPLER_DESC staticSamplers[2] = {};
+        
+        // s0: LinearSampler
+        staticSamplers[0].Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+        staticSamplers[0].AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+        staticSamplers[0].AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+        staticSamplers[0].AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+        staticSamplers[0].MaxLOD = D3D12_FLOAT32_MAX;
+        staticSamplers[0].ShaderRegister = 0;
+        staticSamplers[0].RegisterSpace = 0;
+        staticSamplers[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+        
+        // s1: PointSampler (no interpolation - for shadow edges)
+        staticSamplers[1].Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
+        staticSamplers[1].AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+        staticSamplers[1].AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+        staticSamplers[1].AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+        staticSamplers[1].MaxLOD = D3D12_FLOAT32_MAX;
+        staticSamplers[1].ShaderRegister = 1;
+        staticSamplers[1].RegisterSpace = 0;
+        staticSamplers[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
         
         CD3DX12_ROOT_PARAMETER1 rootParams[3];
         rootParams[0].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_ALL);
         rootParams[1].InitAsDescriptorTable(1, &uavRange, D3D12_SHADER_VISIBILITY_ALL);
-        rootParams[2].InitAsConstants(7, 0); // b0: OutputSize (2), ExposureValue, ToneMapOperator, DebugTileScale, UseDenoisedShadow, ShadowStrength
+        rootParams[2].InitAsConstants(8, 0); // b0: OutputSize (2), ExposureValue, ToneMapOperator, DebugMode, DebugTileScale, UseDenoisedShadow, ShadowStrength
         
         CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSigDesc;
-        rootSigDesc.Init_1_1(_countof(rootParams), rootParams, 1, &staticSampler,
+        rootSigDesc.Init_1_1(_countof(rootParams), rootParams, 2, staticSamplers,
             D3D12_ROOT_SIGNATURE_FLAG_NONE);
         
         ComPtr<ID3DBlob> serializedRootSig;
@@ -2523,17 +2740,18 @@ namespace RayTraceVS::DXEngine
         
         // Set constants: OutputSize (2 uints), ExposureValue, ToneMapOperator, DebugMode, DebugTileScale, UseDenoisedShadow, ShadowStrength
         // Shadow source: 0 = InputShadow(t9/noisy), 1 = DenoisedShadow(t3/SIGMA), 2 = No shadow (debug)
-        UINT forceUseDenoisedShadow = 1;  // Use SIGMA denoised shadow
+        UINT forceUseDenoisedShadow = 1;  // Enable SIGMA denoised shadow
         
         struct CompositeConstants {
             UINT width;
             UINT height;
             float exposureValue;
             float toneMapOperator;
+            UINT debugMode;          // 0=off, 6=diffuse only, 7=diffuse*albedo, 8=raw input
             float debugTileScale;
             UINT useDenoisedShadow;
             float shadowStrength;
-        } constants = { width, height, exposure, (float)toneMapOperator, 0.15f, forceUseDenoisedShadow, shadowStrength };
+        } constants = { width, height, exposure, (float)toneMapOperator, 0, 0.15f, forceUseDenoisedShadow, shadowStrength }; // debugMode=1: show debug tiles
         
         char compositeBuf[256];
         sprintf_s(compositeBuf, "CompositeOutput: shadowStrength=%.2f, useDenoisedShadow=%u", constants.shadowStrength, constants.useDenoisedShadow);

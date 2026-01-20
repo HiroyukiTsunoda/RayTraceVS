@@ -211,6 +211,23 @@ namespace RayTraceVS.WPF.Views
             NodeCanvas.UpdateLayout();
             ConnectionLayer.UpdateLayout();
         }
+        
+        /// <summary>
+        /// 現在のビューポート中央のキャンバス座標を取得
+        /// </summary>
+        public Point GetViewportCenterInCanvas()
+        {
+            // ビューポート（UserControl）の中央座標
+            double viewportCenterX = ActualWidth / 2;
+            double viewportCenterY = ActualHeight / 2;
+            
+            // ビューポート座標をキャンバス座標に変換
+            // キャンバス座標 = (ビューポート座標 - パン) / ズーム
+            double canvasX = (viewportCenterX - panTransform.X) / currentZoom;
+            double canvasY = (viewportCenterY - panTransform.Y) / currentZoom;
+            
+            return new Point(canvasX, canvasY);
+        }
 
         /// <summary>
         /// シーンノードのソケット数が「接続数+1」になるように調整
@@ -1652,11 +1669,11 @@ namespace RayTraceVS.WPF.Views
         }
         
         /// <summary>
-        /// Enterキーで入力を確定
+        /// Enterキー/Tabキーで入力を確定
         /// </summary>
         private void FloatTextBox_KeyDown(object sender, KeyEventArgs e)
         {
-            if (e.Key == Key.Enter)
+            if (e.Key == Key.Enter || e.Key == Key.Tab)
             {
                 var textBox = sender as TextBox;
                 if (textBox != null)
@@ -1723,6 +1740,101 @@ namespace RayTraceVS.WPF.Views
                 }), System.Windows.Threading.DispatcherPriority.Input);
             }
         }
+        
+        /// <summary>
+        /// ノード内の次の（または前の）TextBoxにフォーカスを移動する
+        /// </summary>
+        /// <param name="currentTextBox">現在のTextBox</param>
+        /// <param name="forward">trueで次へ、falseで前へ</param>
+        private void MoveToNextTextBoxInNode(TextBox currentTextBox, bool forward)
+        {
+            // 現在のTextBoxが属するノードのコンテナを探す
+            var nodeContainer = FindParentNodeContainer(currentTextBox);
+            if (nodeContainer == null)
+            {
+                Keyboard.ClearFocus();
+                NodeCanvas.Focus();
+                return;
+            }
+            
+            // ノードコンテナ内のすべての有効なTextBoxを取得
+            var textBoxes = FindVisualChildren<TextBox>(nodeContainer)
+                .Where(tb => tb.IsVisible && tb.IsEnabled)
+                .ToList();
+            
+            if (textBoxes.Count <= 1)
+            {
+                // 1つ以下なら移動先がないのでフォーカス解除
+                Keyboard.ClearFocus();
+                NodeCanvas.Focus();
+                return;
+            }
+            
+            // 現在のTextBoxのインデックスを取得
+            int currentIndex = textBoxes.IndexOf(currentTextBox);
+            if (currentIndex < 0)
+            {
+                Keyboard.ClearFocus();
+                NodeCanvas.Focus();
+                return;
+            }
+            
+            // 次（または前）のインデックスを計算（ループ）
+            int nextIndex;
+            if (forward)
+            {
+                nextIndex = (currentIndex + 1) % textBoxes.Count;
+            }
+            else
+            {
+                nextIndex = (currentIndex - 1 + textBoxes.Count) % textBoxes.Count;
+            }
+            
+            // 次のTextBoxにフォーカス
+            var nextTextBox = textBoxes[nextIndex];
+            nextTextBox.Focus();
+            nextTextBox.SelectAll();
+        }
+        
+        /// <summary>
+        /// 親のノードコンテナ（Border）を探す
+        /// </summary>
+        private FrameworkElement? FindParentNodeContainer(DependencyObject child)
+        {
+            DependencyObject parent = VisualTreeHelper.GetParent(child);
+            while (parent != null)
+            {
+                // ノードのコンテナはBorderでDataContextがNode
+                if (parent is Border border && border.DataContext is Node)
+                {
+                    return border;
+                }
+                parent = VisualTreeHelper.GetParent(parent);
+            }
+            return null;
+        }
+        
+        /// <summary>
+        /// ビジュアルツリーから指定された型の子要素をすべて取得
+        /// </summary>
+        private static IEnumerable<T> FindVisualChildren<T>(DependencyObject parent) where T : DependencyObject
+        {
+            if (parent == null) yield break;
+            
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+            {
+                var child = VisualTreeHelper.GetChild(parent, i);
+                if (child is T typedChild)
+                {
+                    yield return typedChild;
+                }
+                
+                foreach (var descendant in FindVisualChildren<T>(child))
+                {
+                    yield return descendant;
+                }
+            }
+        }
 
         // ======================================================================
         // Vector3Node 入力テキストボックス関連イベント
@@ -1773,6 +1885,16 @@ namespace RayTraceVS.WPF.Views
                     ApplyVector3TextBoxValue(textBox);
                     Keyboard.ClearFocus();
                     NodeCanvas.Focus();
+                }
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Tab)
+            {
+                var textBox = sender as TextBox;
+                if (textBox != null)
+                {
+                    ApplyVector3TextBoxValue(textBox);
+                    MoveToNextTextBoxInNode(textBox, !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));
                 }
                 e.Handled = true;
             }
@@ -1894,6 +2016,16 @@ namespace RayTraceVS.WPF.Views
                 }
                 e.Handled = true;
             }
+            else if (e.Key == Key.Tab)
+            {
+                var textBox = sender as TextBox;
+                if (textBox != null)
+                {
+                    ApplyVector4TextBoxValue(textBox);
+                    MoveToNextTextBoxInNode(textBox, !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));
+                }
+                e.Handled = true;
+            }
             else if (e.Key == Key.Escape)
             {
                 var textBox = sender as TextBox;
@@ -2012,6 +2144,16 @@ namespace RayTraceVS.WPF.Views
                 }
                 e.Handled = true;
             }
+            else if (e.Key == Key.Tab)
+            {
+                var textBox = sender as TextBox;
+                if (textBox != null)
+                {
+                    ApplyColorTextBoxValue(textBox);
+                    MoveToNextTextBoxInNode(textBox, !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));
+                }
+                e.Handled = true;
+            }
             else if (e.Key == Key.Escape)
             {
                 var textBox = sender as TextBox;
@@ -2091,6 +2233,9 @@ namespace RayTraceVS.WPF.Views
             {
                 var binding = BindingOperations.GetBindingExpression(focusedElement, TextBox.TextProperty);
                 binding?.UpdateSource();
+                
+                // フォーカスをクリア（別のノードをクリックしたときにテキストボックスのフォーカスが残らないようにする）
+                Keyboard.ClearFocus();
             }
         }
     }

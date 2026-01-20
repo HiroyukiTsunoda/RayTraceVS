@@ -11,23 +11,54 @@ namespace RayTraceVS.WPF.Models.Nodes
     /// </summary>
     public class MaterialBSDFNode : Node
     {
+        private Vector4 _baseColor = new Vector4(0.8f, 0.8f, 0.8f, 1.0f);
+        private float _metallic = 0.0f;
+        private float _roughness = 0.5f;
+        private float _transmission = 0.0f;
+        private float _ior = 1.5f;
+        private Vector4 _emission = Vector4.Zero;
+
         // ベースカラー（基本色）
-        public Vector4 BaseColor { get; set; } = new Vector4(0.8f, 0.8f, 0.8f, 1.0f);
+        public Vector4 BaseColor
+        {
+            get => _baseColor;
+            set { if (_baseColor != value) { _baseColor = value; MarkDirty(); } }
+        }
 
         // 金属度（0.0 = 誘電体, 1.0 = 金属）
-        public float Metallic { get; set; } = 0.0f;
+        public float Metallic
+        {
+            get => _metallic;
+            set { if (_metallic != value) { _metallic = value; MarkDirty(); } }
+        }
 
         // 粗さ（0.0 = 完全鏡面, 1.0 = 完全拡散）
-        public float Roughness { get; set; } = 0.5f;
+        public float Roughness
+        {
+            get => _roughness;
+            set { if (_roughness != value) { _roughness = value; MarkDirty(); } }
+        }
 
         // 透過度（0.0 = 不透明, 1.0 = 完全透過）
-        public float Transmission { get; set; } = 0.0f;
+        public float Transmission
+        {
+            get => _transmission;
+            set { if (_transmission != value) { _transmission = value; MarkDirty(); } }
+        }
 
         // 屈折率（Index of Refraction）
-        public float IOR { get; set; } = 1.5f;
+        public float IOR
+        {
+            get => _ior;
+            set { if (_ior != value) { _ior = value; MarkDirty(); } }
+        }
 
         // 発光色・強度
-        public Vector4 Emission { get; set; } = Vector4.Zero;
+        public Vector4 Emission
+        {
+            get => _emission;
+            set { if (_emission != value) { _emission = value; MarkDirty(); } }
+        }
 
         public MaterialBSDFNode() : base("Material BSDF", NodeCategory.Material)
         {

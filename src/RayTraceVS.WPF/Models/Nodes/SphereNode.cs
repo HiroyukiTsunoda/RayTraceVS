@@ -9,11 +9,22 @@ namespace RayTraceVS.WPF.Models.Nodes
 {
     public class SphereNode : Node, ISerializableNode
     {
+        private Transform _objectTransform = Transform.Identity;
+        private float _radius = 1.0f;
+
         // Transform（位置・回転・スケール）
-        public Transform ObjectTransform { get; set; } = Transform.Identity;
+        public Transform ObjectTransform
+        {
+            get => _objectTransform;
+            set { if (!_objectTransform.Equals(value)) { _objectTransform = value; MarkDirty(); } }
+        }
         
         // 形状固有パラメータ
-        public float Radius { get; set; } = 1.0f;
+        public float Radius
+        {
+            get => _radius;
+            set { if (_radius != value) { _radius = value; MarkDirty(); } }
+        }
 
         public SphereNode() : base("Sphere", NodeCategory.Object)
         {
