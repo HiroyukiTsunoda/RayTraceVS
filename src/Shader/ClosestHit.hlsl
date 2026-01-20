@@ -97,7 +97,7 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
         transmission = s.transmission;
         ior = s.ior;
         specular = s.specular;
-        // emission = s.emission; // TEST: temporarily disabled
+        emission = s.emission;
     }
     else if (attribs.objectType == OBJECT_TYPE_PLANE)
     {
@@ -107,7 +107,7 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
         roughness = p.roughness;
         transmission = 0.0;
         specular = p.specular;
-        // emission = p.emission; // TEST: temporarily disabled
+        emission = p.emission;
         
         // Checkerboard pattern for floor (world space coordinates)
         // Use hitPosition.xz directly for horizontal floor
@@ -129,7 +129,7 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
         transmission = b.transmission;
         ior = b.ior;
         specular = b.specular;
-        // emission = b.emission; // TEST: temporarily disabled
+        emission = b.emission;
     }
     
     bool isGlass = transmission > 0.01;
@@ -567,8 +567,8 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
     float3 finalColor = ambient 
                       + directDiffuse * directWeight 
                       + directSpecular 
-                      + reflectColor * reflectionWeight;
-                      // + emission removed for TEST
+                      + reflectColor * reflectionWeight
+                      + emission;
     
     payload.color = saturate(finalColor);
     
@@ -576,7 +576,7 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
     if (payload.depth == 0)
     {
         float hitDistance = RayTCurrent();
-        payload.diffuseRadiance = ambient + directDiffuse * directWeight + reflectColor * reflectionWeight;
+        payload.diffuseRadiance = ambient + directDiffuse * directWeight + reflectColor * reflectionWeight + emission;
         payload.specularRadiance = directSpecular;
         payload.hitDistance = hitDistance;
         payload.worldNormal = normal;

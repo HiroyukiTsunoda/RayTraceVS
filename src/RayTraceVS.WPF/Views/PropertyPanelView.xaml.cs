@@ -4,7 +4,6 @@ using System.Windows.Input;
 using System.Windows.Data;
 using RayTraceVS.WPF.ViewModels;
 using RayTraceVS.WPF.Models;
-using System.Diagnostics;
 
 namespace RayTraceVS.WPF.Views
 {
@@ -13,12 +12,6 @@ namespace RayTraceVS.WPF.Views
         public PropertyPanelView()
         {
             InitializeComponent();
-            
-            // DataContextの変更を監視
-            DataContextChanged += (s, e) =>
-            {
-                Debug.WriteLine($"PropertyPanelView DataContext changed: {e.NewValue?.GetType().Name}");
-            };
         }
 
         private MainViewModel? GetViewModel()

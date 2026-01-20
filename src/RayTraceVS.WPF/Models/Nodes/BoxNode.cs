@@ -8,7 +8,7 @@ using RayTraceVS.WPF.Models.Serialization;
 
 namespace RayTraceVS.WPF.Models.Nodes
 {
-    public class BoxNode : Node, ISerializableNode
+    public partial class BoxNode : Node, ISerializableNode
     {
         private Transform _objectTransform = Transform.Identity;
         private Vector3 _size = new Vector3(1.0f, 1.0f, 1.0f);
@@ -17,14 +17,30 @@ namespace RayTraceVS.WPF.Models.Nodes
         public Transform ObjectTransform
         {
             get => _objectTransform;
-            set { if (!_objectTransform.Equals(value)) { _objectTransform = value; MarkDirty(); } }
+            set
+            {
+                if (!_objectTransform.Equals(value))
+                {
+                    _objectTransform = value;
+                    OnPropertyChanged(nameof(ObjectTransform));
+                    MarkDirty();
+                }
+            }
         }
         
         // 形状固有パラメータ（full size, not half-extents）
         public Vector3 Size
         {
             get => _size;
-            set { if (_size != value) { _size = value; MarkDirty(); } }
+            set
+            {
+                if (_size != value)
+                {
+                    _size = value;
+                    OnPropertyChanged(nameof(Size));
+                    MarkDirty();
+                }
+            }
         }
 
         public BoxNode() : base("Box", NodeCategory.Object)

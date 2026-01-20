@@ -9,7 +9,7 @@ namespace RayTraceVS.WPF.Models.Nodes
     /// 統合BSDFマテリアルノード
     /// Principled BSDFスタイルで、様々なマテリアルを1つのノードで表現
     /// </summary>
-    public class MaterialBSDFNode : Node
+    public partial class MaterialBSDFNode : Node
     {
         private Vector4 _baseColor = new Vector4(0.8f, 0.8f, 0.8f, 1.0f);
         private float _metallic = 0.0f;
@@ -22,42 +22,82 @@ namespace RayTraceVS.WPF.Models.Nodes
         public Vector4 BaseColor
         {
             get => _baseColor;
-            set { if (_baseColor != value) { _baseColor = value; MarkDirty(); } }
+            set
+            {
+                if (_baseColor != value)
+                {
+                    _baseColor = value;
+                    OnPropertyChanged(nameof(BaseColor));
+                    MarkDirty();
+                }
+            }
         }
 
         // 金属度（0.0 = 誘電体, 1.0 = 金属）
         public float Metallic
         {
             get => _metallic;
-            set { if (_metallic != value) { _metallic = value; MarkDirty(); } }
+            set
+            {
+                if (SetProperty(ref _metallic, value))
+                {
+                    MarkDirty();
+                }
+            }
         }
 
         // 粗さ（0.0 = 完全鏡面, 1.0 = 完全拡散）
         public float Roughness
         {
             get => _roughness;
-            set { if (_roughness != value) { _roughness = value; MarkDirty(); } }
+            set
+            {
+                if (SetProperty(ref _roughness, value))
+                {
+                    MarkDirty();
+                }
+            }
         }
 
         // 透過度（0.0 = 不透明, 1.0 = 完全透過）
         public float Transmission
         {
             get => _transmission;
-            set { if (_transmission != value) { _transmission = value; MarkDirty(); } }
+            set
+            {
+                if (SetProperty(ref _transmission, value))
+                {
+                    MarkDirty();
+                }
+            }
         }
 
         // 屈折率（Index of Refraction）
         public float IOR
         {
             get => _ior;
-            set { if (_ior != value) { _ior = value; MarkDirty(); } }
+            set
+            {
+                if (SetProperty(ref _ior, value))
+                {
+                    MarkDirty();
+                }
+            }
         }
 
         // 発光色・強度
         public Vector4 Emission
         {
             get => _emission;
-            set { if (_emission != value) { _emission = value; MarkDirty(); } }
+            set
+            {
+                if (_emission != value)
+                {
+                    _emission = value;
+                    OnPropertyChanged(nameof(Emission));
+                    MarkDirty();
+                }
+            }
         }
 
         public MaterialBSDFNode() : base("Material BSDF", NodeCategory.Material)

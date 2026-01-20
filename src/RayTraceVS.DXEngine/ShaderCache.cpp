@@ -1,5 +1,6 @@
 #include "ShaderCache.h"
 #include "DXContext.h"
+#include "DebugLog.h"
 #include <fstream>
 #include <sstream>
 #include <filesystem>
@@ -53,22 +54,11 @@ namespace RayTraceVS::DXEngine
         }
     }
 
-    // Log file helper
-    static void LogToFile(const char* message)
+    // ShaderCache log helper - uses centralized logging
+    static void ShaderCacheLog(const char* message)
     {
-        std::ofstream log("C:\\git\\RayTraceVS\\debug_log.txt", std::ios::app);
-        if (log.is_open())
-        {
-            log << "[ShaderCache] " << message << std::endl;
-            log.close();
-        }
-    }
-
-    static void LogToFile(const char* message, HRESULT hr)
-    {
-        char buf[512];
-        sprintf_s(buf, "%s: 0x%08X", message, hr);
-        LogToFile(buf);
+        std::string prefixedMsg = std::string("[ShaderCache] ") + message;
+        LOG_INFO(prefixedMsg.c_str());
     }
 
     ShaderCache::ShaderCache(DXContext* context)
@@ -82,12 +72,14 @@ namespace RayTraceVS::DXEngine
 
     void ShaderCache::Log(const char* message)
     {
-        LogToFile(message);
+        ShaderCacheLog(message);
     }
 
     void ShaderCache::Log(const char* message, HRESULT hr)
     {
-        LogToFile(message, hr);
+        char buf[512];
+        sprintf_s(buf, "%s: 0x%08X", message, hr);
+        ShaderCacheLog(buf);
     }
 
     bool ShaderCache::Initialize(const std::wstring& cacheDirectory, const std::wstring& sourceDirectory)

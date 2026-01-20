@@ -85,177 +85,153 @@
                         </ItemsControl>
                         
                         <!-- SceneNode専用プロパティ -->
-                        <StackPanel Margin="0,15,0,0">
-                            <StackPanel.Style>
-                                <Style TargetType="StackPanel">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding SelectedNode, Converter={StaticResource TypeNameConverter}}" Value="SceneNode">
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </StackPanel.Style>
-                            
-                            <TextBlock Text="レンダリング設定" 
-                                       Foreground="{StaticResource AccentBrush}"
-                                       FontWeight="Bold"
-                                       FontSize="12"
-                                       Margin="0,0,0,10"/>
-                            
-                            <!-- SamplesPerPixel -->
-                            <TextBlock Text="サンプル数 (SamplesPerPixel)" 
-                                       Foreground="{StaticResource TextSecondaryBrush}"
-                                       FontSize="10"
-                                       Margin="0,5,0,2"/>
-                            <TextBox Text="{Binding SelectedNode.SamplesPerPixel, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
-                                     Background="#3C3C3C"
-                                     Foreground="{StaticResource TextBrush}"
-                                     BorderBrush="{StaticResource BorderBrush}"
-                                     Padding="5,3"
-                                     Margin="0,0,0,5"
-                                     KeyDown="TextBox_KeyDown"
-                                     PreviewLostKeyboardFocus="TextBox_PreviewLostKeyboardFocus"/>
-                            <TextBlock Text="1: プレビュー / 4-8: 高品質 / 16+: 最高品質" 
-                                       Foreground="{StaticResource TextSecondaryBrush}"
-                                       FontSize="9"
-                                       Margin="0,0,0,10"/>
-                            
-                            <!-- MaxBounces -->
-                            <TextBlock Text="最大反射回数 (MaxBounces)" 
-                                       Foreground="{StaticResource TextSecondaryBrush}"
-                                       FontSize="10"
-                                       Margin="0,5,0,2"/>
-                            <TextBox Text="{Binding SelectedNode.MaxBounces, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
-                                     Background="#3C3C3C"
-                                     Foreground="{StaticResource TextBrush}"
-                                     BorderBrush="{StaticResource BorderBrush}"
-                                     Padding="5,3"
-                                     Margin="0,0,0,5"
-                                     KeyDown="TextBox_KeyDown"
-                                     PreviewLostKeyboardFocus="TextBox_PreviewLostKeyboardFocus"/>
-                            <TextBlock Text="ガラス/メタルの反射・屈折の最大回数" 
-                                       Foreground="{StaticResource TextSecondaryBrush}"
-                                       FontSize="9"
-                                       Margin="0,0,0,10"/>
+                        <ContentControl Content="{Binding SelectedNode}" Margin="0,15,0,0">
+                            <ContentControl.Resources>
+                                <DataTemplate DataType="{x:Type nodes:SceneNode}">
+                                    <StackPanel>
+                                        <TextBlock Text="レンダリング設定" 
+                                                   Foreground="{StaticResource AccentBrush}"
+                                                   FontWeight="Bold"
+                                                   FontSize="12"
+                                                   Margin="0,0,0,10"/>
+                                        
+                                        <!-- SamplesPerPixel -->
+                                        <TextBlock Text="サンプル数 (SamplesPerPixel)" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="10"
+                                                   Margin="0,5,0,2"/>
+                                        <TextBox Text="{Binding SamplesPerPixel, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                 Background="#3C3C3C"
+                                                 Foreground="{StaticResource TextBrush}"
+                                                 BorderBrush="{StaticResource BorderBrush}"
+                                                 Padding="5,3"
+                                                 Margin="0,0,0,5"/>
+                                        <TextBlock Text="1: プレビュー / 4-8: 高品質 / 16+: 最高品質" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="9"
+                                                   Margin="0,0,0,10"/>
+                                        
+                                        <!-- MaxBounces -->
+                                        <TextBlock Text="最大反射回数 (MaxBounces)" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="10"
+                                                   Margin="0,5,0,2"/>
+                                        <TextBox Text="{Binding MaxBounces, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                 Background="#3C3C3C"
+                                                 Foreground="{StaticResource TextBrush}"
+                                                 BorderBrush="{StaticResource BorderBrush}"
+                                                 Padding="5,3"
+                                                 Margin="0,0,0,5"/>
+                                        <TextBlock Text="ガラス/メタルの反射・屈折の最大回数" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="9"
+                                                   Margin="0,0,0,10"/>
 
-                            <!-- Exposure -->
-                            <TextBlock Text="露出" 
-                                       Foreground="{StaticResource TextSecondaryBrush}"
-                                       FontSize="10"
-                                       Margin="0,5,0,2"/>
-                            <TextBox x:Name="ExposureTextBox"
-                                     Text="{Binding SelectedNode.Exposure, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
-                                     Background="#3C3C3C"
-                                     Foreground="White"
-                                     BorderBrush="{StaticResource BorderBrush}"
-                                     Padding="5,3"
-                                     Margin="0,0,0,10"
-                                     KeyDown="TextBox_KeyDown"
-                                     PreviewLostKeyboardFocus="TextBox_PreviewLostKeyboardFocus"/>
+                                        <!-- Exposure -->
+                                        <TextBlock Text="露出" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="10"
+                                                   Margin="0,5,0,2"/>
+                                        <TextBox Text="{Binding Exposure, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                 Background="#3C3C3C"
+                                                 Foreground="White"
+                                                 BorderBrush="{StaticResource BorderBrush}"
+                                                 Padding="5,3"
+                                                 Margin="0,0,0,10"/>
 
-                            <!-- ToneMapOperator -->
-                            <TextBlock Text="トーンマップ" 
-                                       Foreground="{StaticResource TextSecondaryBrush}"
-                                       FontSize="10"
-                                       Margin="0,5,0,2"/>
-                            <StackPanel Margin="0,0,0,10">
-                                <RadioButton Content="Reinhard" 
-                                             IsChecked="{Binding SelectedNode.ToneMapOperator, Converter={StaticResource IntToBoolConverter}, ConverterParameter=0}"
-                                             Foreground="White" Margin="0,2"/>
-                                <RadioButton Content="ACES" 
-                                             IsChecked="{Binding SelectedNode.ToneMapOperator, Converter={StaticResource IntToBoolConverter}, ConverterParameter=1}"
-                                             Foreground="White" Margin="0,2"/>
-                                <RadioButton Content="None" 
-                                             IsChecked="{Binding SelectedNode.ToneMapOperator, Converter={StaticResource IntToBoolConverter}, ConverterParameter=2}"
-                                             Foreground="White" Margin="0,2"/>
-                            </StackPanel>
+                                        <!-- ToneMapOperator -->
+                                        <TextBlock Text="トーンマップ" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="10"
+                                                   Margin="0,5,0,2"/>
+                                        <StackPanel Margin="0,0,0,10">
+                                            <RadioButton Content="Reinhard" 
+                                                         IsChecked="{Binding ToneMapOperator, Converter={StaticResource IntToBoolConverter}, ConverterParameter=0}"
+                                                         Foreground="White" Margin="0,2"/>
+                                            <RadioButton Content="ACES" 
+                                                         IsChecked="{Binding ToneMapOperator, Converter={StaticResource IntToBoolConverter}, ConverterParameter=1}"
+                                                         Foreground="White" Margin="0,2"/>
+                                            <RadioButton Content="None" 
+                                                         IsChecked="{Binding ToneMapOperator, Converter={StaticResource IntToBoolConverter}, ConverterParameter=2}"
+                                                         Foreground="White" Margin="0,2"/>
+                                        </StackPanel>
 
-                            <!-- ShadowStrength -->
-                            <TextBlock Text="影の濃さ (ShadowStrength)" 
-                                       Foreground="{StaticResource TextSecondaryBrush}"
-                                       FontSize="10"
-                                       Margin="0,5,0,2"/>
-                            <TextBox Text="{Binding SelectedNode.ShadowStrength, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
-                                     Background="#3C3C3C"
-                                     Foreground="{StaticResource TextBrush}"
-                                     BorderBrush="{StaticResource BorderBrush}"
-                                     Padding="5,3"
-                                     Margin="0,0,0,5"
-                                     KeyDown="TextBox_KeyDown"
-                                     PreviewLostKeyboardFocus="TextBox_PreviewLostKeyboardFocus"/>
-                            <TextBlock Text="0.0: 影なし / 1.0: 通常 / 1.5+: 濃い影" 
-                                       Foreground="{StaticResource TextSecondaryBrush}"
-                                       FontSize="9"
-                                       Margin="0,0,0,10"/>
+                                        <!-- ShadowStrength -->
+                                        <TextBlock Text="影の濃さ (ShadowStrength)" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="10"
+                                                   Margin="0,5,0,2"/>
+                                        <TextBox Text="{Binding ShadowStrength, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                 Background="#3C3C3C"
+                                                 Foreground="{StaticResource TextBrush}"
+                                                 BorderBrush="{StaticResource BorderBrush}"
+                                                 Padding="5,3"
+                                                 Margin="0,0,0,5"/>
+                                        <TextBlock Text="0.0: 影なし / 1.0: 通常 / 1.5+: 濃い影" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="9"
+                                                   Margin="0,0,0,10"/>
 
-                            <!-- EnableDenoiser -->
-                            <CheckBox Content="デノイザー有効" 
-                                      IsChecked="{Binding SelectedNode.EnableDenoiser, Mode=TwoWay}"
-                                      Foreground="White"
-                                      Margin="0,5,0,2"/>
-                            <TextBlock Text="OFF: 生のレイトレース結果を表示" 
-                                       Foreground="{StaticResource TextSecondaryBrush}"
-                                       FontSize="9"
-                                       Margin="0,0,0,10"/>
-
-                        </StackPanel>
+                                        <!-- EnableDenoiser -->
+                                        <CheckBox Content="デノイザー有効" 
+                                                  IsChecked="{Binding EnableDenoiser, Mode=TwoWay}"
+                                                  Foreground="White"
+                                                  Margin="0,5,0,2"/>
+                                        <TextBlock Text="OFF: 生のレイトレース結果を表示" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="9"
+                                                   Margin="0,0,0,10"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ContentControl.Resources>
+                        </ContentControl>
                         
                         <!-- CameraNode専用プロパティ -->
-                        <StackPanel Margin="0,15,0,0">
-                            <StackPanel.Style>
-                                <Style TargetType="StackPanel">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding SelectedNode, Converter={StaticResource TypeNameConverter}}" Value="CameraNode">
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </StackPanel.Style>
-                            
-                            <TextBlock Text="被写界深度 (DoF)" 
-                                       Foreground="{StaticResource AccentBrush}"
-                                       FontWeight="Bold"
-                                       FontSize="12"
-                                       Margin="0,0,0,10"/>
-                            
-                            <!-- ApertureSize -->
-                            <TextBlock Text="絞りサイズ (ApertureSize)" 
-                                       Foreground="{StaticResource TextSecondaryBrush}"
-                                       FontSize="10"
-                                       Margin="0,5,0,2"/>
-                            <TextBox Text="{Binding SelectedNode.ApertureSize, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
-                                     Background="#3C3C3C"
-                                     Foreground="{StaticResource TextBrush}"
-                                     BorderBrush="{StaticResource BorderBrush}"
-                                     Padding="5,3"
-                                     Margin="0,0,0,5"
-                                     KeyDown="TextBox_KeyDown"
-                                     PreviewLostKeyboardFocus="TextBox_PreviewLostKeyboardFocus"/>
-                            <TextBlock Text="0: DoF無効 / 0.05-0.2: 弱いボケ / 0.5+: 強いボケ" 
-                                       Foreground="{StaticResource TextSecondaryBrush}"
-                                       FontSize="9"
-                                       Margin="0,0,0,10"/>
-                            
-                            <!-- FocusDistance -->
-                            <TextBlock Text="焦点距離 (FocusDistance)" 
-                                       Foreground="{StaticResource TextSecondaryBrush}"
-                                       FontSize="10"
-                                       Margin="0,5,0,2"/>
-                            <TextBox Text="{Binding SelectedNode.FocusDistance, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
-                                     Background="#3C3C3C"
-                                     Foreground="{StaticResource TextBrush}"
-                                     BorderBrush="{StaticResource BorderBrush}"
-                                     Padding="5,3"
-                                     Margin="0,0,0,5"
-                                     KeyDown="TextBox_KeyDown"
-                                     PreviewLostKeyboardFocus="TextBox_PreviewLostKeyboardFocus"/>
-                            <TextBlock Text="ピントが合う距離（カメラからの距離）" 
-                                       Foreground="{StaticResource TextSecondaryBrush}"
-                                       FontSize="9"
-                                       Margin="0,0,0,10"/>
-                        </StackPanel>
+                        <ContentControl Content="{Binding SelectedNode}" Margin="0,15,0,0">
+                            <ContentControl.Resources>
+                                <DataTemplate DataType="{x:Type nodes:CameraNode}">
+                                    <StackPanel>
+                                        <TextBlock Text="被写界深度 (DoF)" 
+                                                   Foreground="{StaticResource AccentBrush}"
+                                                   FontWeight="Bold"
+                                                   FontSize="12"
+                                                   Margin="0,0,0,10"/>
+                                        
+                                        <!-- ApertureSize -->
+                                        <TextBlock Text="絞りサイズ (ApertureSize)" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="10"
+                                                   Margin="0,5,0,2"/>
+                                        <TextBox Text="{Binding ApertureSize, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                 Background="#3C3C3C"
+                                                 Foreground="{StaticResource TextBrush}"
+                                                 BorderBrush="{StaticResource BorderBrush}"
+                                                 Padding="5,3"
+                                                 Margin="0,0,0,5"/>
+                                        <TextBlock Text="0: DoF無効 / 0.05-0.2: 弱いボケ / 0.5+: 強いボケ" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="9"
+                                                   Margin="0,0,0,10"/>
+                                        
+                                        <!-- FocusDistance -->
+                                        <TextBlock Text="焦点距離 (FocusDistance)" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="10"
+                                                   Margin="0,5,0,2"/>
+                                        <TextBox Text="{Binding FocusDistance, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                 Background="#3C3C3C"
+                                                 Foreground="{StaticResource TextBrush}"
+                                                 BorderBrush="{StaticResource BorderBrush}"
+                                                 Padding="5,3"
+                                                 Margin="0,0,0,5"/>
+                                        <TextBlock Text="ピントが合う距離（カメラからの距離）" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="9"
+                                                   Margin="0,0,0,10"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ContentControl.Resources>
+                        </ContentControl>
                         
                         <!-- 削除ボタン -->
                         <Button Content="ノードを削除" 

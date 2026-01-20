@@ -31,6 +31,9 @@ namespace RayTraceVS.WPF
             viewModel.Nodes.CollectionChanged += OnSceneChanged;
             viewModel.Connections.CollectionChanged += OnSceneChanged;
             
+            // ノードのプロパティ変更（パラメーター変更）を監視
+            viewModel.NodeGraph.SceneChanged += OnNodeGraphSceneChanged;
+            
             // ウィンドウの位置とサイズを復元
             RestoreWindowBounds();
             
@@ -45,6 +48,15 @@ namespace RayTraceVS.WPF
         }
         
         private void OnSceneChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+        {
+            if (!hasUnsavedChanges)
+            {
+                hasUnsavedChanges = true;
+                UpdateTitle();
+            }
+        }
+        
+        private void OnNodeGraphSceneChanged(object? sender, EventArgs e)
         {
             if (!hasUnsavedChanges)
             {

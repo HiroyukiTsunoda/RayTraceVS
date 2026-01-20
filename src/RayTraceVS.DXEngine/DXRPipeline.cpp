@@ -4,6 +4,7 @@
 #include "AccelerationStructure.h"
 #include "Denoiser/NRDDenoiser.h"
 #include "ShaderCache.h"
+#include "DebugLog.h"
 #include "Scene/Scene.h"
 #include "Scene/Camera.h"
 #include "Scene/Light.h"
@@ -18,25 +19,6 @@
 #include <fstream>
 
 #pragma comment(lib, "dxcompiler.lib")
-
-// Debug log helper
-static void LogToFile(const char* message)
-{
-    std::ofstream log("C:\\git\\RayTraceVS\\debug_log.txt", std::ios::app);
-    if (log.is_open())
-    {
-        log << message << std::endl;
-        log.close();
-    }
-}
-
-static void LogToFile(const char* message, HRESULT hr)
-{
-    char buf[512];
-    sprintf_s(buf, "%s: 0x%08X", message, hr);
-    LogToFile(buf);
-}
-
 #pragma comment(lib, "d3dcompiler.lib")
 
 namespace RayTraceVS::DXEngine
@@ -63,23 +45,22 @@ namespace RayTraceVS::DXEngine
         shaderBasePath = L"C:\\git\\RayTraceVS\\src\\Shader\\Cache\\";
         shaderSourcePath = L"C:\\git\\RayTraceVS\\src\\Shader\\";
         
-        LogToFile(("Shader source path: " + std::string(shaderSourcePath.begin(), shaderSourcePath.end())).c_str());
-        LogToFile(("Shader cache path: " + std::string(shaderBasePath.begin(), shaderBasePath.end())).c_str());
+        LOG_INFO(("Shader source path: " + std::string(shaderSourcePath.begin(), shaderSourcePath.end())).c_str());
+        LOG_INFO(("Shader cache path: " + std::string(shaderBasePath.begin(), shaderBasePath.end())).c_str());
         return true;
     }
 
     bool DXRPipeline::Initialize()
     {
         // Clear log file
-        std::ofstream log("C:\\git\\RayTraceVS\\debug_log.txt", std::ios::trunc);
-        log.close();
+        ClearLogFile();
         
-        LogToFile("DXRPipeline::Initialize called");
+        LOG_INFO("DXRPipeline::Initialize called");
         
         // Initialize shader path first
         if (!InitializeShaderPath())
         {
-            LogToFile("Failed to initialize shader path");
+            LOG_ERROR("Failed to initialize shader path");
             return false;
         }
         
@@ -87,32 +68,38 @@ namespace RayTraceVS::DXEngine
         shaderCache = std::make_unique<ShaderCache>(dxContext);
         if (!shaderCache->Initialize(shaderBasePath, shaderSourcePath))
         {
-            LogToFile("Failed to initialize shader cache");
+            LOG_ERROR("Failed to initialize shader cache");
             return false;
         }
-        LogToFile("Shader cache initialized");
+        LOG_INFO("Shader cache initialized");
         
         // Pre-compile all shaders if needed (first run or driver change)
         if (shaderCache->NeedsRecompilation())
         {
-            LogToFile("Shaders need compilation, pre-compiling all...");
+            LOG_INFO("Shaders need compilation, pre-compiling all...");
             shaderCache->PrecompileAll();
         }
         
         // Always create compute pipeline (fallback)
         bool computeResult = CreateComputePipeline();
-        LogToFile(computeResult ? "Compute pipeline succeeded" : "Compute pipeline failed");
+        if (computeResult)
+            LOG_INFO("Compute pipeline initialized successfully");
+        else
+            LOG_ERROR("Compute pipeline failed");
         
         // Try to create DXR pipeline if supported
         if (dxContext->IsDXRSupported())
         {
-            LogToFile("DXR supported, creating DXR pipeline...");
+            LOG_INFO("DXR supported, creating DXR pipeline...");
             dxrPipelineReady = CreateDXRPipeline();
-            LogToFile(dxrPipelineReady ? "DXR pipeline succeeded" : "DXR pipeline failed, using compute fallback");
+            if (dxrPipelineReady)
+                LOG_INFO("DXR pipeline initialized successfully");
+            else
+                LOG_WARN("DXR pipeline failed, using compute fallback");
         }
         else
         {
-            LogToFile("DXR not supported, using compute shader fallback");
+            LOG_INFO("DXR not supported, using compute shader fallback");
             dxrPipelineReady = false;
         }
         
@@ -127,37 +114,35 @@ namespace RayTraceVS::DXEngine
     {
         if (dxrPipelineReady)
         {
-            LogToFile("Render: using DXR path");
+            LOG_DEBUG("Render: using DXR path");
             RenderWithDXR(renderTarget, scene);
         }
         else
         {
-            LogToFile("Render: using Compute path (dxrPipelineReady=false)");
+            LOG_DEBUG("Render: using Compute path (dxrPipelineReady=false)");
             RenderWithComputeShader(renderTarget, scene);
         }
     }
 
     bool DXRPipeline::CreateComputePipeline()
     {
-        LogToFile("CreateComputePipeline started");
+        LOG_INFO("CreateComputePipeline started");
         
         auto device = dxContext->GetDevice();
         if (!device)
         {
-            LogToFile("Device is null");
+            LOG_ERROR("Device is null");
             return false;
         }
 
         // Use ShaderCache if available
         if (shaderCache)
         {
-            LogToFile("CreateComputePipeline: using ShaderCache");
             if (!shaderCache->GetComputeShader(L"RayTraceCompute", L"CSMain", &computeShader))
             {
-                LogToFile("CreateComputePipeline: ShaderCache failed to get RayTraceCompute");
+                LOG_ERROR("CreateComputePipeline: ShaderCache failed to get RayTraceCompute");
                 return false;
             }
-            LogToFile("CreateComputePipeline: got RayTraceCompute from cache");
         }
         else
         {
@@ -165,7 +150,6 @@ namespace RayTraceVS::DXEngine
             std::wstring computeShaderPath = shaderSourcePath + L"RayTraceCompute.hlsl";
             ComPtr<ID3DBlob> errorBlob;
 
-            LogToFile(("CreateComputePipeline: compiling " + std::string(computeShaderPath.begin(), computeShaderPath.end())).c_str());
             HRESULT hr = D3DCompileFromFile(
                 computeShaderPath.c_str(),
                 nullptr,
@@ -181,14 +165,13 @@ namespace RayTraceVS::DXEngine
             {
                 if (errorBlob)
                 {
-                    LogToFile("CreateComputePipeline: compute shader compile error");
-                    LogToFile((char*)errorBlob->GetBufferPointer());
+                    LOG_ERROR("CreateComputePipeline: compute shader compile error");
+                    LOG_ERROR((char*)errorBlob->GetBufferPointer());
                 }
                 return false;
             }
         }
 
-        LogToFile("Creating root signature...");
         HRESULT hr;
         
         // Create root signature
@@ -226,10 +209,10 @@ namespace RayTraceVS::DXEngine
         
         if (FAILED(hr))
         {
-            LogToFile("Failed to serialize root signature", hr);
+            LOG_ERROR_HR("Failed to serialize root signature", hr);
             if (error)
             {
-                LogToFile((char*)error->GetBufferPointer());
+                LOG_ERROR((char*)error->GetBufferPointer());
             }
             return false;
         }
@@ -239,12 +222,10 @@ namespace RayTraceVS::DXEngine
         
         if (FAILED(hr))
         {
-            LogToFile("Failed to create root signature", hr);
+            LOG_ERROR_HR("Failed to create root signature", hr);
             return false;
         }
 
-        LogToFile("Creating compute pipeline state...");
-        
         // Create compute pipeline state
         D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc = {};
         psoDesc.pRootSignature = computeRootSignature.Get();
@@ -254,15 +235,13 @@ namespace RayTraceVS::DXEngine
         
         if (FAILED(hr))
         {
-            LogToFile("Failed to create compute pipeline state", hr);
+            LOG_ERROR_HR("Failed to create compute pipeline state", hr);
             return false;
         }
 
-        LogToFile("Creating descriptor heap...");
-        
         // Create descriptor heap for SRV/UAV/CBV
         D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
-        heapDesc.NumDescriptors = 6;  // CBV + UAV + 4 SRVs
+        heapDesc.NumDescriptors = 6;
         heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
         heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
@@ -270,14 +249,12 @@ namespace RayTraceVS::DXEngine
         
         if (FAILED(hr))
         {
-            LogToFile("Failed to create descriptor heap", hr);
+            LOG_ERROR_HR("Failed to create descriptor heap", hr);
             return false;
         }
 
         srvUavDescriptorSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-        LogToFile("Creating constant buffer...");
-        
         // Create constant buffer
         CD3DX12_HEAP_PROPERTIES uploadHeapProps(D3D12_HEAP_TYPE_UPLOAD);
         CD3DX12_RESOURCE_DESC cbDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(SceneConstants));
@@ -292,19 +269,18 @@ namespace RayTraceVS::DXEngine
 
         if (FAILED(hr))
         {
-            LogToFile("Failed to create constant buffer", hr);
+            LOG_ERROR_HR("Failed to create constant buffer", hr);
             return false;
         }
 
-        // Map constant buffer
         hr = constantBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mappedConstantData));
         if (FAILED(hr))
         {
-            LogToFile("Failed to map constant buffer", hr);
+            LOG_ERROR_HR("Failed to map constant buffer", hr);
             return false;
         }
 
-        LogToFile("Compute pipeline created successfully!");
+        LOG_INFO("Compute pipeline created successfully");
         return true;
     }
 
@@ -366,13 +342,13 @@ namespace RayTraceVS::DXEngine
         if (!scene || !mappedConstantData)
             return;
 
-        // DEBUG: Log struct sizes to verify alignment
+        // Log struct sizes once for debugging alignment issues
         static bool loggedOnce = false;
         if (!loggedOnce) {
             char buf[256];
             sprintf_s(buf, "STRUCT SIZES: GPUSphere=%zu, GPUPlane=%zu, GPUBox=%zu", 
                 sizeof(GPUSphere), sizeof(GPUPlane), sizeof(GPUBox));
-            LogToFile(buf);
+            LOG_INFO(buf);
             loggedOnce = true;
         }
 
@@ -467,6 +443,8 @@ namespace RayTraceVS::DXEngine
                 gs.Padding1 = 0;
                 gs.Padding2 = 0;
                 gs.Padding3 = 0;
+                gs.Emission = mat.emission;
+                gs.Padding4 = 0;
                 spheres.push_back(gs);
             }
             else if (auto plane = dynamic_cast<Plane*>(obj.get()))
@@ -482,6 +460,8 @@ namespace RayTraceVS::DXEngine
                 gp.IOR = mat.ior;
                 gp.Specular = mat.specular;
                 gp.Padding1 = 0;
+                gp.Emission = mat.emission;
+                gp.Padding2 = 0;
                 planes.push_back(gp);
             }
             else if (auto box = dynamic_cast<Box*>(obj.get()))
@@ -501,6 +481,8 @@ namespace RayTraceVS::DXEngine
                 gb.Padding3 = 0;
                 gb.Padding4 = 0;
                 gb.Padding5 = 0;
+                gb.Emission = mat.emission;
+                gb.Padding6 = 0;
                 Boxes.push_back(gb);
             }
         }
@@ -551,11 +533,6 @@ namespace RayTraceVS::DXEngine
         shadowStrength = (float)scene->GetShadowStrength();
         denoiserEnabled = scene->GetEnableDenoiser();
         
-        char logBuf[256];
-        sprintf_s(logBuf, "DXRPipeline: shadowStrength = %.2f, denoiserEnabled = %d", shadowStrength, denoiserEnabled ? 1 : 0);
-        LogToFile(logBuf);
-
-
         // Upload object data to GPU buffers
         if (!spheres.empty() && sphereUploadBuffer)
         {
@@ -600,23 +577,19 @@ namespace RayTraceVS::DXEngine
 
     void DXRPipeline::RenderWithComputeShader(RenderTarget* renderTarget, Scene* scene)
     {
-        LogToFile("RenderWithComputeShader called");
-        
         if (!renderTarget || !scene)
         {
-            LogToFile("renderTarget or scene is null");
+            LOG_ERROR("renderTarget or scene is null");
             return;
         }
 
         // If compute pipeline is not initialized, render error pattern
         if (!computePipelineState || !computeRootSignature)
         {
-            LogToFile("Compute pipeline not initialized, rendering error pattern");
+            LOG_ERROR("Compute pipeline not initialized, rendering error pattern");
             RenderErrorPattern(renderTarget);
             return;
         }
-        
-        LogToFile("Compute pipeline OK, proceeding with GPU render");
 
         auto device = dxContext->GetDevice();
         auto commandList = dxContext->GetCommandList();
@@ -711,7 +684,7 @@ namespace RayTraceVS::DXEngine
 
     void DXRPipeline::RenderErrorPattern(RenderTarget* renderTarget)
     {
-        LogToFile("RenderErrorPattern called");
+        LOG_DEBUG("RenderErrorPattern called");
         
         // Render a simple error pattern when compute shader is not available
         auto device = dxContext->GetDevice();
@@ -719,7 +692,7 @@ namespace RayTraceVS::DXEngine
         
         if (!device || !commandList)
         {
-            LogToFile("device or commandList is null in RenderErrorPattern");
+            LOG_ERROR("device or commandList is null in RenderErrorPattern");
             return;
         }
 
@@ -814,29 +787,29 @@ namespace RayTraceVS::DXEngine
 
     bool DXRPipeline::CreateDXRPipeline()
     {
-        LogToFile("CreateDXRPipeline started");
+        LOG_INFO("CreateDXRPipeline started");
         
         if (!CreateGlobalRootSignature())
         {
-            LogToFile("Failed to create global root signature");
+            LOG_ERROR("Failed to create global root signature");
             return false;
         }
         
         if (!CreateDXRStateObject())
         {
-            LogToFile("Failed to create DXR state object");
+            LOG_ERROR("Failed to create DXR state object");
             return false;
         }
         
         if (!CreateDXRDescriptorHeap())
         {
-            LogToFile("Failed to create DXR descriptor heap");
+            LOG_ERROR("Failed to create DXR descriptor heap");
             return false;
         }
         
         if (!CreateDXRShaderTables())
         {
-            LogToFile("Failed to create DXR shader tables");
+            LOG_ERROR("Failed to create DXR shader tables");
             return false;
         }
         
@@ -850,19 +823,18 @@ namespace RayTraceVS::DXEngine
             {
                 CreatePhotonShaderTables();
                 
-                // Initialize spatial hash resources for O(1) photon lookup
                 if (CreatePhotonHashResources())
                 {
-                    LogToFile("Photon mapping with spatial hash initialized successfully");
+                    LOG_INFO("Photon mapping with spatial hash initialized");
                 }
                 else
                 {
-                    LogToFile("Photon mapping initialized (without spatial hash - will use brute force)");
+                    LOG_WARN("Photon mapping initialized without spatial hash - using brute force");
                 }
             }
         }
         
-        LogToFile("CreateDXRPipeline completed successfully");
+        LOG_INFO("CreateDXRPipeline completed successfully");
         return true;
     }
 
@@ -922,7 +894,7 @@ namespace RayTraceVS::DXEngine
         if (FAILED(hr))
         {
             if (error)
-                LogToFile((char*)error->GetBufferPointer());
+                LOG_ERROR((char*)error->GetBufferPointer());
             return false;
         }
 
@@ -934,7 +906,6 @@ namespace RayTraceVS::DXEngine
 
     bool DXRPipeline::CreateLocalRootSignature()
     {
-        // Empty local root signature for now
         auto device = dxContext->GetDevice();
         
         CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDesc;
@@ -956,38 +927,33 @@ namespace RayTraceVS::DXEngine
 
     bool DXRPipeline::LoadPrecompiledShader(const std::wstring& filename, ID3DBlob** shader)
     {
-        // Open the precompiled shader file (.cso)
         std::ifstream file(filename, std::ios::binary | std::ios::ate);
         if (!file.is_open())
         {
-            // Convert wstring to string for logging
             std::string filenameStr(filename.begin(), filename.end());
-            LogToFile(("Failed to open precompiled shader: " + filenameStr).c_str());
+            LOG_ERROR(("Failed to open precompiled shader: " + filenameStr).c_str());
             return false;
         }
         
-        // Get file size
         std::streamsize size = file.tellg();
         file.seekg(0, std::ios::beg);
         
         if (size <= 0)
         {
-            LogToFile("Precompiled shader file is empty");
+            LOG_ERROR("Precompiled shader file is empty");
             return false;
         }
         
-        // Create blob
         HRESULT hr = D3DCreateBlob(static_cast<SIZE_T>(size), shader);
         if (FAILED(hr))
         {
-            LogToFile("Failed to create blob for shader", hr);
+            LOG_ERROR_HR("Failed to create blob for shader", hr);
             return false;
         }
         
-        // Read file contents into blob
         if (!file.read(static_cast<char*>((*shader)->GetBufferPointer()), size))
         {
-            LogToFile("Failed to read precompiled shader file");
+            LOG_ERROR("Failed to read precompiled shader file");
             (*shader)->Release();
             *shader = nullptr;
             return false;
@@ -998,36 +964,32 @@ namespace RayTraceVS::DXEngine
     
     bool DXRPipeline::CompileShaderFromFile(const std::wstring& filename, const char* entryPoint, const char* target, ID3DBlob** shader)
     {
-        // This function is kept for backward compatibility but not used
-        // DXR shaders are now precompiled at build time
-        LogToFile("CompileShaderFromFile is deprecated - use precompiled shaders");
+        LOG_WARN("CompileShaderFromFile is deprecated - use precompiled shaders");
         return false;
     }
     
     std::wstring DXRPipeline::ResolveDXRShaderSourcePath(const std::wstring& shaderName) const
     {
-        // Fixed shader source path: C:\git\RayTraceVS\src\Shader
         std::wstring sourcePath = shaderSourcePath + shaderName + L".hlsl";
         
         std::ifstream file(sourcePath, std::ios::binary);
         if (file.is_open())
         {
             file.close();
-            LogToFile(("ResolveDXRShaderSourcePath: found " + std::string(shaderName.begin(), shaderName.end()) + " at " + std::string(sourcePath.begin(), sourcePath.end())).c_str());
+            LOG_DEBUG(("ResolveDXRShaderSourcePath: found " + std::string(shaderName.begin(), shaderName.end())).c_str());
             return sourcePath;
         }
 
-        LogToFile(("ResolveDXRShaderSourcePath: " + std::string(shaderName.begin(), shaderName.end()) + " not found at " + std::string(sourcePath.begin(), sourcePath.end())).c_str());
+        LOG_DEBUG(("ResolveDXRShaderSourcePath: " + std::string(shaderName.begin(), shaderName.end()) + " not found").c_str());
         return L"";
     }
     
-    // Compile DXR shader at runtime using DXC (lib_6_3)
     bool DXRPipeline::CompileDXRShaderFromSource(const std::wstring& shaderName, ID3DBlob** shader)
     {
         std::wstring sourcePath = ResolveDXRShaderSourcePath(shaderName);
         if (sourcePath.empty())
         {
-            LogToFile("CompileDXRShaderFromSource: source file not found");
+            LOG_DEBUG("CompileDXRShaderFromSource: source file not found");
             return false;
         }
 
@@ -1037,21 +999,21 @@ namespace RayTraceVS::DXEngine
         HRESULT hr = DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&utils));
         if (FAILED(hr))
         {
-            LogToFile("CompileDXRShaderFromSource: failed to create IDxcUtils", hr);
+            LOG_ERROR_HR("CompileDXRShaderFromSource: failed to create IDxcUtils", hr);
             return false;
         }
 
         hr = DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&compiler));
         if (FAILED(hr))
         {
-            LogToFile("CompileDXRShaderFromSource: failed to create IDxcCompiler3", hr);
+            LOG_ERROR_HR("CompileDXRShaderFromSource: failed to create IDxcCompiler3", hr);
             return false;
         }
 
         hr = utils->CreateDefaultIncludeHandler(&includeHandler);
         if (FAILED(hr))
         {
-            LogToFile("CompileDXRShaderFromSource: failed to create include handler", hr);
+            LOG_ERROR_HR("CompileDXRShaderFromSource: failed to create include handler", hr);
             return false;
         }
 
@@ -1060,7 +1022,7 @@ namespace RayTraceVS::DXEngine
         hr = utils->LoadFile(sourcePath.c_str(), &codePage, &sourceBlob);
         if (FAILED(hr) || !sourceBlob)
         {
-            LogToFile("CompileDXRShaderFromSource: failed to load shader source", hr);
+            LOG_ERROR_HR("CompileDXRShaderFromSource: failed to load shader source", hr);
             return false;
         }
 
@@ -1090,7 +1052,7 @@ namespace RayTraceVS::DXEngine
             IID_PPV_ARGS(&result));
         if (FAILED(hr) || !result)
         {
-            LogToFile("CompileDXRShaderFromSource: DXC compile failed to start", hr);
+            LOG_ERROR_HR("CompileDXRShaderFromSource: DXC compile failed to start", hr);
             return false;
         }
 
@@ -1101,12 +1063,12 @@ namespace RayTraceVS::DXEngine
         result->GetOutput(DXC_OUT_ERRORS, IID_PPV_ARGS(&errors), nullptr);
         if (errors && errors->GetStringLength() > 0)
         {
-            LogToFile(errors->GetStringPointer());
+            LOG_ERROR(errors->GetStringPointer());
         }
 
         if (FAILED(status))
         {
-            LogToFile("CompileDXRShaderFromSource: DXC compile failed");
+            LOG_ERROR("CompileDXRShaderFromSource: DXC compile failed");
             return false;
         }
 
@@ -1114,14 +1076,14 @@ namespace RayTraceVS::DXEngine
         hr = result->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&dxilBlob), nullptr);
         if (FAILED(hr) || !dxilBlob)
         {
-            LogToFile("CompileDXRShaderFromSource: failed to get DXIL output", hr);
+            LOG_ERROR_HR("CompileDXRShaderFromSource: failed to get DXIL output", hr);
             return false;
         }
 
         hr = D3DCreateBlob(static_cast<SIZE_T>(dxilBlob->GetBufferSize()), shader);
         if (FAILED(hr))
         {
-            LogToFile("CompileDXRShaderFromSource: failed to create blob for DXIL", hr);
+            LOG_ERROR_HR("CompileDXRShaderFromSource: failed to create blob for DXIL", hr);
             return false;
         }
 
@@ -1129,7 +1091,6 @@ namespace RayTraceVS::DXEngine
         return true;
     }
     
-    // Load DXR shader via ShaderCache (handles caching and recompilation)
     bool DXRPipeline::LoadOrCompileDXRShader(const std::wstring& shaderName, ID3DBlob** shader)
     {
         if (shaderCache)
@@ -1137,14 +1098,13 @@ namespace RayTraceVS::DXEngine
             return shaderCache->GetShader(shaderName, shader);
         }
         
-        // Fallback to old method if cache not initialized
         if (CompileDXRShaderFromSource(shaderName, shader))
         {
-            LogToFile(("Compiled DXR shader from source: " + std::string(shaderName.begin(), shaderName.end())).c_str());
+            LOG_INFO(("Compiled DXR shader from source: " + std::string(shaderName.begin(), shaderName.end())).c_str());
             return true;
         }
 
-        LogToFile(("Falling back to precompiled shader: " + std::string(shaderName.begin(), shaderName.end())).c_str());
+        LOG_DEBUG(("Falling back to precompiled shader: " + std::string(shaderName.begin(), shaderName.end())).c_str());
         return LoadPrecompiledShader(GetShaderPath(shaderName + L".cso"), shader);
     }
 
@@ -1152,9 +1112,8 @@ namespace RayTraceVS::DXEngine
     {
         auto device = dxContext->GetDevice();
         
-        LogToFile(("Loading DXR shaders from: " + std::string(shaderBasePath.begin(), shaderBasePath.end())).c_str());
+        LOG_INFO(("Loading DXR shaders from: " + std::string(shaderBasePath.begin(), shaderBasePath.end())).c_str());
         
-        // Compile DXR shaders from source at runtime (ensures latest changes are used)
         ComPtr<ID3DBlob> anyHitShadowShader;
         if (!LoadOrCompileDXRShader(L"RayGen", &rayGenShader) ||
             !LoadOrCompileDXRShader(L"Miss", &missShader) ||
@@ -1162,10 +1121,10 @@ namespace RayTraceVS::DXEngine
             !LoadOrCompileDXRShader(L"Intersection", &intersectionShader) ||
             !LoadOrCompileDXRShader(L"AnyHit_Shadow", &anyHitShadowShader))
         {
-            LogToFile("Failed to load/compile DXR shaders");
+            LOG_ERROR("Failed to load/compile DXR shaders");
             return false;
         }
-        LogToFile("Successfully loaded DXR shaders");
+        LOG_INFO("Successfully loaded DXR shaders");
         
         // Build state object using CD3DX12_STATE_OBJECT_DESC
         CD3DX12_STATE_OBJECT_DESC stateObjectDesc(D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE);
@@ -1227,15 +1186,14 @@ namespace RayTraceVS::DXEngine
         HRESULT hr = device->CreateStateObject(stateObjectDesc, IID_PPV_ARGS(&stateObject));
         if (FAILED(hr))
         {
-            LogToFile("Failed to create state object", hr);
+            LOG_ERROR_HR("Failed to create state object", hr);
             return false;
         }
         
-        // Get state object properties
         hr = stateObject->QueryInterface(IID_PPV_ARGS(&stateObjectProperties));
         if (FAILED(hr))
         {
-            LogToFile("Failed to get state object properties", hr);
+            LOG_ERROR_HR("Failed to get state object properties", hr);
             return false;
         }
         
@@ -1280,7 +1238,7 @@ namespace RayTraceVS::DXEngine
         
         if (!rayGenId || !missId || !hitGroupId || !shadowHitGroupId)
         {
-            LogToFile("Failed to get shader identifiers");
+            LOG_ERROR("Failed to get shader identifiers");
             return false;
         }
         
@@ -1338,16 +1296,15 @@ namespace RayTraceVS::DXEngine
         if (!accelerationStructure)
             return false;
         
-        // Build BLAS and TLAS
         if (!accelerationStructure->BuildProceduralBLAS(scene))
         {
-            LogToFile("Failed to build procedural BLAS");
+            LOG_ERROR("Failed to build procedural BLAS");
             return false;
         }
         
         if (!accelerationStructure->BuildProceduralTLAS())
         {
-            LogToFile("Failed to build procedural TLAS");
+            LOG_ERROR("Failed to build procedural TLAS");
             return false;
         }
         
@@ -1502,15 +1459,12 @@ namespace RayTraceVS::DXEngine
 
     void DXRPipeline::RenderWithDXR(RenderTarget* renderTarget, Scene* scene)
     {
-        LogToFile("RenderWithDXR called");
-        
         if (!renderTarget || !scene || !dxrPipelineReady)
         {
-            LogToFile("RenderWithDXR early return - invalid state");
+            LOG_DEBUG("RenderWithDXR early return - invalid state");
             return;
         }
         
-        LogToFile("RenderWithDXR: getting device and command list");
         auto device = dxContext->GetDevice();
         auto commandList = dxContext->GetCommandList();
         
@@ -1520,42 +1474,38 @@ namespace RayTraceVS::DXEngine
         // Create buffers if needed
         if (!sphereBuffer)
         {
-            LogToFile("RenderWithDXR: creating buffers");
+            LOG_DEBUG("RenderWithDXR: creating buffers");
             if (!CreateBuffers(width, height))
             {
-                LogToFile("RenderWithDXR: CreateBuffers failed");
+                LOG_ERROR("RenderWithDXR: CreateBuffers failed");
                 return;
             }
         }
         
         // Initialize denoiser if enabled and not yet initialized
-        // Note: Denoiser is currently in stub mode (NRD_ENABLED=0)
-        // When NRD is properly built and linked, set denoiserEnabled = true
         if (denoiserEnabled && !denoiser)
         {
-            LogToFile("RenderWithDXR: initializing denoiser");
+            LOG_INFO("RenderWithDXR: initializing denoiser");
             if (!InitializeDenoiser(width, height))
             {
-                LogToFile("RenderWithDXR: InitializeDenoiser failed, continuing without denoising");
+                LOG_WARN("RenderWithDXR: InitializeDenoiser failed, continuing without denoising");
                 denoiserEnabled = false;
             }
         }
         
         // Update scene data
-        LogToFile("RenderWithDXR: updating scene data");
         UpdateSceneData(scene, width, height);
         
         // Rebuild acceleration structures if needed
         if (needsAccelerationStructureRebuild || scene != lastScene)
         {
-            LogToFile("RenderWithDXR: building acceleration structures");
+            LOG_DEBUG("RenderWithDXR: building acceleration structures");
             if (!BuildAccelerationStructures(scene))
             {
-                LogToFile("Failed to build acceleration structures, falling back to compute");
+                LOG_ERROR("Failed to build acceleration structures, falling back to compute");
                 RenderWithComputeShader(renderTarget, scene);
                 return;
             }
-            LogToFile("RenderWithDXR: acceleration structures built");
         }
         
         // ============================================
@@ -1563,12 +1513,10 @@ namespace RayTraceVS::DXEngine
         // ============================================
         if (causticsEnabled && photonStateObject)
         {
-            LogToFile("RenderWithDXR: emitting photons for caustics");
             EmitPhotons(scene);
         }
         else
         {
-            // No caustics - set photon map size to 0
             mappedConstantData->PhotonMapSize = 0;
         }
         
@@ -1576,21 +1524,13 @@ namespace RayTraceVS::DXEngine
         // Pass 2: Main Rendering
         // ============================================
         
-        // Update descriptors
-        LogToFile("RenderWithDXR: updating descriptors");
         UpdateDXRDescriptors(renderTarget);
         
-        // Set descriptor heap
-        LogToFile("RenderWithDXR: setting descriptor heaps");
         ID3D12DescriptorHeap* heaps[] = { dxrSrvUavHeap.Get() };
         commandList->SetDescriptorHeaps(1, heaps);
         
-        // Set global root signature
-        LogToFile("RenderWithDXR: setting root signature");
         commandList->SetComputeRootSignature(globalRootSignature.Get());
         
-        // Set root descriptor tables (including photon map UAVs, G-Buffer UAVs, and photon hash table)
-        LogToFile("RenderWithDXR: setting descriptor tables");
         CD3DX12_GPU_DESCRIPTOR_HANDLE gpuHandle(dxrSrvUavHeap->GetGPUDescriptorHandleForHeapStart());
         for (int i = 0; i < 18; i++)
         {
@@ -1598,8 +1538,6 @@ namespace RayTraceVS::DXEngine
             gpuHandle.Offset(1, dxrDescriptorSize);
         }
         
-        // Dispatch rays
-        LogToFile("RenderWithDXR: preparing dispatch desc");
         D3D12_DISPATCH_RAYS_DESC dispatchDesc = {};
         
         dispatchDesc.RayGenerationShaderRecord.StartAddress = rayGenShaderTable->GetGPUVirtualAddress();
@@ -1610,50 +1548,29 @@ namespace RayTraceVS::DXEngine
         dispatchDesc.MissShaderTable.StrideInBytes = shaderTableRecordSize;
         
         dispatchDesc.HitGroupTable.StartAddress = hitGroupShaderTable->GetGPUVirtualAddress();
-        dispatchDesc.HitGroupTable.SizeInBytes = shaderTableRecordSize * 2;  // 2 hit groups
+        dispatchDesc.HitGroupTable.SizeInBytes = shaderTableRecordSize * 2;
         dispatchDesc.HitGroupTable.StrideInBytes = shaderTableRecordSize;
         
         dispatchDesc.Width = width;
         dispatchDesc.Height = height;
         dispatchDesc.Depth = 1;
         
-        LogToFile("RenderWithDXR: dispatching rays");
         commandList->SetPipelineState1(stateObject.Get());
         commandList->DispatchRays(&dispatchDesc);
-        LogToFile("RenderWithDXR: dispatch complete");
         
         // ============================================
         // Pass 3: Denoising (NRD)
         // ============================================
-        char denoiseBuf[256];
-        sprintf_s(denoiseBuf, "RenderWithDXR: denoiserEnabled=%d, denoiser=%p, IsReady=%d, IsSigmaEnabled=%d",
-            denoiserEnabled ? 1 : 0, 
-            denoiser.get(), 
-            (denoiser ? denoiser->IsReady() : 0) ? 1 : 0,
-            (denoiser ? denoiser->IsSigmaEnabled() : 0) ? 1 : 0);
-        LogToFile(denoiseBuf);
-        
         if (denoiserEnabled && denoiser && denoiser->IsReady())
         {
-            LogToFile("RenderWithDXR: applying denoising");
-            
-            // UAV barrier to ensure ray tracing is complete
             D3D12_RESOURCE_BARRIER uavBarrier = {};
             uavBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
-            uavBarrier.UAV.pResource = nullptr;  // Barrier on all UAVs
+            uavBarrier.UAV.pResource = nullptr;
             commandList->ResourceBarrier(1, &uavBarrier);
             
-            // Apply NRD denoising
             ApplyDenoising(renderTarget, scene);
-            
-            // Composite denoised output to final render target
-            LogToFile("RenderWithDXR: compositing output (with SIGMA shadow)");
             CompositeOutput(renderTarget);
-            
-            LogToFile("RenderWithDXR: denoising complete");
         }
-        // Without denoising: RenderTarget already contains final image with shadows
-        // (shadows are applied in ClosestHit shaders via payload.color)
     }
 
     // ============================================
@@ -1705,13 +1622,12 @@ namespace RayTraceVS::DXEngine
 
     bool DXRPipeline::CreatePhotonMappingResources()
     {
-        LogToFile("CreatePhotonMappingResources started");
+        LOG_INFO("CreatePhotonMappingResources started");
         
         auto device = dxContext->GetDevice();
         if (!device)
             return false;
         
-        // Create photon map buffer (UAV)
         UINT64 photonBufferSize = sizeof(GPUPhoton) * maxPhotons;
         
         CD3DX12_HEAP_PROPERTIES defaultHeapProps(D3D12_HEAP_TYPE_DEFAULT);
@@ -1728,11 +1644,10 @@ namespace RayTraceVS::DXEngine
         
         if (FAILED(hr))
         {
-            LogToFile("Failed to create photon map buffer", hr);
+            LOG_ERROR_HR("Failed to create photon map buffer", hr);
             return false;
         }
         
-        // Create photon counter buffer (UAV with single UINT)
         CD3DX12_RESOURCE_DESC counterBufferDesc = CD3DX12_RESOURCE_DESC::Buffer(
             sizeof(UINT), D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
         
@@ -1746,11 +1661,10 @@ namespace RayTraceVS::DXEngine
         
         if (FAILED(hr))
         {
-            LogToFile("Failed to create photon counter buffer", hr);
+            LOG_ERROR_HR("Failed to create photon counter buffer", hr);
             return false;
         }
         
-        // Create upload buffer for resetting counter
         CD3DX12_HEAP_PROPERTIES uploadHeapProps(D3D12_HEAP_TYPE_UPLOAD);
         CD3DX12_RESOURCE_DESC resetBufferDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(UINT));
         
@@ -1764,48 +1678,45 @@ namespace RayTraceVS::DXEngine
         
         if (FAILED(hr))
         {
-            LogToFile("Failed to create photon counter reset buffer", hr);
+            LOG_ERROR_HR("Failed to create photon counter reset buffer", hr);
             return false;
         }
         
-        // Initialize reset buffer to 0
         void* mapped = nullptr;
         photonCounterResetBuffer->Map(0, nullptr, &mapped);
         *static_cast<UINT*>(mapped) = 0;
         photonCounterResetBuffer->Unmap(0, nullptr);
         
-        // Create photon descriptor heap
         D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
-        heapDesc.NumDescriptors = 10;  // UAV output, TLAS, CBV, object SRVs, photon UAVs
+        heapDesc.NumDescriptors = 10;
         heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
         heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
         
         hr = device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&photonSrvUavHeap));
         if (FAILED(hr))
         {
-            LogToFile("Failed to create photon descriptor heap", hr);
+            LOG_ERROR_HR("Failed to create photon descriptor heap", hr);
             return false;
         }
         
-        LogToFile("CreatePhotonMappingResources completed successfully");
+        LOG_INFO("CreatePhotonMappingResources completed");
         return true;
     }
 
     bool DXRPipeline::CreatePhotonStateObject()
     {
-        LogToFile("CreatePhotonStateObject started");
+        LOG_INFO("CreatePhotonStateObject started");
         
         auto device = dxContext->GetDevice();
         
-        // Compile photon shaders from source at runtime
         if (!LoadOrCompileDXRShader(L"PhotonEmit", &photonEmitShader) ||
             !LoadOrCompileDXRShader(L"PhotonTrace", &photonTraceClosestHitShader))
         {
-            LogToFile("Failed to load/compile photon shaders - caustics disabled");
+            LOG_WARN("Failed to load/compile photon shaders - caustics disabled");
             causticsEnabled = false;
             return false;
         }
-        LogToFile("Successfully loaded photon shaders");
+        LOG_INFO("Successfully loaded photon shaders");
         
         // Build photon state object
         CD3DX12_STATE_OBJECT_DESC stateObjectDesc(D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE);
@@ -1851,7 +1762,7 @@ namespace RayTraceVS::DXEngine
         HRESULT hr = device->CreateStateObject(stateObjectDesc, IID_PPV_ARGS(&photonStateObject));
         if (FAILED(hr))
         {
-            LogToFile("Failed to create photon state object", hr);
+            LOG_ERROR_HR("Failed to create photon state object", hr);
             causticsEnabled = false;
             return false;
         }
@@ -1859,19 +1770,17 @@ namespace RayTraceVS::DXEngine
         hr = photonStateObject->QueryInterface(IID_PPV_ARGS(&photonStateObjectProperties));
         if (FAILED(hr))
         {
-            LogToFile("Failed to get photon state object properties", hr);
+            LOG_ERROR_HR("Failed to get photon state object properties", hr);
             causticsEnabled = false;
             return false;
         }
         
-        LogToFile("CreatePhotonStateObject completed successfully");
+        LOG_INFO("CreatePhotonStateObject completed");
         return true;
     }
 
     bool DXRPipeline::CreatePhotonShaderTables()
     {
-        LogToFile("CreatePhotonShaderTables started");
-        
         auto device = dxContext->GetDevice();
         
         void* photonEmitId = photonStateObjectProperties->GetShaderIdentifier(L"PhotonEmit");
@@ -1880,7 +1789,7 @@ namespace RayTraceVS::DXEngine
         
         if (!photonEmitId || !photonMissId || !photonHitGroupId)
         {
-            LogToFile("Failed to get photon shader identifiers");
+            LOG_ERROR("Failed to get photon shader identifiers");
             return false;
         }
         
@@ -1923,7 +1832,7 @@ namespace RayTraceVS::DXEngine
             photonHitGroupShaderTable->Unmap(0, nullptr);
         }
         
-        LogToFile("CreatePhotonShaderTables completed successfully");
+        LOG_INFO("CreatePhotonShaderTables completed");
         return true;
     }
 
@@ -1955,14 +1864,12 @@ namespace RayTraceVS::DXEngine
 
     bool DXRPipeline::CreatePhotonHashResources()
     {
-        LogToFile("CreatePhotonHashResources started");
+        LOG_INFO("CreatePhotonHashResources started");
         
         auto device = dxContext->GetDevice();
         if (!device)
             return false;
         
-        // Create hash table buffer
-        // Size = PHOTON_HASH_TABLE_SIZE * sizeof(PhotonHashCell)
         UINT64 hashTableSize = PHOTON_HASH_TABLE_SIZE * sizeof(PhotonHashCell);
         
         CD3DX12_HEAP_PROPERTIES defaultHeapProps(D3D12_HEAP_TYPE_DEFAULT);
@@ -1979,14 +1886,13 @@ namespace RayTraceVS::DXEngine
         
         if (FAILED(hr))
         {
-            LogToFile("Failed to create photon hash table buffer", hr);
+            LOG_ERROR_HR("Failed to create photon hash table buffer", hr);
             return false;
         }
         
-        // Create constant buffer for hash compute shader
         CD3DX12_HEAP_PROPERTIES uploadHeapProps(D3D12_HEAP_TYPE_UPLOAD);
         CD3DX12_RESOURCE_DESC constBufferDesc = CD3DX12_RESOURCE_DESC::Buffer(
-            (sizeof(PhotonHashConstants) + 255) & ~255);  // 256-byte aligned
+            (sizeof(PhotonHashConstants) + 255) & ~255);
         
         hr = device->CreateCommittedResource(
             &uploadHeapProps,
@@ -1998,18 +1904,16 @@ namespace RayTraceVS::DXEngine
         
         if (FAILED(hr))
         {
-            LogToFile("Failed to create photon hash constant buffer", hr);
+            LOG_ERROR_HR("Failed to create photon hash constant buffer", hr);
             return false;
         }
         
-        // Map constant buffer
         photonHashConstantBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mappedPhotonHashConstants));
         
-        // Create root signature for hash compute shaders
         CD3DX12_ROOT_PARAMETER1 rootParams[3];
-        rootParams[0].InitAsUnorderedAccessView(0);  // u0 - PhotonMap
-        rootParams[1].InitAsUnorderedAccessView(1);  // u1 - PhotonHashTable
-        rootParams[2].InitAsConstantBufferView(0);   // b0 - Constants
+        rootParams[0].InitAsUnorderedAccessView(0);
+        rootParams[1].InitAsUnorderedAccessView(1);
+        rootParams[2].InitAsConstantBufferView(0);
         
         CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSigDesc;
         rootSigDesc.Init_1_1(3, rootParams, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_NONE);
@@ -2020,7 +1924,7 @@ namespace RayTraceVS::DXEngine
         if (FAILED(hr))
         {
             if (error)
-                LogToFile((std::string("Root signature serialization failed: ") + (char*)error->GetBufferPointer()).c_str());
+                LOG_ERROR((std::string("Root signature serialization failed: ") + (char*)error->GetBufferPointer()).c_str());
             return false;
         }
         
@@ -2028,19 +1932,17 @@ namespace RayTraceVS::DXEngine
             IID_PPV_ARGS(&photonHashRootSignature));
         if (FAILED(hr))
         {
-            LogToFile("Failed to create photon hash root signature", hr);
+            LOG_ERROR_HR("Failed to create photon hash root signature", hr);
             return false;
         }
         
-        // Compile hash compute shaders
         if (!LoadOrCompileDXRShader(L"BuildPhotonHashClear", &photonHashClearShader) ||
             !LoadOrCompileDXRShader(L"BuildPhotonHashBuild", &photonHashBuildShader))
         {
-            LogToFile("Failed to compile photon hash shaders");
+            LOG_WARN("Failed to compile photon hash shaders");
             return false;
         }
         
-        // Create clear pipeline state
         D3D12_COMPUTE_PIPELINE_STATE_DESC clearPipelineDesc = {};
         clearPipelineDesc.pRootSignature = photonHashRootSignature.Get();
         clearPipelineDesc.CS = { photonHashClearShader->GetBufferPointer(), photonHashClearShader->GetBufferSize() };
@@ -2048,11 +1950,10 @@ namespace RayTraceVS::DXEngine
         hr = device->CreateComputePipelineState(&clearPipelineDesc, IID_PPV_ARGS(&photonHashClearPipeline));
         if (FAILED(hr))
         {
-            LogToFile("Failed to create photon hash clear pipeline", hr);
+            LOG_ERROR_HR("Failed to create photon hash clear pipeline", hr);
             return false;
         }
         
-        // Create build pipeline state
         D3D12_COMPUTE_PIPELINE_STATE_DESC buildPipelineDesc = {};
         buildPipelineDesc.pRootSignature = photonHashRootSignature.Get();
         buildPipelineDesc.CS = { photonHashBuildShader->GetBufferPointer(), photonHashBuildShader->GetBufferSize() };
@@ -2060,11 +1961,11 @@ namespace RayTraceVS::DXEngine
         hr = device->CreateComputePipelineState(&buildPipelineDesc, IID_PPV_ARGS(&photonHashBuildPipeline));
         if (FAILED(hr))
         {
-            LogToFile("Failed to create photon hash build pipeline", hr);
+            LOG_ERROR_HR("Failed to create photon hash build pipeline", hr);
             return false;
         }
         
-        LogToFile("CreatePhotonHashResources completed successfully");
+        LOG_INFO("CreatePhotonHashResources completed");
         return true;
     }
 
@@ -2179,9 +2080,7 @@ namespace RayTraceVS::DXEngine
     {
         if (!causticsEnabled || !photonStateObject)
             return;
-        
-        LogToFile("EmitPhotons started");
-        
+
         auto commandList = dxContext->GetCommandList();
         
         // Clear the photon map
@@ -2243,7 +2142,6 @@ namespace RayTraceVS::DXEngine
         // Build spatial hash table for O(1) photon lookup
         BuildPhotonHashTable();
         
-        LogToFile("EmitPhotons completed");
     }
 
     // ============================================
@@ -2252,20 +2150,18 @@ namespace RayTraceVS::DXEngine
 
     bool DXRPipeline::InitializeDenoiser(UINT width, UINT height)
     {
-        LogToFile("Initializing NRD Denoiser...");
+        LOG_INFO("Initializing NRD Denoiser...");
         
-        // Create denoiser if not already created
         if (!denoiser)
         {
             denoiser = std::make_unique<NRDDenoiser>(dxContext);
         }
         
-        // Initialize or resize
         if (!denoiser->IsReady())
         {
             if (!denoiser->Initialize(width, height))
             {
-                LogToFile("Failed to initialize NRD Denoiser");
+                LOG_ERROR("Failed to initialize NRD Denoiser");
                 return false;
             }
         }
@@ -2273,30 +2169,26 @@ namespace RayTraceVS::DXEngine
         {
             if (!denoiser->Resize(width, height))
             {
-                LogToFile("Failed to resize NRD Denoiser");
+                LOG_ERROR("Failed to resize NRD Denoiser");
                 return false;
             }
         }
         
-        // Initialize frame tracking
         XMStoreFloat4x4(&prevViewMatrix, XMMatrixIdentity());
         XMStoreFloat4x4(&prevProjMatrix, XMMatrixIdentity());
         isFirstFrame = true;
         frameIndex = 0;
         
-        LogToFile("NRD Denoiser initialized successfully");
+        LOG_INFO("NRD Denoiser initialized successfully");
         return true;
     }
 
     void DXRPipeline::ApplyDenoising(RenderTarget* renderTarget, Scene* scene)
     {
-        LogToFile("ApplyDenoising: called");
         if (!denoiser || !denoiser->IsReady())
         {
-            LogToFile("ApplyDenoising: denoiser not ready, skipping");
             return;
         }
-        LogToFile("ApplyDenoising: denoiser is ready, proceeding");
         
         auto commandList = dxContext->GetCommandList();
         auto camera = scene->GetCamera();
@@ -2339,7 +2231,6 @@ namespace RayTraceVS::DXEngine
         
         // SIGMA enabled - let it process shadow data
         denoiser->SetSigmaEnabled(true);
-        LogToFile("ApplyDenoising: SIGMA ENABLED");
         
         // CRITICAL: Copy raw specular data BEFORE NRD processes it
         // NRD corrupts the original SpecularRadianceHitDist buffer, so we need a backup
@@ -2404,14 +2295,10 @@ namespace RayTraceVS::DXEngine
             commandList->ResourceBarrier(2, postCopyBarriers);
             
             rawSpecularInSrvState = true;  // Now in SRV state for next frame
-            
-            LogToFile("ApplyDenoising: RawSpecularBackup copied with proper state transitions");
         }
         
         // Apply denoising
-        LogToFile("ApplyDenoising: calling denoiser->Denoise()");
         denoiser->Denoise(commandList, settings);
-        LogToFile("ApplyDenoising: denoiser->Denoise() returned");
         
         // Transition NRD output from UAV to SRV for CompositeOutput
         // CRITICAL: Need both UAV barrier (for sync) AND state transition (for read access)
@@ -2457,7 +2344,6 @@ namespace RayTraceVS::DXEngine
         transitionBarriers[3].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
         
         commandList->ResourceBarrier(4, transitionBarriers);
-        LogToFile("ApplyDenoising: UAV barriers + state transitions added for NRD outputs");
         
         // Update previous frame data
         XMStoreFloat4x4(&prevViewMatrix, viewMatrix);
@@ -2468,7 +2354,7 @@ namespace RayTraceVS::DXEngine
 
     bool DXRPipeline::CreateCompositePipeline()
     {
-        LogToFile("CreateCompositePipeline: creating composite compute pipeline");
+        LOG_DEBUG("CreateCompositePipeline: creating composite compute pipeline");
         
         auto device = dxContext->GetDevice();
         
@@ -2476,19 +2362,16 @@ namespace RayTraceVS::DXEngine
         ComPtr<ID3DBlob> compositeShader;
         if (shaderCache)
         {
-            LogToFile("CreateCompositePipeline: using ShaderCache");
             if (!shaderCache->GetComputeShader(L"Composite", L"CSMain", &compositeShader))
             {
-                LogToFile("CreateCompositePipeline: ShaderCache failed to get Composite");
+                LOG_ERROR("CreateCompositePipeline: ShaderCache failed to get Composite");
                 return false;
             }
-            LogToFile("CreateCompositePipeline: got Composite from cache");
         }
         else
         {
             // Fallback: compile directly
             std::wstring compositeShaderPath = shaderSourcePath + L"Composite.hlsl";
-            LogToFile(("CreateCompositePipeline: compiling " + std::string(compositeShaderPath.begin(), compositeShaderPath.end())).c_str());
             
             ComPtr<ID3DBlob> errorBlob;
             HRESULT hr = D3DCompileFromFile(
@@ -2506,8 +2389,8 @@ namespace RayTraceVS::DXEngine
             {
                 if (errorBlob)
                 {
-                    LogToFile("CreateCompositePipeline: composite shader compile error");
-                    LogToFile((char*)errorBlob->GetBufferPointer());
+                    LOG_ERROR("CreateCompositePipeline: composite shader compile error");
+                    LOG_ERROR((char*)errorBlob->GetBufferPointer());
                 }
                 return false;
             }
@@ -2564,8 +2447,8 @@ namespace RayTraceVS::DXEngine
         if (FAILED(hr))
         {
             if (errorBlob)
-                LogToFile((char*)errorBlob->GetBufferPointer());
-            LogToFile("CreateCompositePipeline: failed to serialize root signature", hr);
+                LOG_ERROR((char*)errorBlob->GetBufferPointer());
+            LOG_ERROR_HR("CreateCompositePipeline: failed to serialize root signature", hr);
             return false;
         }
         
@@ -2574,7 +2457,7 @@ namespace RayTraceVS::DXEngine
         
         if (FAILED(hr))
         {
-            LogToFile("CreateCompositePipeline: failed to create root signature", hr);
+            LOG_ERROR_HR("CreateCompositePipeline: failed to create root signature", hr);
             return false;
         }
         
@@ -2587,11 +2470,10 @@ namespace RayTraceVS::DXEngine
         
         if (FAILED(hr))
         {
-            LogToFile("CreateCompositePipeline: failed to create pipeline state", hr);
+            LOG_ERROR_HR("CreateCompositePipeline: failed to create pipeline state", hr);
             return false;
         }
         
-        LogToFile("CreateCompositePipeline: success");
         return true;
     }
 
@@ -2600,8 +2482,6 @@ namespace RayTraceVS::DXEngine
         if (!denoiser || !denoiser->IsReady())
             return;
 
-        LogToFile("CompositeOutput: entered");
-        
         // Always recreate pipeline to pick up shader changes during development
         // TODO: Remove this forced recreation in release builds
         compositePipelineState.Reset();
@@ -2609,10 +2489,9 @@ namespace RayTraceVS::DXEngine
         
         if (!compositePipelineState)
         {
-            // Lazy initialization of composite pipeline
             if (!CreateCompositePipeline())
             {
-                LogToFile("CompositeOutput: failed to create composite pipeline");
+                LOG_ERROR("CompositeOutput: failed to create composite pipeline");
                 return;
             }
         }
@@ -2623,13 +2502,13 @@ namespace RayTraceVS::DXEngine
             auto device = dxContext->GetDevice();
             D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
             heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-            heapDesc.NumDescriptors = 16; // 10 SRVs + 1 UAV + some extra
+            heapDesc.NumDescriptors = 16;
             heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
             
             HRESULT hr = device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&compositeDescriptorHeap));
             if (FAILED(hr))
             {
-                LogToFile("CompositeOutput: failed to create descriptor heap", hr);
+                LOG_ERROR_HR("CompositeOutput: failed to create descriptor heap", hr);
                 return;
             }
         }
@@ -2651,36 +2530,10 @@ namespace RayTraceVS::DXEngine
         auto& output = denoiser->GetOutput();
         
         // Create SRVs for all input textures
-        // t0: DenoisedDiffuse (use output.DiffuseRadiance)
         D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
         srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
         srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
         srvDesc.Texture2D.MipLevels = 1;
-        
-        // DEBUG: Log resource pointers and GPU descriptor handles
-        {
-            char debugBuf[1024];
-            sprintf_s(debugBuf, "CompositeOutput SRV bindings:\n"
-                "  t0 (DenoisedDiffuse)  Resource=%p\n"
-                "  t1 (DenoisedSpecular) Resource=%p\n"
-                "  t2 (Albedo)           Resource=%p\n"
-                "  t4 (GBuffer_DiffuseIn) Resource=%p\n"
-                "  GPU Handle Base = %llu, DescriptorSize = %u\n"
-                "  t0 GPU Handle = %llu\n"
-                "  t1 GPU Handle = %llu\n"
-                "  t2 GPU Handle = %llu\n"
-                "  Are t0 and t4 different? %s",
-                (void*)output.DiffuseRadiance.Get(), 
-                (void*)output.SpecularRadiance.Get(), 
-                (void*)gBuffer.Albedo.Get(),
-                (void*)gBuffer.DiffuseRadianceHitDist.Get(),
-                gpuHandle.ptr, descriptorSize,
-                gpuHandle.ptr,
-                gpuHandle.ptr + descriptorSize,
-                gpuHandle.ptr + descriptorSize * 2,
-                (output.DiffuseRadiance.Get() != gBuffer.DiffuseRadianceHitDist.Get()) ? "YES (correct)" : "NO (BUG!)");
-            LogToFile(debugBuf);
-        }
         
         struct CompositeSrvBinding
         {
@@ -2751,11 +2604,7 @@ namespace RayTraceVS::DXEngine
             float debugTileScale;
             UINT useDenoisedShadow;
             float shadowStrength;
-        } constants = { width, height, exposure, (float)toneMapOperator, 0, 0.15f, forceUseDenoisedShadow, shadowStrength }; // debugMode=1: show debug tiles
-        
-        char compositeBuf[256];
-        sprintf_s(compositeBuf, "CompositeOutput: shadowStrength=%.2f, useDenoisedShadow=%u", constants.shadowStrength, constants.useDenoisedShadow);
-        LogToFile(compositeBuf);
+        } constants = { width, height, exposure, (float)toneMapOperator, 0, 0.15f, forceUseDenoisedShadow, shadowStrength };
         
         commandList->SetComputeRoot32BitConstants(2, sizeof(constants) / 4, &constants, 0);
         
@@ -2792,8 +2641,6 @@ namespace RayTraceVS::DXEngine
         backToUavBarriers[3].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
         
         commandList->ResourceBarrier(4, backToUavBarriers);
-        
-        LogToFile("CompositeOutput: dispatched composite shader");
     }
 }
 

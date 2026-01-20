@@ -9,10 +9,35 @@ namespace RayTraceVS.WPF.Models.Nodes
     /// アンビエントライトノード（環境光）
     /// シーン全体を均一に照らす光源
     /// </summary>
-    public class AmbientLightNode : Node
+    public partial class AmbientLightNode : Node
     {
-        public Vector4 Color { get; set; } = new Vector4(0.2f, 0.2f, 0.2f, 1.0f);
-        public float Intensity { get; set; } = 1.0f;
+        private Vector4 _color = new Vector4(0.2f, 0.2f, 0.2f, 1.0f);
+        public Vector4 Color
+        {
+            get => _color;
+            set
+            {
+                if (_color != value)
+                {
+                    _color = value;
+                    OnPropertyChanged(nameof(Color));
+                    MarkDirty();
+                }
+            }
+        }
+        
+        private float _intensity = 1.0f;
+        public float Intensity
+        {
+            get => _intensity;
+            set
+            {
+                if (SetProperty(ref _intensity, value))
+                {
+                    MarkDirty();
+                }
+            }
+        }
 
         public AmbientLightNode() : base("Ambient Light", NodeCategory.Light)
         {

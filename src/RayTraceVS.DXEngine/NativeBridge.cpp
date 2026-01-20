@@ -7,6 +7,7 @@
 #include "DXContext.h"
 #include "DXRPipeline.h"
 #include "RenderTarget.h"
+#include "DebugLog.h"
 #include "Scene/Scene.h"
 #include "Scene/Objects/Sphere.h"
 #include "Scene/Objects/Plane.h"
@@ -16,16 +17,6 @@
 #include "NativeBridge.h"
 
 using namespace DirectX;
-
-static void LogToFile(const char* message)
-{
-    std::ofstream log("C:\\git\\RayTraceVS\\debug_log.txt", std::ios::app);
-    if (log.is_open())
-    {
-        log << message << std::endl;
-        log.close();
-    }
-}
 
 namespace RayTraceVS::Interop::Bridge
 {
@@ -131,9 +122,6 @@ namespace RayTraceVS::Interop::Bridge
 
     void SetRenderSettings(RayTraceVS::DXEngine::Scene* scene, int samplesPerPixel, int maxBounces, float exposure, int toneMapOperator, float denoiserStabilization, float shadowStrength, bool enableDenoiser)
     {
-        char buf[256];
-        sprintf_s(buf, "NativeBridge::SetRenderSettings: shadowStrength=%.2f, enableDenoiser=%d", shadowStrength, enableDenoiser ? 1 : 0);
-        LogToFile(buf);
         scene->SetRenderSettings(samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization, shadowStrength, enableDenoiser);
     }
 

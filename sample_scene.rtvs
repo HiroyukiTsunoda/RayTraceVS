@@ -5,8 +5,8 @@
       "Id": "a1b2c3d4-e5f6-7890-abcd-111111111111",
       "Type": "SphereNode",
       "Title": "Sphere",
-      "PositionX": 1670.1000000000008,
-      "PositionY": 987.6363636363635,
+      "PositionX": 1680.831707317074,
+      "PositionY": 994.4656319290461,
       "Properties": {
         "Transform": {
           "Position": {
@@ -376,7 +376,7 @@
       "Properties": {
         "X": 0.0,
         "Y": 3.0,
-        "Z": -8.0
+        "Z": -1.0
       }
     },
     {
@@ -947,8 +947,8 @@
     }
   ],
   "Viewport": {
-    "PanX": -395.1150477457297,
-    "PanY": -610.6350503567513,
+    "PanX": -414.388980252897,
+    "PanY": -592.7379653943142,
     "Zoom": 0.8200000000000001,
     "IsLeftPanelVisible": true,
     "IsRightPanelVisible": true,

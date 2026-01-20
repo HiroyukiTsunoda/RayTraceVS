@@ -11,10 +11,61 @@ namespace RayTraceVS.WPF.Models.Nodes
     /// </summary>
     public partial class PointLightNode : Node
     {
-        public Vector3 LightPosition { get; set; } = new Vector3(5, 5, -5);
-        public Vector4 Color { get; set; } = Vector4.One;
-        public float Intensity { get; set; } = 1.0f;
-        public float Attenuation { get; set; } = 0.1f;
+        private Vector3 _lightPosition = new Vector3(5, 5, -5);
+        public Vector3 LightPosition
+        {
+            get => _lightPosition;
+            set
+            {
+                if (_lightPosition != value)
+                {
+                    _lightPosition = value;
+                    OnPropertyChanged(nameof(LightPosition));
+                    MarkDirty();
+                }
+            }
+        }
+        
+        private Vector4 _color = Vector4.One;
+        public Vector4 Color
+        {
+            get => _color;
+            set
+            {
+                if (_color != value)
+                {
+                    _color = value;
+                    OnPropertyChanged(nameof(Color));
+                    MarkDirty();
+                }
+            }
+        }
+        
+        private float _intensity = 1.0f;
+        public float Intensity
+        {
+            get => _intensity;
+            set
+            {
+                if (SetProperty(ref _intensity, value))
+                {
+                    MarkDirty();
+                }
+            }
+        }
+        
+        private float _attenuation = 0.1f;
+        public float Attenuation
+        {
+            get => _attenuation;
+            set
+            {
+                if (SetProperty(ref _attenuation, value))
+                {
+                    MarkDirty();
+                }
+            }
+        }
         
         private float _radius = 0.0f;           // 0 = ポイントライト（ハードシャドウ）
         public float Radius

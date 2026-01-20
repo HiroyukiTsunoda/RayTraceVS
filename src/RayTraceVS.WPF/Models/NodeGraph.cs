@@ -190,11 +190,6 @@ namespace RayTraceVS.WPF.Models
             _evaluatingNodes ??= new HashSet<Guid>();
             _evaluatingNodes.Clear();
 
-            // Dirtyなノードの数をカウント（デバッグ用）
-            int dirtyCount = nodes.Values.Count(n => n.IsDirty);
-            int cachedCount = nodes.Values.Count(n => !n.IsDirty);
-            System.Diagnostics.Debug.WriteLine($"[NodeGraph] EvaluateGraph: {dirtyCount} dirty, {cachedCount} cached");
-
             foreach (var node in nodes.Values)
             {
                 EvaluateNode(node, _evaluationResults, _evaluatingNodes);

@@ -95,9 +95,7 @@ namespace RayTraceVS.WPF.Models.Nodes
             {
                 if (SetProperty(ref _shadowStrength, value))
                 {
-                    MarkDirty();  // キャッシュを無効化して再評価を促す
-                    try { System.IO.File.AppendAllText(@"C:\git\RayTraceVS\debug_log.txt", $"[SceneNode] ShadowStrength changed to: {value}, MarkDirty called\n"); } catch { }
-                    System.Diagnostics.Debug.WriteLine($"[SceneNode] ShadowStrength changed to: {value}");
+                    MarkDirty();
                 }
             }
         }

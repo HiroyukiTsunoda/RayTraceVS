@@ -13,9 +13,48 @@ namespace RayTraceVS.WPF.Models.Nodes
     /// </summary>
     public partial class DirectionalLightNode : Node
     {
-        public Vector3 Direction { get; set; } = new Vector3(0, -1, 0);
-        public Vector4 Color { get; set; } = Vector4.One;
-        public float Intensity { get; set; } = 1.0f;
+        private Vector3 _direction = new Vector3(0, -1, 0);
+        public Vector3 Direction
+        {
+            get => _direction;
+            set
+            {
+                if (_direction != value)
+                {
+                    _direction = value;
+                    OnPropertyChanged(nameof(Direction));
+                    MarkDirty();
+                }
+            }
+        }
+        
+        private Vector4 _color = Vector4.One;
+        public Vector4 Color
+        {
+            get => _color;
+            set
+            {
+                if (_color != value)
+                {
+                    _color = value;
+                    OnPropertyChanged(nameof(Color));
+                    MarkDirty();
+                }
+            }
+        }
+        
+        private float _intensity = 1.0f;
+        public float Intensity
+        {
+            get => _intensity;
+            set
+            {
+                if (SetProperty(ref _intensity, value))
+                {
+                    MarkDirty();
+                }
+            }
+        }
         
         private float _angularRadius = 0.0f;     // 0 = ハードシャドウ、>0 = ソフトシャドウ（太陽なら約0.01）
         public float AngularRadius

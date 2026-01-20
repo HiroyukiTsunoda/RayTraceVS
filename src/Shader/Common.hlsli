@@ -129,7 +129,7 @@ struct SceneConstantBuffer
     float4x4 PrevViewProjection;
 };
 
-// 球データ (with PBR material, must match C++ GPUSphere) - 64 bytes (TEST: emission removed)
+// 球データ (with PBR material, must match C++ GPUSphere) - 80 bytes
 struct SphereData
 {
     float3 center;      // 12
@@ -143,23 +143,27 @@ struct SphereData
     float padding1;     // 4
     float padding2;     // 4
     float padding3;     // 4  -> 64
+    float3 emission;    // 12
+    float padding4;     // 4  -> 80
 };
 
-// 平面データ (with PBR material, must match C++ GPUPlane) - 64 bytes (TEST: emission removed)
+// 平面データ (with PBR material, must match C++ GPUPlane) - 80 bytes
 struct PlaneData
 {
-    float3 position;
-    float metallic;
-    float3 normal;
-    float roughness;
-    float4 color;
-    float transmission;
-    float ior;
-    float specular;     // Specular intensity (0.0 = none, 1.0 = full)
-    float padding1;
+    float3 position;    // 12
+    float metallic;     // 4  -> 16
+    float3 normal;      // 12
+    float roughness;    // 4  -> 32
+    float4 color;       // 16 -> 48
+    float transmission; // 4
+    float ior;          // 4
+    float specular;     // 4
+    float padding1;     // 4  -> 64
+    float3 emission;    // 12
+    float padding2;     // 4  -> 80
 };
 
-// ボックスデータ (with PBR material, must match C++ GPUBox) - 80 bytes (TEST: emission removed)
+// ボックスデータ (with PBR material, must match C++ GPUBox) - 96 bytes
 struct BoxData
 {
     float3 center;      // 12
@@ -175,6 +179,8 @@ struct BoxData
     float padding3;     // 4
     float padding4;     // 4
     float padding5;     // 4  -> 80
+    float3 emission;    // 12
+    float padding6;     // 4  -> 96
 };
 
 // ライトデータ (must match C++ GPULight)
