@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Data;
 using System.Windows.Media;
+using RayTraceVS.WPF.Commands;
 using RayTraceVS.WPF.ViewModels;
 using RayTraceVS.WPF.Models;
 
@@ -37,7 +38,7 @@ namespace RayTraceVS.WPF.Views
                 {
                     var nodeToDelete = viewModel.SelectedNode;
                     viewModel.SelectedNode = null;
-                    viewModel.RemoveNode(nodeToDelete);
+                    viewModel.CommandManager.Execute(new RemoveNodeCommand(viewModel, nodeToDelete));
                 }
             }
         }

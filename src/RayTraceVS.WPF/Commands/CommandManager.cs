@@ -53,29 +53,51 @@ namespace RayTraceVS.WPF.Commands
 
             if (command.CanUndo)
             {
-                _undoStack.Push(command);
-
-                // スタックサイズを制限
-                while (_undoStack.Count > _maxUndoCount)
-                {
-                    // 古いコマンドを削除（効率的な方法ではないが、通常は発生しない）
-                    var tempStack = new Stack<IEditorCommand>();
-                    while (_undoStack.Count > 1)
-                    {
-                        tempStack.Push(_undoStack.Pop());
-                    }
-                    _undoStack.Pop(); // 最も古いものを削除
-                    while (tempStack.Count > 0)
-                    {
-                        _undoStack.Push(tempStack.Pop());
-                    }
-                }
-
-                // リドゥスタックをクリア（新しい操作があったので）
-                _redoStack.Clear();
-
-                NotifyStateChanged();
+                PushToUndoStack(command);
             }
+        }
+
+        /// <summary>
+        /// UIで既に実行済みの操作をアンドゥスタックに登録（Execute()を呼ばない）
+        /// ドラッグ操作やノード追加など、UIで既に変更が適用された後に使用
+        /// </summary>
+        public void RegisterExecuted(IEditorCommand command)
+        {
+            if (command == null) throw new ArgumentNullException(nameof(command));
+
+            if (command.CanUndo)
+            {
+                PushToUndoStack(command);
+            }
+        }
+
+        /// <summary>
+        /// コマンドをアンドゥスタックに追加する共通処理
+        /// </summary>
+        private void PushToUndoStack(IEditorCommand command)
+        {
+            _undoStack.Push(command);
+
+            // スタックサイズを制限
+            while (_undoStack.Count > _maxUndoCount)
+            {
+                // 古いコマンドを削除（効率的な方法ではないが、通常は発生しない）
+                var tempStack = new Stack<IEditorCommand>();
+                while (_undoStack.Count > 1)
+                {
+                    tempStack.Push(_undoStack.Pop());
+                }
+                _undoStack.Pop(); // 最も古いものを削除
+                while (tempStack.Count > 0)
+                {
+                    _undoStack.Push(tempStack.Pop());
+                }
+            }
+
+            // リドゥスタックをクリア（新しい操作があったので）
+            _redoStack.Clear();
+
+            NotifyStateChanged();
         }
 
         /// <summary>
