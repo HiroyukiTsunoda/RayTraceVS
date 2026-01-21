@@ -136,8 +136,8 @@
       "Id": "d38ae94a-cab2-47e9-b086-7e48c9b4bdf0",
       "Type": "BoxNode",
       "Title": "Box",
-      "PositionX": 1686.8023166023168,
-      "PositionY": 1562.669111969112,
+      "PositionX": 1685.8267068462194,
+      "PositionY": 1548.0349656276485,
       "Properties": {
         "Transform": {
           "Position": {
@@ -499,8 +499,8 @@
       "Id": "59bc74c6-6e1d-4505-a999-aca4327a50bd",
       "Type": "Vector3Node",
       "Title": "Vector3",
-      "PositionX": 1462.7064935064932,
-      "PositionY": 1600.3376623376623,
+      "PositionX": 1457.8284447260055,
+      "PositionY": 1612.0449794108333,
       "Properties": {
         "X": 1.0,
         "Y": 1.0,
@@ -962,12 +962,6 @@
       "InputSocketName": "Scale"
     },
     {
-      "OutputNodeId": "59bc74c6-6e1d-4505-a999-aca4327a50bd",
-      "OutputSocketName": "Vector",
-      "InputNodeId": "d38ae94a-cab2-47e9-b086-7e48c9b4bdf0",
-      "InputSocketName": "Size"
-    },
-    {
       "OutputNodeId": "d441dacb-9d47-4f5f-995b-13ade781818f",
       "OutputSocketName": "Value",
       "InputNodeId": "1574bc15-76ea-4253-bde5-8f62befa63a3",
@@ -1140,11 +1134,17 @@
       "OutputSocketName": "Value",
       "InputNodeId": "1617550e-1ef3-4181-827f-4a2fa22edc0d",
       "InputSocketName": "IOR"
+    },
+    {
+      "OutputNodeId": "59bc74c6-6e1d-4505-a999-aca4327a50bd",
+      "OutputSocketName": "Vector",
+      "InputNodeId": "d38ae94a-cab2-47e9-b086-7e48c9b4bdf0",
+      "InputSocketName": "Size"
     }
   ],
   "Viewport": {
-    "PanX": -394.7920562039518,
-    "PanY": -606.7594450230906,
+    "PanX": -401.19205620395167,
+    "PanY": -591.5594450230906,
     "Zoom": 0.8200000000000001,
     "IsLeftPanelVisible": true,
     "IsRightPanelVisible": true,

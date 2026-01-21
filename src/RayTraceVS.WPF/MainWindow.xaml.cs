@@ -189,11 +189,37 @@ namespace RayTraceVS.WPF
                 return;
             }
             
+            // Ctrl+Shift+Z: Redo（Ctrl+Zより先に判定）
+            if (e.Key == System.Windows.Input.Key.Z && 
+                e.KeyboardDevice.Modifiers == (System.Windows.Input.ModifierKeys.Control | System.Windows.Input.ModifierKeys.Shift))
+            {
+                if (viewModel != null && viewModel.CommandManager.CanRedo)
+                {
+                    viewModel.CommandManager.Redo();
+                    // 接続線とノード値の更新
+                    NodeEditor.RefreshConnectionLines();
+                    NodeEditor.RefreshNodeTextBoxValues();
+                }
+                e.Handled = true;
+                return;
+            }
+            
             // キーボードショートカット
             if (e.KeyboardDevice.Modifiers == System.Windows.Input.ModifierKeys.Control)
             {
                 switch (e.Key)
                 {
+                    case System.Windows.Input.Key.Z:
+                        // Ctrl+Z: Undo
+                        if (viewModel != null && viewModel.CommandManager.CanUndo)
+                        {
+                            viewModel.CommandManager.Undo();
+                            // 接続線とノード値の更新
+                            NodeEditor.RefreshConnectionLines();
+                            NodeEditor.RefreshNodeTextBoxValues();
+                        }
+                        e.Handled = true;
+                        break;
                     case System.Windows.Input.Key.N:
                         NewScene_Click(this, new RoutedEventArgs());
                         e.Handled = true;
@@ -286,6 +312,9 @@ namespace RayTraceVS.WPF
                 hasUnsavedChanges = false;
                 UpdateTitle();
                 
+                // Undo/Redo履歴をクリア
+                viewModel.CommandManager.Clear();
+                
                 // パネルの開閉状態を復元（シーンファイルから）
                 if (viewportState != null)
                 {
@@ -328,6 +357,9 @@ namespace RayTraceVS.WPF
                 currentFilePath = null;
                 hasUnsavedChanges = false;
                 UpdateTitle();
+                
+                // Undo/Redo履歴をクリア
+                viewModel.CommandManager.Clear();
                 
                 // 新規作成時は設定をクリア
                 settingsService.LastOpenedFilePath = null;

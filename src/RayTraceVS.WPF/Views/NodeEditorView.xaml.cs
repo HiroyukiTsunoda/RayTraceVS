@@ -8,6 +8,7 @@ using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
+using RayTraceVS.WPF.Commands;
 using RayTraceVS.WPF.ViewModels;
 using RayTraceVS.WPF.Models;
 using RayTraceVS.WPF.Models.Nodes;
@@ -33,6 +34,18 @@ namespace RayTraceVS.WPF.Views
         private Point rectSelectStartPoint;
         private Rectangle? selectionRectangle = null;
         private Dictionary<Node, Point> multiDragOffsets = new Dictionary<Node, Point>();
+        
+        // ドラッグ開始時の位置を記録（Undo用）
+        private Dictionary<Node, Point> dragStartPositions = new Dictionary<Node, Point>();
+        
+        // 接続ドラッグ開始時に一時削除した接続（キャンセル時に復元するため）
+        private NodeConnection? _tempRemovedConnection = null;
+        // 一時削除時にSceneNodeから削除されたソケット情報
+        private NodeSocket? _tempRemovedSocket = null;
+        private int _tempRemovedSocketIndex = -1;
+        
+        // パラメーター変更のUndo用（TextBoxのフォーカス取得時に変更前の値を記録）
+        private Dictionary<TextBox, float> _textBoxOriginalValues = new Dictionary<TextBox, float>();
         
         // パン・ズーム用
         private TranslateTransform panTransform = new TranslateTransform();
@@ -176,8 +189,40 @@ namespace RayTraceVS.WPF.Views
                 UpdateAllSocketPositionsForNode(node);
             }
             
+            // すべての接続のPathを明示的に更新（Undo/Redoで新しく作成された接続のため）
+            foreach (var connection in viewModel.Connections)
+            {
+                connection.UpdatePath();
+            }
+            
             // 接続線を再構築（必ず最前面に描画される）
             RebuildConnectionPaths();
+        }
+
+        /// <summary>
+        /// すべてのノードのTextBox値を更新（Undo/Redo後に使用）
+        /// </summary>
+        public void RefreshNodeTextBoxValues()
+        {
+            // Vector3Node, Vector4Node, FloatNodeのTextBox値を更新
+            foreach (var textBox in FindVisualChildren<TextBox>(NodeCanvas))
+            {
+                if (textBox.Tag is NodeSocket socket)
+                {
+                    if (socket.ParentNode is Vector3Node vector3Node)
+                    {
+                        textBox.Text = vector3Node.GetSocketValue(socket.Name).ToString("G");
+                    }
+                    else if (socket.ParentNode is Vector4Node vector4Node)
+                    {
+                        textBox.Text = vector4Node.GetSocketValue(socket.Name).ToString("G");
+                    }
+                }
+                else if (textBox.DataContext is FloatNode floatNode && floatNode.HasEditableFloat)
+                {
+                    textBox.Text = floatNode.Value.ToString("G");
+                }
+            }
         }
         
         /// <summary>
@@ -341,8 +386,29 @@ namespace RayTraceVS.WPF.Views
                                 }
                             }
                             
-                            // 接続を削除
+                            // 接続を一時的に削除（キャンセル時に復元するため）
+                            _tempRemovedConnection = existingConnection;
+                            
+                            // SceneNodeのソケット情報を記録（削除される前に）
+                            _tempRemovedSocket = null;
+                            _tempRemovedSocketIndex = -1;
+                            if (nodeSocket.ParentNode is SceneNode sceneNode1)
+                            {
+                                _tempRemovedSocketIndex = sceneNode1.InputSockets.IndexOf(nodeSocket);
+                            }
+                            
+                            // ソケット数を記録
+                            int socketCountBefore1 = 0;
+                            SceneNode? sn1 = nodeSocket.ParentNode as SceneNode;
+                            if (sn1 != null) socketCountBefore1 = sn1.InputSockets.Count;
+                            
                             viewModel.RemoveConnection(existingConnection);
+                            
+                            // ソケットが削除されたか確認
+                            if (sn1 != null && sn1.InputSockets.Count < socketCountBefore1 && !sn1.InputSockets.Contains(nodeSocket))
+                            {
+                                _tempRemovedSocket = nodeSocket;
+                            }
                             
                             // 接続のドラッグ開始
                             isDraggingConnection = true;
@@ -368,6 +434,7 @@ namespace RayTraceVS.WPF.Views
                 isDraggingConnection = true;
                 draggedSocket = nodeSocket;
                 draggedSocketElement = socket;
+                ClearTempRemovedConnectionState();  // 新規接続なので一時削除した接続はない
                 CreatePreviewLine(nodeSocket);
                 
                 // 初期位置を設定
@@ -398,6 +465,7 @@ namespace RayTraceVS.WPF.Views
                     isDraggingNode = true;
                     draggedNode = node;
                     multiDragOffsets.Clear();
+                    dragStartPositions.Clear();
                     
                     foreach (var selectedNode in selectedNodes)
                     {
@@ -405,6 +473,8 @@ namespace RayTraceVS.WPF.Views
                             mousePos.X - selectedNode.Position.X,
                             mousePos.Y - selectedNode.Position.Y
                         );
+                        // ドラッグ開始位置を記録（Undo用）
+                        dragStartPositions[selectedNode] = selectedNode.Position;
                     }
                     
                     NodeCanvas.CaptureMouse();
@@ -425,6 +495,10 @@ namespace RayTraceVS.WPF.Views
                 // 常にmultiDragOffsetsを使用（単一選択でも統一）
                 multiDragOffsets.Clear();
                 multiDragOffsets[node] = new Point(mousePos.X - node.Position.X, mousePos.Y - node.Position.Y);
+                
+                // ドラッグ開始位置を記録（Undo用）
+                dragStartPositions.Clear();
+                dragStartPositions[node] = node.Position;
                 
                 // フォールバック用にdragStartOffsetも設定
                 dragStartOffset = new Point(mousePos.X - node.Position.X, mousePos.Y - node.Position.Y);
@@ -466,24 +540,29 @@ namespace RayTraceVS.WPF.Views
             
             if (isDraggingConnection && draggedSocket != null)
             {
-                // 接続先のソケットを探す
+                // 接続先のソケットを探す（拡張ヒット判定）
                 var mousePos = e.GetPosition(NodeCanvas);
-                var hitElement = NodeCanvas.InputHitTest(mousePos) as DependencyObject;
+                var (targetElement, targetNodeSocket) = FindNearestSocket(mousePos);
                 
-                
-                var targetSocket = FindVisualParent<Ellipse>(hitElement);
-                
-                if (targetSocket != null && targetSocket.DataContext is NodeSocket targetNodeSocket)
+                if (targetNodeSocket != null)
                 {
                     // 接続を作成（出力→入力のみ許可）
                     CreateConnection(draggedSocket, targetNodeSocket);
                 }
                 else
                 {
+                    // 何もない場所にドロップした場合、接続を削除（Undo可能）
+                    CommitTempRemovedConnection();
                 }
                 
                 // プレビュー線を削除
                 RemovePreviewLine();
+            }
+            
+            // ノードドラッグ終了時の処理
+            if (isDraggingNode)
+            {
+                FinishNodeDrag();
             }
             
             // ドラッグ状態をリセット
@@ -492,6 +571,7 @@ namespace RayTraceVS.WPF.Views
             draggedNode = null;
             draggedSocket = null;
             multiDragOffsets.Clear();
+            dragStartPositions.Clear();
             NodeCanvas.ReleaseMouseCapture();
         }
 
@@ -556,10 +636,9 @@ namespace RayTraceVS.WPF.Views
                 var mousePos = e.GetPosition(NodeCanvas);
                 UpdatePreviewLine(mousePos);
                 
-                // ホバーしているソケットをチェックして、互換性を表示
-                var hitElement = NodeCanvas.InputHitTest(mousePos) as DependencyObject;
-                var targetSocket = FindVisualParent<Ellipse>(hitElement);
-                if (targetSocket != null && targetSocket.DataContext is NodeSocket targetNodeSocket)
+                // ホバーしているソケットをチェックして、互換性を表示（拡張ヒット判定）
+                var (targetElement, targetNodeSocket) = FindNearestSocket(mousePos);
+                if (targetNodeSocket != null)
                 {
                     UpdatePreviewLineCompatibility(targetNodeSocket);
                 }
@@ -637,20 +716,10 @@ namespace RayTraceVS.WPF.Views
         
         private void HandleDeleteKey(KeyEventArgs e)
         {
-            var viewModel = GetViewModel();
-            if (viewModel == null) return;
-            
             // Deleteキーでノードを削除（複数選択対応）
             if (e.Key == Key.Delete && selectedNodes.Count > 0)
             {
-                var nodesToDelete = selectedNodes.ToList();
-                ClearAllSelections(viewModel);
-                
-                foreach (var node in nodesToDelete)
-                {
-                    viewModel.RemoveNode(node);
-                }
-                
+                DeleteSelectedNodesInternal();
                 e.Handled = true;
             }
         }
@@ -660,19 +729,37 @@ namespace RayTraceVS.WPF.Views
         /// </summary>
         public void DeleteSelectedNodes()
         {
-            var viewModel = GetViewModel();
-            if (viewModel == null) return;
-            
-            // 選択されているノードがある場合のみ削除
             if (selectedNodes.Count > 0)
             {
-                var nodesToDelete = selectedNodes.ToList();
-                ClearAllSelections(viewModel);
-                
+                DeleteSelectedNodesInternal();
+            }
+        }
+
+        /// <summary>
+        /// 選択されたノードを削除する内部処理（コマンド経由）
+        /// </summary>
+        private void DeleteSelectedNodesInternal()
+        {
+            var viewModel = GetViewModel();
+            if (viewModel == null) return;
+
+            var nodesToDelete = selectedNodes.ToList();
+            ClearAllSelections(viewModel);
+
+            if (nodesToDelete.Count == 1)
+            {
+                // 単一ノード削除
+                viewModel.CommandManager.Execute(new RemoveNodeCommand(viewModel, nodesToDelete[0]));
+            }
+            else if (nodesToDelete.Count > 1)
+            {
+                // 複数ノード削除 - CompositeCommandでまとめる
+                var composite = new CompositeCommand($"{nodesToDelete.Count}個のノードを削除");
                 foreach (var node in nodesToDelete)
                 {
-                    viewModel.RemoveNode(node);
+                    composite.Add(new RemoveNodeCommand(viewModel, node));
                 }
+                viewModel.CommandManager.Execute(composite);
             }
         }
 
@@ -726,8 +813,29 @@ namespace RayTraceVS.WPF.Views
                                 }
                             }
                             
-                            // 接続を削除
+                            // 接続を一時的に削除（キャンセル時に復元するため）
+                            _tempRemovedConnection = existingConnection;
+                            
+                            // SceneNodeのソケット情報を記録（削除される前に）
+                            _tempRemovedSocket = null;
+                            _tempRemovedSocketIndex = -1;
+                            if (nodeSocket.ParentNode is SceneNode sceneNode2)
+                            {
+                                _tempRemovedSocketIndex = sceneNode2.InputSockets.IndexOf(nodeSocket);
+                            }
+                            
+                            // ソケット数を記録
+                            int socketCountBefore2 = 0;
+                            SceneNode? sn2 = nodeSocket.ParentNode as SceneNode;
+                            if (sn2 != null) socketCountBefore2 = sn2.InputSockets.Count;
+                            
                             viewModel.RemoveConnection(existingConnection);
+                            
+                            // ソケットが削除されたか確認
+                            if (sn2 != null && sn2.InputSockets.Count < socketCountBefore2 && !sn2.InputSockets.Contains(nodeSocket))
+                            {
+                                _tempRemovedSocket = nodeSocket;
+                            }
                             
                             // 接続のドラッグ開始
                             isDraggingConnection = true;
@@ -754,6 +862,7 @@ namespace RayTraceVS.WPF.Views
                 isDraggingConnection = true;
                 draggedSocket = nodeSocket;
                 draggedSocketElement = socket;
+                _tempRemovedConnection = null;  // 新規接続なので一時削除した接続はない
                 CreatePreviewLine(nodeSocket);
                 
                 // 初期位置を設定
@@ -779,6 +888,7 @@ namespace RayTraceVS.WPF.Views
                 isDraggingNode = true;
                 draggedNode = node;
                 multiDragOffsets.Clear();
+                dragStartPositions.Clear();
                 
                 foreach (var selectedNode in selectedNodes)
                 {
@@ -786,6 +896,8 @@ namespace RayTraceVS.WPF.Views
                         mousePos.X - selectedNode.Position.X,
                         mousePos.Y - selectedNode.Position.Y
                     );
+                    // ドラッグ開始位置を記録（Undo用）
+                    dragStartPositions[selectedNode] = selectedNode.Position;
                 }
                 
                 NodeCanvas.CaptureMouse();
@@ -807,6 +919,10 @@ namespace RayTraceVS.WPF.Views
             multiDragOffsets.Clear();
             multiDragOffsets[node] = new Point(mousePos.X - node.Position.X, mousePos.Y - node.Position.Y);
             
+            // ドラッグ開始位置を記録（Undo用）
+            dragStartPositions.Clear();
+            dragStartPositions[node] = node.Position;
+            
             // フォールバック用にdragStartOffsetも設定
             dragStartOffset = new Point(mousePos.X - node.Position.X, mousePos.Y - node.Position.Y);
             
@@ -823,19 +939,18 @@ namespace RayTraceVS.WPF.Views
 
             if (isDraggingConnection && draggedSocket != null)
             {
-                // Canvasに対してヒットテストを行う（グローバル座標で）
+                // 接続先のソケットを探す（拡張ヒット判定）
                 var mousePos = e.GetPosition(NodeCanvas);
-                var hitElement = NodeCanvas.InputHitTest(mousePos) as DependencyObject;
+                var (targetElement, targetNodeSocket) = FindNearestSocket(mousePos);
                 
-                
-                var targetSocket = FindVisualParent<Ellipse>(hitElement);
-                
-                if (targetSocket != null && targetSocket.DataContext is NodeSocket targetNodeSocket)
+                if (targetNodeSocket != null)
                 {
                     CreateConnection(draggedSocket, targetNodeSocket);
                 }
                 else
                 {
+                    // 何もない場所にドロップした場合、接続を削除（Undo可能）
+                    CommitTempRemovedConnection();
                 }
                 
                 // プレビュー線を削除
@@ -852,12 +967,118 @@ namespace RayTraceVS.WPF.Views
             
             if (isDraggingNode)
             {
+                FinishNodeDrag();
                 isDraggingNode = false;
                 draggedNode = null;
+                multiDragOffsets.Clear();
+                dragStartPositions.Clear();
                 // NodeCanvasでマウスリリース
                 NodeCanvas.ReleaseMouseCapture();
                 e.Handled = true;
             }
+        }
+
+        /// <summary>
+        /// ノードドラッグ終了時の処理（移動コマンドを発行）
+        /// </summary>
+        private void FinishNodeDrag()
+        {
+            var viewModel = GetViewModel();
+            if (viewModel == null || dragStartPositions.Count == 0) return;
+
+            // 移動したノードを収集
+            var movedNodes = new List<(Node Node, Point OldPosition, Point NewPosition)>();
+            foreach (var kvp in dragStartPositions)
+            {
+                var node = kvp.Key;
+                var startPos = kvp.Value;
+                if (node.Position != startPos)
+                {
+                    movedNodes.Add((node, startPos, node.Position));
+                }
+            }
+
+            if (movedNodes.Count == 0) return;
+
+            if (movedNodes.Count == 1)
+            {
+                // 単一ノード移動
+                var (node, oldPos, newPos) = movedNodes[0];
+                viewModel.CommandManager.RegisterExecuted(new MoveNodeCommand(node, oldPos, newPos));
+            }
+            else
+            {
+                // 複数ノード移動
+                var moves = movedNodes.ToArray();
+                viewModel.CommandManager.RegisterExecuted(new MoveNodesCommand(moves));
+            }
+        }
+
+        /// <summary>
+        /// 接続ドラッグがキャンセルされた場合（Escapeキー）、一時削除した接続を復元
+        /// </summary>
+        private void RestoreTempRemovedConnection()
+        {
+            if (_tempRemovedConnection == null) return;
+
+            var viewModel = GetViewModel();
+            if (viewModel == null)
+            {
+                ClearTempRemovedConnectionState();
+                return;
+            }
+
+            // SceneNodeのソケットを復元（削除されていた場合）
+            if (_tempRemovedSocket != null && _tempRemovedSocket.ParentNode is SceneNode sceneNode)
+            {
+                if (!sceneNode.InputSockets.Contains(_tempRemovedSocket))
+                {
+                    if (_tempRemovedSocketIndex >= 0 && _tempRemovedSocketIndex <= sceneNode.InputSockets.Count)
+                    {
+                        sceneNode.InputSockets.Insert(_tempRemovedSocketIndex, _tempRemovedSocket);
+                    }
+                    else
+                    {
+                        sceneNode.InputSockets.Add(_tempRemovedSocket);
+                    }
+                }
+            }
+
+            // 元の接続を復元（履歴に残さない）
+            viewModel.AddConnection(_tempRemovedConnection);
+            ClearTempRemovedConnectionState();
+        }
+
+        /// <summary>
+        /// 接続ドラッグで何もない場所にドロップした場合、接続削除をコマンドとして記録
+        /// </summary>
+        private void CommitTempRemovedConnection()
+        {
+            if (_tempRemovedConnection == null) return;
+
+            var viewModel = GetViewModel();
+            if (viewModel == null)
+            {
+                ClearTempRemovedConnectionState();
+                return;
+            }
+
+            // 接続削除をコマンドとして記録（Undo可能）
+            // 注: 接続は既に削除されているので、RegisterExecutedを使用
+            // ソケット情報も渡す
+            viewModel.CommandManager.RegisterExecuted(
+                new RemoveConnectionCommand(viewModel, _tempRemovedConnection, _tempRemovedSocket, _tempRemovedSocketIndex));
+            ClearTempRemovedConnectionState();
+        }
+
+        /// <summary>
+        /// 一時削除の接続状態をクリア
+        /// </summary>
+        private void ClearTempRemovedConnectionState()
+        {
+            _tempRemovedConnection = null;
+            _tempRemovedSocket = null;
+            _tempRemovedSocketIndex = -1;
         }
 
         private void Node_MouseMove(object sender, MouseEventArgs e)
@@ -976,6 +1197,66 @@ namespace RayTraceVS.WPF.Views
             return null;
         }
 
+        /// <summary>
+        /// マウス位置から最も近いソケットを探す（拡張ヒット判定）
+        /// ソケット間隔16px（12px + 4px margin）を考慮し、最大8pxの範囲でヒット判定
+        /// </summary>
+        private (Ellipse? element, NodeSocket? socket) FindNearestSocket(Point mousePos, double maxDistance = 8.0)
+        {
+            var viewModel = GetViewModel();
+            if (viewModel == null) return (null, null);
+
+            Ellipse? nearestElement = null;
+            NodeSocket? nearestSocket = null;
+            double nearestDistance = double.MaxValue;
+
+            foreach (var node in viewModel.Nodes)
+            {
+                var nodeContainer = FindNodeContainer(node);
+                if (nodeContainer == null) continue;
+
+                // 入力ソケット
+                foreach (var socket in node.InputSockets)
+                {
+                    var ellipse = FindSocketElement(nodeContainer, socket);
+                    if (ellipse == null) continue;
+
+                    var socketCenter = GetSocketElementPosition(ellipse);
+                    double distance = Math.Sqrt(
+                        Math.Pow(mousePos.X - socketCenter.X, 2) + 
+                        Math.Pow(mousePos.Y - socketCenter.Y, 2));
+
+                    if (distance < nearestDistance && distance <= maxDistance)
+                    {
+                        nearestDistance = distance;
+                        nearestElement = ellipse;
+                        nearestSocket = socket;
+                    }
+                }
+
+                // 出力ソケット
+                foreach (var socket in node.OutputSockets)
+                {
+                    var ellipse = FindSocketElement(nodeContainer, socket);
+                    if (ellipse == null) continue;
+
+                    var socketCenter = GetSocketElementPosition(ellipse);
+                    double distance = Math.Sqrt(
+                        Math.Pow(mousePos.X - socketCenter.X, 2) + 
+                        Math.Pow(mousePos.Y - socketCenter.Y, 2));
+
+                    if (distance < nearestDistance && distance <= maxDistance)
+                    {
+                        nearestDistance = distance;
+                        nearestElement = ellipse;
+                        nearestSocket = socket;
+                    }
+                }
+            }
+
+            return (nearestElement, nearestSocket);
+        }
+
         // 接続を作成
         private void CreateConnection(NodeSocket source, NodeSocket target)
         {
@@ -1038,13 +1319,6 @@ namespace RayTraceVS.WPF.Views
                 inputSocket.Position = GetSocketElementPosition(inputElement);
             }
             
-            // 既存の接続を確認（入力ソケットには1つの接続のみ）
-            var existingConnection = viewModel.Connections.FirstOrDefault(c => c.InputSocket == inputSocket);
-            if (existingConnection != null)
-            {
-                viewModel.RemoveConnection(existingConnection);
-            }
-            
             // レイアウト更新を強制
             NodeCanvas.UpdateLayout();
             
@@ -1060,7 +1334,27 @@ namespace RayTraceVS.WPF.Views
             
             // 新しい接続を作成（ソケット位置が設定された後なので正しく描画される）
             var connection = new NodeConnection(outputSocket, inputSocket);
-            viewModel.AddConnection(connection);
+            
+            // 既存の接続を確認（入力ソケットには1つの接続のみ）
+            // ただし、一時削除した接続がある場合は除外
+            var existingConnection = viewModel.Connections.FirstOrDefault(c => c.InputSocket == inputSocket);
+            
+            if (existingConnection != null)
+            {
+                // 既存接続がある場合は置換コマンドを使用
+                viewModel.CommandManager.Execute(new ReplaceConnectionCommand(viewModel, existingConnection, connection));
+            }
+            else if (_tempRemovedConnection != null && _tempRemovedConnection.InputSocket == inputSocket)
+            {
+                // ドラッグ開始時に一時削除した接続への再接続の場合は置換コマンドを使用
+                viewModel.CommandManager.Execute(new ReplaceConnectionCommand(viewModel, _tempRemovedConnection, connection));
+                _tempRemovedConnection = null;
+            }
+            else
+            {
+                // 新規接続
+                viewModel.CommandManager.Execute(new AddConnectionCommand(viewModel, connection));
+            }
             
             // 明示的に接続線を描画
             connection.UpdatePath();
@@ -1678,9 +1972,30 @@ namespace RayTraceVS.WPF.Views
                 var textBox = sender as TextBox;
                 if (textBox != null)
                 {
+                    // 変更前の値を取得
+                    float? oldValue = null;
+                    if (_textBoxOriginalValues.TryGetValue(textBox, out float originalValue))
+                    {
+                        oldValue = originalValue;
+                        _textBoxOriginalValues.Remove(textBox);
+                    }
+                    
                     // バインディングを強制更新
                     var bindingExpression = textBox.GetBindingExpression(TextBox.TextProperty);
                     bindingExpression?.UpdateSource();
+                    
+                    // FloatNodeの場合、Undo/Redoコマンドを発行
+                    if (oldValue.HasValue && textBox.DataContext is FloatNode floatNode)
+                    {
+                        float newValue = floatNode.Value;
+                        if (oldValue.Value != newValue)
+                        {
+                            var viewModel = GetViewModel();
+                            viewModel?.CommandManager.RegisterExecuted(
+                                new ChangePropertyCommand<float>(floatNode, "Value", oldValue.Value, newValue, 
+                                    "Float値を変更"));
+                        }
+                    }
                     
                     // フォーカスを外す
                     Keyboard.ClearFocus();
@@ -1693,6 +2008,9 @@ namespace RayTraceVS.WPF.Views
                 var textBox = sender as TextBox;
                 if (textBox != null)
                 {
+                    // 変更を破棄（Undo用の値も削除）
+                    _textBoxOriginalValues.Remove(textBox);
+                    
                     // バインディングをリセット（元の値に戻す）
                     var bindingExpression = textBox.GetBindingExpression(TextBox.TextProperty);
                     bindingExpression?.UpdateTarget();
@@ -1719,20 +2037,47 @@ namespace RayTraceVS.WPF.Views
                     textBox.Text = "0";
                 }
                 
+                // 変更前の値を取得
+                float? oldValue = null;
+                if (_textBoxOriginalValues.TryGetValue(textBox, out float originalValue))
+                {
+                    oldValue = originalValue;
+                    _textBoxOriginalValues.Remove(textBox);
+                }
+                
                 // バインディングを強制更新
                 var bindingExpression = textBox.GetBindingExpression(TextBox.TextProperty);
                 bindingExpression?.UpdateSource();
+                
+                // FloatNodeの場合、Undo/Redoコマンドを発行
+                if (oldValue.HasValue && textBox.DataContext is FloatNode floatNode)
+                {
+                    float newValue = floatNode.Value;
+                    if (oldValue.Value != newValue)
+                    {
+                        var viewModel = GetViewModel();
+                        viewModel?.CommandManager.RegisterExecuted(
+                            new ChangePropertyCommand<float>(floatNode, "Value", oldValue.Value, newValue, 
+                                "Float値を変更"));
+                    }
+                }
             }
         }
         
         /// <summary>
-        /// フォーカス取得時にテキストを全選択
+        /// フォーカス取得時にテキストを全選択し、変更前の値を記録
         /// </summary>
         private void FloatTextBox_GotFocus(object sender, RoutedEventArgs e)
         {
             var textBox = sender as TextBox;
             if (textBox != null)
             {
+                // 変更前の値を記録（Undo用）
+                if (textBox.DataContext is FloatNode floatNode)
+                {
+                    _textBoxOriginalValues[textBox] = floatNode.Value;
+                }
+                
                 // Dispatcherを使って遅延実行（SelectAllが即座に動作しない場合があるため）
                 textBox.Dispatcher.BeginInvoke(new Action(() =>
                 {
@@ -1903,6 +2248,9 @@ namespace RayTraceVS.WPF.Views
                 var textBox = sender as TextBox;
                 if (textBox?.Tag is NodeSocket socket && socket.ParentNode is Vector3Node vector3Node)
                 {
+                    // 変更を破棄（Undo用の値も削除）
+                    _textBoxOriginalValues.Remove(textBox);
+                    
                     // 元の値に戻す
                     textBox.Text = vector3Node.GetSocketValue(socket.Name).ToString("G");
                     Keyboard.ClearFocus();
@@ -1925,13 +2273,19 @@ namespace RayTraceVS.WPF.Views
         }
         
         /// <summary>
-        /// フォーカス取得時にテキストを全選択
+        /// フォーカス取得時にテキストを全選択し、変更前の値を記録
         /// </summary>
         private void Vector3TextBox_GotFocus(object sender, RoutedEventArgs e)
         {
             var textBox = sender as TextBox;
             if (textBox != null)
             {
+                // 変更前の値を記録（Undo用）
+                if (textBox.Tag is NodeSocket socket && socket.ParentNode is Vector3Node vector3Node)
+                {
+                    _textBoxOriginalValues[textBox] = vector3Node.GetSocketValue(socket.Name);
+                }
+                
                 textBox.Dispatcher.BeginInvoke(new Action(() =>
                 {
                     textBox.SelectAll();
@@ -1950,18 +2304,55 @@ namespace RayTraceVS.WPF.Views
                 if (string.IsNullOrWhiteSpace(textBox.Text) || textBox.Text == "-" || textBox.Text == ".")
                 {
                     textBox.Text = vector3Node.GetSocketValue(socket.Name).ToString("G");
+                    _textBoxOriginalValues.Remove(textBox);
                     return;
                 }
                 
-                if (float.TryParse(textBox.Text, out float value))
+                if (float.TryParse(textBox.Text, out float newValue))
                 {
-                    vector3Node.SetSocketValue(socket.Name, value);
-                    textBox.Text = value.ToString("G");
+                    // 変更前の値を取得
+                    float oldValue = vector3Node.GetSocketValue(socket.Name);
+                    if (_textBoxOriginalValues.TryGetValue(textBox, out float originalValue))
+                    {
+                        oldValue = originalValue;
+                        _textBoxOriginalValues.Remove(textBox);
+                    }
+                    
+                    // 値が変更された場合のみコマンドを発行
+                    if (oldValue != newValue)
+                    {
+                        var viewModel = GetViewModel();
+                        if (viewModel != null)
+                        {
+                            // 値を設定してからコマンドを登録（UIは既に適用済み）
+                            vector3Node.SetSocketValue(socket.Name, newValue);
+                            
+                            // プロパティ名を特定
+                            string propertyName = socket.Name switch
+                            {
+                                "X" => "X",
+                                "Y" => "Y",
+                                "Z" => "Z",
+                                _ => socket.Name
+                            };
+                            
+                            viewModel.CommandManager.RegisterExecuted(
+                                new ChangePropertyCommand<float>(vector3Node, propertyName, oldValue, newValue, 
+                                    $"Vector3.{propertyName} を変更"));
+                        }
+                        else
+                        {
+                            vector3Node.SetSocketValue(socket.Name, newValue);
+                        }
+                    }
+                    
+                    textBox.Text = newValue.ToString("G");
                 }
                 else
                 {
                     // パース失敗時は現在の値に戻す
                     textBox.Text = vector3Node.GetSocketValue(socket.Name).ToString("G");
+                    _textBoxOriginalValues.Remove(textBox);
                 }
             }
         }
@@ -2031,6 +2422,9 @@ namespace RayTraceVS.WPF.Views
                 var textBox = sender as TextBox;
                 if (textBox?.Tag is NodeSocket socket && socket.ParentNode is Vector4Node vector4Node)
                 {
+                    // 変更を破棄（Undo用の値も削除）
+                    _textBoxOriginalValues.Remove(textBox);
+                    
                     // 元の値に戻す
                     textBox.Text = vector4Node.GetSocketValue(socket.Name).ToString("G");
                     Keyboard.ClearFocus();
@@ -2053,13 +2447,19 @@ namespace RayTraceVS.WPF.Views
         }
         
         /// <summary>
-        /// フォーカス取得時にテキストを全選択（Vector4用）
+        /// フォーカス取得時にテキストを全選択し、変更前の値を記録（Vector4用）
         /// </summary>
         private void Vector4TextBox_GotFocus(object sender, RoutedEventArgs e)
         {
             var textBox = sender as TextBox;
             if (textBox != null)
             {
+                // 変更前の値を記録（Undo用）
+                if (textBox.Tag is NodeSocket socket && socket.ParentNode is Vector4Node vector4Node)
+                {
+                    _textBoxOriginalValues[textBox] = vector4Node.GetSocketValue(socket.Name);
+                }
+                
                 textBox.Dispatcher.BeginInvoke(new Action(() =>
                 {
                     textBox.SelectAll();
@@ -2078,18 +2478,56 @@ namespace RayTraceVS.WPF.Views
                 if (string.IsNullOrWhiteSpace(textBox.Text) || textBox.Text == "-" || textBox.Text == ".")
                 {
                     textBox.Text = vector4Node.GetSocketValue(socket.Name).ToString("G");
+                    _textBoxOriginalValues.Remove(textBox);
                     return;
                 }
                 
-                if (float.TryParse(textBox.Text, out float value))
+                if (float.TryParse(textBox.Text, out float newValue))
                 {
-                    vector4Node.SetSocketValue(socket.Name, value);
-                    textBox.Text = value.ToString("G");
+                    // 変更前の値を取得
+                    float oldValue = vector4Node.GetSocketValue(socket.Name);
+                    if (_textBoxOriginalValues.TryGetValue(textBox, out float originalValue))
+                    {
+                        oldValue = originalValue;
+                        _textBoxOriginalValues.Remove(textBox);
+                    }
+                    
+                    // 値が変更された場合のみコマンドを発行
+                    if (oldValue != newValue)
+                    {
+                        var viewModel = GetViewModel();
+                        if (viewModel != null)
+                        {
+                            // 値を設定してからコマンドを登録（UIは既に適用済み）
+                            vector4Node.SetSocketValue(socket.Name, newValue);
+                            
+                            // プロパティ名を特定
+                            string propertyName = socket.Name switch
+                            {
+                                "X" => "X",
+                                "Y" => "Y",
+                                "Z" => "Z",
+                                "W" => "W",
+                                _ => socket.Name
+                            };
+                            
+                            viewModel.CommandManager.RegisterExecuted(
+                                new ChangePropertyCommand<float>(vector4Node, propertyName, oldValue, newValue, 
+                                    $"Vector4.{propertyName} を変更"));
+                        }
+                        else
+                        {
+                            vector4Node.SetSocketValue(socket.Name, newValue);
+                        }
+                    }
+                    
+                    textBox.Text = newValue.ToString("G");
                 }
                 else
                 {
                     // パース失敗時は現在の値に戻す
                     textBox.Text = vector4Node.GetSocketValue(socket.Name).ToString("G");
+                    _textBoxOriginalValues.Remove(textBox);
                 }
             }
         }

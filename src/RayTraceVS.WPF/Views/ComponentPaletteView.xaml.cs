@@ -1,6 +1,7 @@
 using System;
 using System.Windows;
 using System.Windows.Controls;
+using RayTraceVS.WPF.Commands;
 using RayTraceVS.WPF.ViewModels;
 using RayTraceVS.WPF.Models;
 using RayTraceVS.WPF.Models.Nodes;
@@ -82,222 +83,123 @@ namespace RayTraceVS.WPF.Views
             );
         }
 
-        private void AddSphere_Click(object sender, RoutedEventArgs e)
+        /// <summary>
+        /// ノードを追加し、コマンド履歴に登録
+        /// </summary>
+        private void AddNodeWithCommand(Node node)
         {
             var viewModel = GetViewModel();
             if (viewModel != null)
             {
-                var node = new SphereNode();
-                ((Node)node).Position = GetViewportCenterPosition();
-                viewModel.AddNode(node);
+                node.Position = GetViewportCenterPosition();
+                viewModel.CommandManager.Execute(new AddNodeCommand(viewModel, node));
             }
+        }
+
+        private void AddSphere_Click(object sender, RoutedEventArgs e)
+        {
+            AddNodeWithCommand(new SphereNode());
         }
 
         private void AddPlane_Click(object sender, RoutedEventArgs e)
         {
-            var viewModel = GetViewModel();
-            if (viewModel != null)
-            {
-                var node = new PlaneNode();
-                ((Node)node).Position = GetViewportCenterPosition();
-                viewModel.AddNode(node);
-            }
+            AddNodeWithCommand(new PlaneNode());
         }
 
         private void AddBox_Click(object sender, RoutedEventArgs e)
         {
-            var viewModel = GetViewModel();
-            if (viewModel != null)
-            {
-                var node = new BoxNode();
-                ((Node)node).Position = GetViewportCenterPosition();
-                viewModel.AddNode(node);
-            }
+            AddNodeWithCommand(new BoxNode());
         }
 
         // マテリアルノード追加ハンドラ
         private void AddColor_Click(object sender, RoutedEventArgs e)
         {
-            var viewModel = GetViewModel();
-            if (viewModel != null)
-            {
-                var node = new ColorNode { Position = GetViewportCenterPosition() };
-                viewModel.AddNode(node);
-            }
+            AddNodeWithCommand(new ColorNode());
         }
 
         private void AddEmission_Click(object sender, RoutedEventArgs e)
         {
-            var viewModel = GetViewModel();
-            if (viewModel != null)
-            {
-                var node = new EmissionMaterialNode { Position = GetViewportCenterPosition() };
-                viewModel.AddNode(node);
-            }
+            AddNodeWithCommand(new EmissionMaterialNode());
         }
 
         private void AddMaterialBSDF_Click(object sender, RoutedEventArgs e)
         {
-            var viewModel = GetViewModel();
-            if (viewModel != null)
-            {
-                var node = new MaterialBSDFNode { Position = GetViewportCenterPosition() };
-                viewModel.AddNode(node);
-            }
+            AddNodeWithCommand(new MaterialBSDFNode());
         }
 
         private void AddUniversalPBR_Click(object sender, RoutedEventArgs e)
         {
-            var viewModel = GetViewModel();
-            if (viewModel != null)
-            {
-                var node = new UniversalPBRNode { Position = GetViewportCenterPosition() };
-                viewModel.AddNode(node);
-            }
+            AddNodeWithCommand(new UniversalPBRNode());
         }
 
         private void AddFloat_Click(object sender, RoutedEventArgs e)
         {
-            var viewModel = GetViewModel();
-            if (viewModel != null)
-            {
-                var node = new FloatNode { Position = GetViewportCenterPosition() };
-                viewModel.AddNode(node);
-            }
+            AddNodeWithCommand(new FloatNode());
         }
 
         private void AddVector3_Click(object sender, RoutedEventArgs e)
         {
-            var viewModel = GetViewModel();
-            if (viewModel != null)
-            {
-                var node = new Vector3Node { Position = GetViewportCenterPosition() };
-                viewModel.AddNode(node);
-            }
+            AddNodeWithCommand(new Vector3Node());
         }
 
         private void AddVector4_Click(object sender, RoutedEventArgs e)
         {
-            var viewModel = GetViewModel();
-            if (viewModel != null)
-            {
-                var node = new Vector4Node { Position = GetViewportCenterPosition() };
-                viewModel.AddNode(node);
-            }
+            AddNodeWithCommand(new Vector4Node());
         }
 
         private void AddMath_Click(object sender, RoutedEventArgs e)
         {
-            var viewModel = GetViewModel();
-            if (viewModel != null)
-            {
-                var node = new AddNode { Position = GetViewportCenterPosition() };
-                viewModel.AddNode(node);
-            }
+            AddNodeWithCommand(new AddNode());
         }
 
         private void AddSub_Click(object sender, RoutedEventArgs e)
         {
-            var viewModel = GetViewModel();
-            if (viewModel != null)
-            {
-                var node = new SubNode { Position = GetViewportCenterPosition() };
-                viewModel.AddNode(node);
-            }
+            AddNodeWithCommand(new SubNode());
         }
 
         private void AddMultiply_Click(object sender, RoutedEventArgs e)
         {
-            var viewModel = GetViewModel();
-            if (viewModel != null)
-            {
-                var node = new MulNode { Position = GetViewportCenterPosition() };
-                viewModel.AddNode(node);
-            }
+            AddNodeWithCommand(new MulNode());
         }
 
         private void AddDiv_Click(object sender, RoutedEventArgs e)
         {
-            var viewModel = GetViewModel();
-            if (viewModel != null)
-            {
-                var node = new DivNode { Position = GetViewportCenterPosition() };
-                viewModel.AddNode(node);
-            }
+            AddNodeWithCommand(new DivNode());
         }
 
         private void AddTransform_Click(object sender, RoutedEventArgs e)
         {
-            var viewModel = GetViewModel();
-            if (viewModel != null)
-            {
-                var node = new TransformNode { Position = GetViewportCenterPosition() };
-                viewModel.AddNode(node);
-            }
+            AddNodeWithCommand(new TransformNode());
         }
 
         private void AddCombineTransform_Click(object sender, RoutedEventArgs e)
         {
-            var viewModel = GetViewModel();
-            if (viewModel != null)
-            {
-                var node = new CombineTransformNode { Position = GetViewportCenterPosition() };
-                viewModel.AddNode(node);
-            }
+            AddNodeWithCommand(new CombineTransformNode());
         }
 
         private void AddCamera_Click(object sender, RoutedEventArgs e)
         {
-            var viewModel = GetViewModel();
-            if (viewModel != null)
-            {
-                var node = new CameraNode();
-                ((Node)node).Position = GetViewportCenterPosition();
-                viewModel.AddNode(node);
-            }
+            AddNodeWithCommand(new CameraNode());
         }
 
         private void AddAmbientLight_Click(object sender, RoutedEventArgs e)
         {
-            var viewModel = GetViewModel();
-            if (viewModel != null)
-            {
-                var node = new AmbientLightNode();
-                ((Node)node).Position = GetViewportCenterPosition();
-                viewModel.AddNode(node);
-            }
+            AddNodeWithCommand(new AmbientLightNode());
         }
 
         private void AddDirectionalLight_Click(object sender, RoutedEventArgs e)
         {
-            var viewModel = GetViewModel();
-            if (viewModel != null)
-            {
-                var node = new DirectionalLightNode();
-                ((Node)node).Position = GetViewportCenterPosition();
-                viewModel.AddNode(node);
-            }
+            AddNodeWithCommand(new DirectionalLightNode());
         }
 
         private void AddLight_Click(object sender, RoutedEventArgs e)
         {
-            var viewModel = GetViewModel();
-            if (viewModel != null)
-            {
-                var node = new PointLightNode();
-                ((Node)node).Position = GetViewportCenterPosition();
-                viewModel.AddNode(node);
-            }
+            AddNodeWithCommand(new PointLightNode());
         }
 
         private void AddScene_Click(object sender, RoutedEventArgs e)
         {
-            var viewModel = GetViewModel();
-            if (viewModel != null)
-            {
-                var node = new SceneNode { Position = GetViewportCenterPosition() };
-                viewModel.AddNode(node);
-            }
+            AddNodeWithCommand(new SceneNode());
         }
     }
 }

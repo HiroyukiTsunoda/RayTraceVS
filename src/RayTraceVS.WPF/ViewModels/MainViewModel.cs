@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using System.Collections.ObjectModel;
+using RayTraceVS.WPF.Commands;
 using RayTraceVS.WPF.Models;
 using System.Diagnostics;
 using System.Linq;
@@ -19,6 +20,11 @@ namespace RayTraceVS.WPF.ViewModels
 
         [ObservableProperty]
         private ObservableCollection<NodeConnection> connections;
+
+        /// <summary>
+        /// Undo/Redo操作を管理するコマンドマネージャ
+        /// </summary>
+        public CommandManager CommandManager { get; } = new();
 
         public MainViewModel()
         {
