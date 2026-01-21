@@ -127,7 +127,7 @@
         "Exposure": 1.0,
         "ToneMapOperator": 2,
         "DenoiserStabilization": 1.0,
-        "ShadowStrength": 0.85,
+        "ShadowStrength": 1.1,
         "EnableDenoiser": true,
         "Gamma": 1.0
       }
@@ -288,7 +288,7 @@
       "PositionX": 1341.948701298701,
       "PositionY": 1937.1116883116886,
       "Properties": {
-        "Value": 0.15
+        "Value": 0.3
       }
     },
     {
@@ -344,7 +344,7 @@
       "PositionX": 1335.7305194805194,
       "PositionY": 2125.311688311688,
       "Properties": {
-        "Value": 0.5
+        "Value": 0.8
       }
     },
     {
@@ -401,7 +401,7 @@
       "PositionX": 1365.433401963889,
       "PositionY": 2247.1542603737726,
       "Properties": {
-        "Value": 15.0
+        "Value": 18.0
       }
     },
     {
@@ -534,9 +534,9 @@
       "PositionX": 940.8715375351271,
       "PositionY": 904.8969380679537,
       "Properties": {
-        "R": 0.0,
-        "G": 0.8,
-        "B": 0.8,
+        "R": 1.0,
+        "G": 1.0,
+        "B": 1.0,
         "A": 1.0
       }
     },
@@ -557,7 +557,7 @@
       "PositionX": 1127.9686872741877,
       "PositionY": 1027.603189664611,
       "Properties": {
-        "Value": 0.0
+        "Value": 0.5
       }
     },
     {
@@ -731,8 +731,8 @@
       "Id": "88f13b5f-8ac6-4933-b727-80435ac08b31",
       "Type": "Vector3Node",
       "Title": "Vector3",
-      "PositionX": 2018.7264955204946,
-      "PositionY": 755.780353297362,
+      "PositionX": 2011.8972272278115,
+      "PositionY": 779.1949874437034,
       "Properties": {
         "X": 0.0,
         "Y": 2.0,
@@ -778,8 +778,8 @@
       "Id": "c737d6e6-2e5d-4cb6-a844-f5eafa31c1ac",
       "Type": "ColorNode",
       "Title": "Color",
-      "PositionX": 1788.202828401901,
-      "PositionY": 752.7707162180031,
+      "PositionX": 1724.7881942555593,
+      "PositionY": 762.5268137789787,
       "Properties": {
         "R": 1.0,
         "G": 0.2,
@@ -791,8 +791,8 @@
       "Id": "f03f5360-ed34-4fe9-b831-7f741965d0de",
       "Type": "FloatNode",
       "Title": "Float",
-      "PositionX": 1780.890308207248,
-      "PositionY": 1165.8813290583748,
+      "PositionX": 1696.9878691828571,
+      "PositionY": 1153.1984022291063,
       "Properties": {
         "Value": 1.1
       }
@@ -1143,8 +1143,8 @@
     }
   ],
   "Viewport": {
-    "PanX": -489.83016628158657,
-    "PanY": -589.5101693254873,
+    "PanX": -365.6769747922251,
+    "PanY": -592.727190602083,
     "Zoom": 0.8200000000000001,
     "IsLeftPanelVisible": true,
     "IsRightPanelVisible": true,
