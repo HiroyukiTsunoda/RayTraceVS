@@ -106,8 +106,8 @@
       "Id": "a1b2c3d4-e5f6-7890-abcd-555555555555",
       "Type": "SceneNode",
       "Title": "Scene",
-      "PositionX": 2098.3174532784287,
-      "PositionY": 1353.679220779221,
+      "PositionX": 2099.6733854818185,
+      "PositionY": 1353.0012546775258,
       "Properties": {
         "ObjectSocketNames": [
           "Object1",
@@ -489,7 +489,7 @@
       "Id": "9d7a6aa1-2ddb-4b27-91ce-81283d93a479",
       "Type": "FloatNode",
       "Title": "Float",
-      "PositionX": 949.3517939687431,
+      "PositionX": 948.6738278670482,
       "PositionY": 1670.18789346247,
       "Properties": {
         "Value": 0.5
@@ -1143,8 +1143,8 @@
     }
   ],
   "Viewport": {
-    "PanX": -365.6769747922251,
-    "PanY": -592.727190602083,
+    "PanX": -394.7920562039518,
+    "PanY": -606.7594450230906,
     "Zoom": 0.8200000000000001,
     "IsLeftPanelVisible": true,
     "IsRightPanelVisible": true,
