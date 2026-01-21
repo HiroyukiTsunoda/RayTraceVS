@@ -120,9 +120,9 @@ namespace RayTraceVS::Interop::Bridge
         scene->SetCamera(nativeCamera);
     }
 
-    void SetRenderSettings(RayTraceVS::DXEngine::Scene* scene, int samplesPerPixel, int maxBounces, float exposure, int toneMapOperator, float denoiserStabilization, float shadowStrength, bool enableDenoiser)
+    void SetRenderSettings(RayTraceVS::DXEngine::Scene* scene, int samplesPerPixel, int maxBounces, float exposure, int toneMapOperator, float denoiserStabilization, float shadowStrength, bool enableDenoiser, float gamma)
     {
-        scene->SetRenderSettings(samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization, shadowStrength, enableDenoiser);
+        scene->SetRenderSettings(samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization, shadowStrength, enableDenoiser, gamma);
     }
 
     void AddSphere(RayTraceVS::DXEngine::Scene* scene, const SphereDataNative& sphere)
@@ -149,7 +149,10 @@ namespace RayTraceVS::Interop::Bridge
     {
         auto nativeBox = std::make_shared<RayTraceVS::DXEngine::Box>(
             ToXMFLOAT3(box.center),
-            ToXMFLOAT3(box.size)
+            ToXMFLOAT3(box.size),
+            ToXMFLOAT3(box.axisX),
+            ToXMFLOAT3(box.axisY),
+            ToXMFLOAT3(box.axisZ)
         );
         nativeBox->SetMaterial(ToMaterial(box.material));
         scene->AddObject(nativeBox);

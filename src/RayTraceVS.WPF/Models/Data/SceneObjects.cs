@@ -23,12 +23,16 @@ namespace RayTraceVS.WPF.Models.Data
     }
 
     /// <summary>
-    /// ボックスのデータ構造体
+    /// ボックスのデータ構造体 (OBB - Oriented Bounding Box)
     /// </summary>
     public struct BoxData
     {
         public Vector3 Center;
         public Vector3 Size;  // half-extents
+        // Local axes (rotation matrix columns) for OBB
+        public Vector3 AxisX;  // Local X axis in world space
+        public Vector3 AxisY;  // Local Y axis in world space
+        public Vector3 AxisZ;  // Local Z axis in world space
         public MaterialData Material;
     }
 }

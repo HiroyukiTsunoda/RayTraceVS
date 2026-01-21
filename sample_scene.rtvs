@@ -106,14 +106,15 @@
       "Id": "a1b2c3d4-e5f6-7890-abcd-555555555555",
       "Type": "SceneNode",
       "Title": "Scene",
-      "PositionX": 2096.366233766234,
+      "PositionX": 2098.3174532784287,
       "PositionY": 1353.679220779221,
       "Properties": {
         "ObjectSocketNames": [
           "Object1",
           "Object2",
           "Object3",
-          "Object5"
+          "Object5",
+          "Object6"
         ],
         "LightSocketNames": [
           "Light1",
@@ -127,7 +128,8 @@
         "ToneMapOperator": 2,
         "DenoiserStabilization": 1.0,
         "ShadowStrength": 0.85,
-        "EnableDenoiser": true
+        "EnableDenoiser": true,
+        "Gamma": 1.0
       }
     },
     {
@@ -286,7 +288,7 @@
       "PositionX": 1341.948701298701,
       "PositionY": 1937.1116883116886,
       "Properties": {
-        "Value": 0.1
+        "Value": 0.15
       }
     },
     {
@@ -342,7 +344,7 @@
       "PositionX": 1335.7305194805194,
       "PositionY": 2125.311688311688,
       "Properties": {
-        "Value": 0.2
+        "Value": 0.5
       }
     },
     {
@@ -375,7 +377,7 @@
       "PositionY": 2244.12987012987,
       "Properties": {
         "X": 0.0,
-        "Y": 3.0,
+        "Y": 4.0,
         "Z": -1.0
       }
     },
@@ -470,7 +472,7 @@
       "PositionX": 771.5727492846137,
       "PositionY": 1584.106229363856,
       "Properties": {
-        "Value": 0.1
+        "Value": 0.0
       }
     },
     {
@@ -490,7 +492,7 @@
       "PositionX": 949.3517939687431,
       "PositionY": 1670.18789346247,
       "Properties": {
-        "Value": 1.0
+        "Value": 0.5
       }
     },
     {
@@ -671,6 +673,128 @@
         "G": 0.0,
         "B": 0.0,
         "A": 1.0
+      }
+    },
+    {
+      "Id": "7773fd00-312b-47e0-8f37-a2eceedbbc8b",
+      "Type": "SphereNode",
+      "Title": "Sphere",
+      "PositionX": 2228.022662767881,
+      "PositionY": 1107.8918515552016,
+      "Properties": {
+        "Transform": {
+          "Position": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "Rotation": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0,
+            "W": 1.0,
+            "IsIdentity": true
+          },
+          "Scale": {
+            "X": 1.0,
+            "Y": 1.0,
+            "Z": 1.0
+          },
+          "EulerAngles": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          }
+        },
+        "Radius": 1.0
+      }
+    },
+    {
+      "Id": "fb058017-47f7-4056-a76f-e8ca00f721dd",
+      "Type": "TransformNode",
+      "Title": "Transform",
+      "PositionX": 2173.0191784473236,
+      "PositionY": 912.543419499453,
+      "Properties": {
+        "PositionX": 0.0,
+        "PositionY": 0.0,
+        "PositionZ": 0.0,
+        "RotationX": 0.0,
+        "RotationY": 0.0,
+        "RotationZ": 0.0,
+        "ScaleX": 1.0,
+        "ScaleY": 1.0,
+        "ScaleZ": 1.0
+      }
+    },
+    {
+      "Id": "88f13b5f-8ac6-4933-b727-80435ac08b31",
+      "Type": "Vector3Node",
+      "Title": "Vector3",
+      "PositionX": 2018.7264955204946,
+      "PositionY": 755.780353297362,
+      "Properties": {
+        "X": 0.0,
+        "Y": 2.0,
+        "Z": 0.0
+      }
+    },
+    {
+      "Id": "4c81c8ac-f4cf-49b8-b45d-7a0106a0bfc2",
+      "Type": "FloatNode",
+      "Title": "Float",
+      "PositionX": 2061.611512942097,
+      "PositionY": 1095.3831407538082,
+      "Properties": {
+        "Value": 0.7
+      }
+    },
+    {
+      "Id": "1617550e-1ef3-4181-827f-4a2fa22edc0d",
+      "Type": "MaterialBSDFNode",
+      "Title": "Material BSDF",
+      "PositionX": 1900.227218645803,
+      "PositionY": 972.4536430472715,
+      "Properties": {
+        "BaseColor": {
+          "X": 0.8,
+          "Y": 0.8,
+          "Z": 0.8,
+          "W": 1.0
+        },
+        "Metallic": 0.0,
+        "Roughness": 0.5,
+        "Transmission": 0.0,
+        "IOR": 1.5,
+        "Emission": {
+          "X": 0.0,
+          "Y": 0.0,
+          "Z": 0.0,
+          "W": 0.0
+        }
+      }
+    },
+    {
+      "Id": "c737d6e6-2e5d-4cb6-a844-f5eafa31c1ac",
+      "Type": "ColorNode",
+      "Title": "Color",
+      "PositionX": 1788.202828401901,
+      "PositionY": 752.7707162180031,
+      "Properties": {
+        "R": 1.0,
+        "G": 0.2,
+        "B": 0.2,
+        "A": 1.0
+      }
+    },
+    {
+      "Id": "f03f5360-ed34-4fe9-b831-7f741965d0de",
+      "Type": "FloatNode",
+      "Title": "Float",
+      "PositionX": 1780.890308207248,
+      "PositionY": 1165.8813290583748,
+      "Properties": {
+        "Value": 1.1
       }
     }
   ],
@@ -944,11 +1068,83 @@
       "OutputSocketName": "Material",
       "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-111111111111",
       "InputSocketName": "Material"
+    },
+    {
+      "OutputNodeId": "7773fd00-312b-47e0-8f37-a2eceedbbc8b",
+      "OutputSocketName": "Object",
+      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
+      "InputSocketName": "Object5"
+    },
+    {
+      "OutputNodeId": "fb058017-47f7-4056-a76f-e8ca00f721dd",
+      "OutputSocketName": "Transform",
+      "InputNodeId": "7773fd00-312b-47e0-8f37-a2eceedbbc8b",
+      "InputSocketName": "Transform"
+    },
+    {
+      "OutputNodeId": "f7758ec2-9fb3-468b-a8d5-15d531f770fb",
+      "OutputSocketName": "Vector",
+      "InputNodeId": "fb058017-47f7-4056-a76f-e8ca00f721dd",
+      "InputSocketName": "Scale"
+    },
+    {
+      "OutputNodeId": "88a575fd-7dbd-4b69-ba56-3a1136f85a79",
+      "OutputSocketName": "Vector",
+      "InputNodeId": "fb058017-47f7-4056-a76f-e8ca00f721dd",
+      "InputSocketName": "Rotation"
+    },
+    {
+      "OutputNodeId": "88f13b5f-8ac6-4933-b727-80435ac08b31",
+      "OutputSocketName": "Vector",
+      "InputNodeId": "fb058017-47f7-4056-a76f-e8ca00f721dd",
+      "InputSocketName": "Position"
+    },
+    {
+      "OutputNodeId": "4c81c8ac-f4cf-49b8-b45d-7a0106a0bfc2",
+      "OutputSocketName": "Value",
+      "InputNodeId": "7773fd00-312b-47e0-8f37-a2eceedbbc8b",
+      "InputSocketName": "Radius"
+    },
+    {
+      "OutputNodeId": "1617550e-1ef3-4181-827f-4a2fa22edc0d",
+      "OutputSocketName": "Material",
+      "InputNodeId": "7773fd00-312b-47e0-8f37-a2eceedbbc8b",
+      "InputSocketName": "Material"
+    },
+    {
+      "OutputNodeId": "c737d6e6-2e5d-4cb6-a844-f5eafa31c1ac",
+      "OutputSocketName": "Color",
+      "InputNodeId": "1617550e-1ef3-4181-827f-4a2fa22edc0d",
+      "InputSocketName": "Base Color"
+    },
+    {
+      "OutputNodeId": "aa2d2120-63f5-4cc0-baf5-1b93655bb36f",
+      "OutputSocketName": "Value",
+      "InputNodeId": "1617550e-1ef3-4181-827f-4a2fa22edc0d",
+      "InputSocketName": "Metallic"
+    },
+    {
+      "OutputNodeId": "9d7a6aa1-2ddb-4b27-91ce-81283d93a479",
+      "OutputSocketName": "Value",
+      "InputNodeId": "1617550e-1ef3-4181-827f-4a2fa22edc0d",
+      "InputSocketName": "Transmission"
+    },
+    {
+      "OutputNodeId": "799373d1-57fe-4f8b-bb38-44f16eb36a30",
+      "OutputSocketName": "Value",
+      "InputNodeId": "1617550e-1ef3-4181-827f-4a2fa22edc0d",
+      "InputSocketName": "Roughness"
+    },
+    {
+      "OutputNodeId": "f03f5360-ed34-4fe9-b831-7f741965d0de",
+      "OutputSocketName": "Value",
+      "InputNodeId": "1617550e-1ef3-4181-827f-4a2fa22edc0d",
+      "InputSocketName": "IOR"
     }
   ],
   "Viewport": {
-    "PanX": -414.388980252897,
-    "PanY": -592.7379653943142,
+    "PanX": -489.83016628158657,
+    "PanY": -589.5101693254873,
     "Zoom": 0.8200000000000001,
     "IsLeftPanelVisible": true,
     "IsRightPanelVisible": true,

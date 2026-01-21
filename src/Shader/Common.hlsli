@@ -1,6 +1,7 @@
 // 共通定義
 
 #define MAX_RECURSION_DEPTH 5
+#define SHADOW_RAY_DEPTH 100  // Marker for shadow rays (depth >= this value)
 
 // Include NRD encoding helpers
 #include "NRDEncoding.hlsli"
@@ -63,10 +64,16 @@ struct RayPayload
     float padding2;           // Padding for alignment
     
     // Thickness query for refractive objects
-    uint targetObjectType;
+    uint targetObjectType;      // Object to skip (input)
     uint targetObjectIndex;
-    uint thicknessQuery;      // 1 = thickness ray, 0 = normal
-    float padding3;
+    uint thicknessQuery;        // 1 = thickness ray, 0 = normal
+    uint hitObjectType;         // Object that was hit (output)
+    
+    // Colored shadow accumulation (for translucent objects)
+    float3 shadowColorAccum;       // Accumulated shadow color tint
+    float shadowTransmissionAccum; // Accumulated transmission (visibility)
+    
+    uint hitObjectIndex;        // Index of hit object (output)
 };
 
 // シャドウレイ用ペイロード
@@ -163,24 +170,32 @@ struct PlaneData
     float padding2;     // 4  -> 80
 };
 
-// ボックスデータ (with PBR material, must match C++ GPUBox) - 96 bytes
+// ボックスデータ (with PBR material and rotation, must match C++ GPUBox) - 144 bytes
+// OBB (Oriented Bounding Box) support via local axes
 struct BoxData
 {
     float3 center;      // 12
     float padding1;     // 4  -> 16
-    float3 size;        // 12
+    float3 size;        // 12 (half-extents)
     float padding2;     // 4  -> 32
-    float4 color;       // 16 -> 48
+    // Local axes (rotation matrix columns) - for OBB
+    float3 axisX;       // 12 (local X axis in world space)
+    float padding3;     // 4  -> 48
+    float3 axisY;       // 12 (local Y axis in world space)
+    float padding4;     // 4  -> 64
+    float3 axisZ;       // 12 (local Z axis in world space)
+    float padding5;     // 4  -> 80
+    float4 color;       // 16 -> 96
     float metallic;     // 4
     float roughness;    // 4
     float transmission; // 4
-    float ior;          // 4  -> 64
+    float ior;          // 4  -> 112
     float specular;     // 4
-    float padding3;     // 4
-    float padding4;     // 4
-    float padding5;     // 4  -> 80
+    float padding6;     // 4
+    float padding7;     // 4
+    float padding8;     // 4  -> 128
     float3 emission;    // 12
-    float padding6;     // 4  -> 96
+    float padding9;     // 4  -> 144
 };
 
 // ライトデータ (must match C++ GPULight)
@@ -387,19 +402,61 @@ float3 LambertDiffuse(float3 diffuseColor)
     return diffuseColor / PI;
 }
 
-// Get sky color for background (simple sky gradient)
+// Get sky color for background (realistic atmospheric gradient)
 float3 GetSkyColor(float3 direction)
 {
     float3 dir = normalize(direction);
     
-    // Simple sky gradient based on Y direction
-    float t = 0.5 * (dir.y + 1.0);  // Map from [-1,1] to [0,1]
+    // Vertical gradient factor (0 = horizon, 1 = zenith)
+    float elevation = dir.y;
+    float t = saturate(elevation);  // 0 at horizon, 1 at zenith
+    float tBelow = saturate(-elevation);  // For below horizon
     
-    // Lerp between horizon color and sky color
-    float3 horizonColor = float3(0.8, 0.85, 0.9);  // Light gray/white horizon
-    float3 skyColor = float3(0.4, 0.6, 0.9);       // Blue sky
+    // Sky colors at different elevations
+    float3 zenithColor = float3(0.15, 0.35, 0.75);     // Deep blue at zenith
+    float3 skyMidColor = float3(0.35, 0.55, 0.90);     // Mid sky blue
+    float3 horizonColor = float3(0.70, 0.80, 0.95);    // Light blue-white at horizon
+    float3 horizonGlow = float3(0.95, 0.85, 0.70);     // Warm glow near horizon (atmospheric scattering)
+    float3 groundColor = float3(0.25, 0.28, 0.35);     // Dark blue-gray below horizon
     
-    return lerp(horizonColor, skyColor, t);
+    float3 skyColor;
+    
+    if (elevation >= 0.0)
+    {
+        // Above horizon - blend from horizon to zenith
+        // Use smoothstep for more natural gradient
+        float horizonFade = smoothstep(0.0, 0.15, t);    // Horizon to low sky
+        float midFade = smoothstep(0.1, 0.5, t);         // Low sky to mid sky
+        float zenithFade = smoothstep(0.4, 1.0, t);      // Mid sky to zenith
+        
+        // Layer the gradients
+        skyColor = horizonColor;
+        
+        // Add warm horizon glow (strongest at horizon, fades quickly)
+        float glowIntensity = 1.0 - smoothstep(0.0, 0.08, t);
+        skyColor = lerp(skyColor, horizonGlow, glowIntensity * 0.4);
+        
+        // Blend to mid sky
+        skyColor = lerp(skyColor, skyMidColor, horizonFade);
+        
+        // Blend to zenith
+        skyColor = lerp(skyColor, zenithColor, zenithFade);
+        
+        // Add subtle atmospheric haze near horizon (exponential falloff)
+        float hazeAmount = exp(-t * 8.0) * 0.3;
+        skyColor = lerp(skyColor, horizonColor, hazeAmount);
+    }
+    else
+    {
+        // Below horizon - blend from horizon to ground
+        float groundFade = smoothstep(0.0, 0.3, tBelow);
+        skyColor = lerp(horizonColor, groundColor, groundFade);
+        
+        // Dim the below-horizon area
+        skyColor *= lerp(0.8, 0.4, groundFade);
+    }
+    
+    return skyColor;
 }
 
 // ============================================
@@ -563,63 +620,126 @@ struct SoftShadowResult
     float visibility;
     float penumbra;
     float occluderDistance;
+    float3 shadowColor;    // Color tint from translucent objects (white = no tint)
 };
 
 // Trace a single shadow ray and return visibility (0 = blocked, 1 = visible)
-float TraceSingleShadowRay(float3 rayOrigin, float3 rayDir, float maxDist, out float occluderDistance)
+// Also returns shadowColor: white = no tint, colored = light filtered through translucent objects
+// Loops through translucent objects to accumulate color tint
+float TraceSingleShadowRay(float3 rayOrigin, float3 rayDir, float maxDist, out float occluderDistance, out float3 shadowColor)
 {
-    RayDesc shadowRay;
-    shadowRay.Origin = rayOrigin;
-    shadowRay.Direction = rayDir;
-    shadowRay.TMin = 0.001;
-    shadowRay.TMax = maxDist;
+    float3 currentOrigin = rayOrigin;
+    float remainingDist = maxDist;
+    float accumulatedVisibility = 1.0;
+    float3 accumulatedColor = float3(1, 1, 1);
+    occluderDistance = NRD_FP16_MAX;
+    bool firstHit = true;
     
-    RayPayload shadowPayload;
-    shadowPayload.color = float3(0, 0, 0);
-    shadowPayload.depth = MAX_RECURSION_DEPTH;  // Mark as shadow ray
-    shadowPayload.hit = 0;
-    shadowPayload.padding = 0.0;
-    // NRD fields not needed for shadow rays
-    shadowPayload.diffuseRadiance = float3(0, 0, 0);
-    shadowPayload.specularRadiance = float3(0, 0, 0);
-    shadowPayload.hitDistance = NRD_FP16_MAX;
-    shadowPayload.worldNormal = float3(0, 1, 0);
-    shadowPayload.roughness = 1.0;
-    shadowPayload.worldPosition = float3(0, 0, 0);
-    shadowPayload.viewZ = 10000.0;
-    shadowPayload.metallic = 0.0;
-    shadowPayload.albedo = float3(0, 0, 0);
-    shadowPayload.shadowVisibility = 1.0;
-    shadowPayload.shadowPenumbra = 0.0;
-    shadowPayload.shadowDistance = NRD_FP16_MAX;
-    shadowPayload.targetObjectType = 0;
-    shadowPayload.targetObjectIndex = 0;
-    shadowPayload.thicknessQuery = 0;
+    // Loop through potentially multiple translucent objects
+    const int MAX_TRANSLUCENT_LAYERS = 4;
+    for (int layer = 0; layer < MAX_TRANSLUCENT_LAYERS; layer++)
+    {
+        RayDesc shadowRay;
+        shadowRay.Origin = currentOrigin;
+        shadowRay.Direction = rayDir;
+        shadowRay.TMin = 0.001;
+        shadowRay.TMax = remainingDist;
+        
+        RayPayload shadowPayload;
+        shadowPayload.color = float3(0, 0, 0);
+        shadowPayload.depth = SHADOW_RAY_DEPTH;  // Mark as shadow ray
+        shadowPayload.hit = 0;
+        shadowPayload.padding = 0.0;
+        shadowPayload.diffuseRadiance = float3(0, 0, 0);
+        shadowPayload.specularRadiance = float3(0, 0, 0);
+        shadowPayload.hitDistance = NRD_FP16_MAX;
+        shadowPayload.worldNormal = float3(0, 1, 0);
+        shadowPayload.roughness = 1.0;
+        shadowPayload.worldPosition = float3(0, 0, 0);
+        shadowPayload.viewZ = 10000.0;
+        shadowPayload.metallic = 0.0;
+        shadowPayload.albedo = float3(0, 0, 0);
+        shadowPayload.shadowVisibility = 1.0;
+        shadowPayload.shadowPenumbra = 0.0;
+        shadowPayload.shadowDistance = NRD_FP16_MAX;
+        shadowPayload.targetObjectType = 0;
+        shadowPayload.targetObjectIndex = 0;
+        shadowPayload.thicknessQuery = 0;
+        shadowPayload.shadowColorAccum = float3(1, 1, 1);
+        shadowPayload.shadowTransmissionAccum = 0.0;  // Will be set by ClosestHit
+        
+        TraceRay(SceneBVH, 
+                 RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,
+                 0xFF, 0, 0, 0, shadowRay, shadowPayload);
+        
+        if (!shadowPayload.hit)
+        {
+            // No hit - light reaches through
+            break;
+        }
+        
+        // Record first occluder distance
+        if (firstHit)
+        {
+            occluderDistance = shadowPayload.hitDistance;
+            firstHit = false;
+        }
+        
+        // Get transmission from payload (set by ClosestHit)
+        float transmission = shadowPayload.shadowTransmissionAccum;
+        float3 objectColor = shadowPayload.shadowColorAccum;
+        
+        if (transmission < 0.01)
+        {
+            // Opaque object - full shadow, no color
+            shadowColor = float3(0, 0, 0);
+            return 0.0;
+        }
+        
+        // Translucent object - accumulate color and continue
+        // Color tint: less transparent = more color influence
+        float3 tintColor = lerp(objectColor, float3(1, 1, 1), transmission);
+        accumulatedColor *= tintColor;
+        accumulatedVisibility *= transmission;
+        
+        // If too little light remaining, stop
+        if (accumulatedVisibility < 0.01)
+        {
+            shadowColor = accumulatedColor;
+            return 0.0;
+        }
+        
+        // Move origin past the hit object and continue
+        currentOrigin = currentOrigin + rayDir * (shadowPayload.hitDistance + 0.01);
+        remainingDist -= shadowPayload.hitDistance + 0.01;
+        
+        if (remainingDist <= 0.0)
+            break;
+    }
     
-    // Use hit group 0 (primary rays) instead of hit group 1 (shadow rays)
-    // This uses ClosestHit shader which properly sets payload.hit
-    TraceRay(SceneBVH, 
-             RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,
-             0xFF, 0, 0, 0, shadowRay, shadowPayload);
-    
-    occluderDistance = shadowPayload.hit ? shadowPayload.hitDistance : NRD_FP16_MAX;
-    return shadowPayload.hit ? 0.0 : 1.0;
+    shadowColor = accumulatedColor;
+    return accumulatedVisibility;
 }
 
 // Calculate soft shadow visibility for a point light (area light)
 // Returns: visibility value between 0 (fully shadowed) and 1 (fully lit)
+// Also returns shadowColor for colored shadows from translucent objects
 SoftShadowResult CalculateSoftShadowPoint(float3 hitPos, float3 normal, LightData light, inout uint seed)
 {
     SoftShadowResult result;
+    result.shadowColor = float3(1, 1, 1);  // Initialize to white (no tint)
+    
     // If radius is 0 or very small, use hard shadow
     if (light.radius <= 0.001)
     {
         float3 lightDir = normalize(light.position - hitPos);
         float lightDist = length(light.position - hitPos);
         float occluderDistance;
-        result.visibility = TraceSingleShadowRay(hitPos + normal * 0.001, lightDir, lightDist, occluderDistance);
-        result.occluderDistance = result.visibility < 0.5 ? occluderDistance : NRD_FP16_MAX;
+        float3 sampleShadowColor;
+        result.visibility = TraceSingleShadowRay(hitPos + normal * 0.001, lightDir, lightDist, occluderDistance, sampleShadowColor);
+        result.occluderDistance = result.visibility < 0.99 ? occluderDistance : NRD_FP16_MAX;
         result.penumbra = 0.0;
+        result.shadowColor = sampleShadowColor;
         return result;
     }
     
@@ -631,6 +751,8 @@ SoftShadowResult CalculateSoftShadowPoint(float3 hitPos, float3 normal, LightDat
     int numSamples = clamp((int)light.softShadowSamples, 1, 16);
     float lightDistToCenter = length(light.position - hitPos);
     float lightSize = light.radius * 2.0;
+    float3 colorSum = float3(0, 0, 0);
+    int validSamples = 0;
     
     for (int i = 0; i < numSamples; i++)
     {
@@ -643,9 +765,13 @@ SoftShadowResult CalculateSoftShadowPoint(float3 hitPos, float3 normal, LightDat
         if (dot(sampleDir, normal) > 0.0)
         {
             float occluderDistance;
-            float sampleVisibility = TraceSingleShadowRay(hitPos + normal * 0.001, sampleDir, sampleDist, occluderDistance);
+            float3 sampleShadowColor;
+            float sampleVisibility = TraceSingleShadowRay(hitPos + normal * 0.001, sampleDir, sampleDist, occluderDistance, sampleShadowColor);
             visibility += sampleVisibility;
-            if (sampleVisibility < 0.5)
+            colorSum += sampleShadowColor * sampleVisibility;  // Weight by visibility
+            validSamples++;
+            
+            if (sampleVisibility < 0.99)
             {
                 occludedCount++;
                 minOccluderDistance = min(minOccluderDistance, occluderDistance);
@@ -654,26 +780,32 @@ SoftShadowResult CalculateSoftShadowPoint(float3 hitPos, float3 normal, LightDat
         }
     }
     
-    result.visibility = visibility / float(numSamples);
+    result.visibility = validSamples > 0 ? (visibility / float(validSamples)) : 1.0;
     result.occluderDistance = occludedCount > 0 ? minOccluderDistance : NRD_FP16_MAX;
     result.penumbra = occludedCount > 0 ? (penumbraSum / float(occludedCount)) : 0.0;
+    // Average the shadow color, weighted by visibility
+    result.shadowColor = (visibility > 0.01) ? (colorSum / visibility) : float3(0, 0, 0);
     return result;
 }
 
 // Calculate soft shadow visibility for a directional light
 // Returns: visibility value between 0 (fully shadowed) and 1 (fully lit)
+// Also returns shadowColor for colored shadows from translucent objects
 SoftShadowResult CalculateSoftShadowDirectional(float3 hitPos, float3 normal, LightData light, inout uint seed)
 {
     SoftShadowResult result;
+    result.shadowColor = float3(1, 1, 1);  // Initialize to white (no tint)
     float3 lightDir = normalize(-light.position);  // Direction stored in position for directional lights
     
     // If radius is 0 or very small, use hard shadow
     if (light.radius <= 0.001)
     {
         float occluderDistance;
-        result.visibility = TraceSingleShadowRay(hitPos + normal * 0.001, lightDir, 10000.0, occluderDistance);
-        result.occluderDistance = result.visibility < 0.5 ? occluderDistance : NRD_FP16_MAX;
+        float3 sampleShadowColor;
+        result.visibility = TraceSingleShadowRay(hitPos + normal * 0.001, lightDir, 10000.0, occluderDistance, sampleShadowColor);
+        result.occluderDistance = result.visibility < 0.99 ? occluderDistance : NRD_FP16_MAX;
         result.penumbra = 0.0;
+        result.shadowColor = sampleShadowColor;
         return result;
     }
     
@@ -684,6 +816,8 @@ SoftShadowResult CalculateSoftShadowDirectional(float3 hitPos, float3 normal, Li
     int occludedCount = 0;
     int numSamples = clamp((int)light.softShadowSamples, 1, 16);
     float tanAngularRadius = tan(light.radius);
+    float3 colorSum = float3(0, 0, 0);
+    int validSamples = 0;
     
     // Build tangent space perpendicular to light direction
     float3 tangent, bitangent;
@@ -700,9 +834,13 @@ SoftShadowResult CalculateSoftShadowDirectional(float3 hitPos, float3 normal, Li
         if (dot(perturbedDir, normal) > 0.0)
         {
             float occluderDistance;
-            float sampleVisibility = TraceSingleShadowRay(hitPos + normal * 0.001, perturbedDir, 10000.0, occluderDistance);
+            float3 sampleShadowColor;
+            float sampleVisibility = TraceSingleShadowRay(hitPos + normal * 0.001, perturbedDir, 10000.0, occluderDistance, sampleShadowColor);
             visibility += sampleVisibility;
-            if (sampleVisibility < 0.5)
+            colorSum += sampleShadowColor * sampleVisibility;  // Weight by visibility
+            validSamples++;
+            
+            if (sampleVisibility < 0.99)
             {
                 occludedCount++;
                 minOccluderDistance = min(minOccluderDistance, occluderDistance);
@@ -711,14 +849,17 @@ SoftShadowResult CalculateSoftShadowDirectional(float3 hitPos, float3 normal, Li
         }
     }
     
-    result.visibility = visibility / float(numSamples);
+    result.visibility = validSamples > 0 ? (visibility / float(validSamples)) : 1.0;
     result.occluderDistance = occludedCount > 0 ? minOccluderDistance : NRD_FP16_MAX;
     result.penumbra = occludedCount > 0 ? (penumbraSum / float(occludedCount)) : 0.0;
+    // Average the shadow color, weighted by visibility
+    result.shadowColor = (visibility > 0.01) ? (colorSum / visibility) : float3(0, 0, 0);
     return result;
 }
 
 // Unified soft shadow calculation for any light type
 // Returns: visibility value between 0 (fully shadowed) and 1 (fully lit)
+// Also returns shadowColor for colored shadows from translucent objects
 SoftShadowResult CalculateSoftShadow(float3 hitPos, float3 normal, LightData light, inout uint seed)
 {
     if (light.type == LIGHT_TYPE_AMBIENT)
@@ -727,6 +868,7 @@ SoftShadowResult CalculateSoftShadow(float3 hitPos, float3 normal, LightData lig
         result.visibility = 1.0;  // Ambient lights don't cast shadows
         result.penumbra = 0.0;
         result.occluderDistance = NRD_FP16_MAX;
+        result.shadowColor = float3(1, 1, 1);  // No tint
         return result;
     }
     else if (light.type == LIGHT_TYPE_DIRECTIONAL)

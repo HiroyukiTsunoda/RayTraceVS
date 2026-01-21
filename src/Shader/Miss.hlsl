@@ -1,4 +1,4 @@
-// Miss shader - simple sky gradient
+// Miss shader - realistic atmospheric sky gradient
 #include "Common.hlsli"
 
 [shader("miss")]
@@ -6,14 +6,8 @@ void Miss(inout RayPayload payload)
 {
     float3 rayDir = normalize(WorldRayDirection());
     
-    // Simple sky gradient based on Y direction
-    float t = 0.5 * (rayDir.y + 1.0);  // Map from [-1,1] to [0,1]
-    
-    // Lerp between horizon color and sky color
-    float3 horizonColor = float3(0.8, 0.85, 0.9);  // Light gray/white horizon
-    float3 skyColor = float3(0.4, 0.6, 0.9);       // Blue sky
-    
-    float3 sky = lerp(horizonColor, skyColor, t);
+    // Use the shared GetSkyColor function for consistent sky rendering
+    float3 sky = GetSkyColor(rayDir);
     
     payload.color = sky;
     payload.diffuseRadiance = sky;  // NRD用：空の色をDiffuseに書き込む

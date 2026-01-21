@@ -26,7 +26,7 @@ namespace RayTraceVS.WPF.Models.Nodes
             }
         }
 
-        private int _maxBounces = 4;
+        private int _maxBounces = 6;
         public int MaxBounces
         {
             get => _maxBounces;
@@ -116,6 +116,22 @@ namespace RayTraceVS.WPF.Models.Nodes
             }
         }
 
+        /// <summary>
+        /// ガンマ値 (1.0 = リニア, 2.2 = 標準sRGB)
+        /// </summary>
+        private float _gamma = 1.0f;
+        public float Gamma
+        {
+            get => _gamma;
+            set
+            {
+                if (SetProperty(ref _gamma, value))
+                {
+                    MarkDirty();
+                }
+            }
+        }
+
         public SceneNode() : base("Scene", NodeCategory.Scene)
         {
             // カメラソケット（固定）
@@ -128,28 +144,80 @@ namespace RayTraceVS.WPF.Models.Nodes
 
         /// <summary>
         /// オブジェクト入力ソケットを動的に追加
+        /// Lightソケットの前に挿入して、Object同士がまとまるようにする
         /// </summary>
         public void AddObjectSocket()
         {
             objectSocketCount++;
-            AddInputSocket($"Object{objectSocketCount}", SocketType.Object);
+            var socket = new NodeSocket($"Object{objectSocketCount}", SocketType.Object, true) { ParentNode = this };
+            
+            // 最初のLightソケットのインデックスを見つける
+            int lightIndex = -1;
+            for (int i = 0; i < InputSockets.Count; i++)
+            {
+                if (InputSockets[i].SocketType == SocketType.Light)
+                {
+                    lightIndex = i;
+                    break;
+                }
+            }
+            
+            // Lightソケットがあればその前に挿入、なければ末尾に追加
+            if (lightIndex >= 0)
+            {
+                InputSockets.Insert(lightIndex, socket);
+            }
+            else
+            {
+                InputSockets.Add(socket);
+            }
         }
 
         /// <summary>
-        /// ライト入力ソケットを動的に追加
+        /// ライト入力ソケットを動的に追加（末尾に追加）
         /// </summary>
         public void AddLightSocket()
         {
             lightSocketCount++;
-            AddInputSocket($"Light{lightSocketCount}", SocketType.Light);
+            var socket = new NodeSocket($"Light{lightSocketCount}", SocketType.Light, true) { ParentNode = this };
+            InputSockets.Add(socket);
         }
 
         /// <summary>
         /// 指定した名前のソケットを追加（シーン読み込み時に使用）
+        /// ソケットタイプに応じて適切な位置に挿入する
         /// </summary>
         public void AddNamedInputSocket(string socketName, SocketType socketType)
         {
-            AddInputSocket(socketName, socketType);
+            var socket = new NodeSocket(socketName, socketType, true) { ParentNode = this };
+            
+            if (socketType == SocketType.Object)
+            {
+                // Objectソケットは最初のLightソケットの前に挿入
+                int lightIndex = -1;
+                for (int i = 0; i < InputSockets.Count; i++)
+                {
+                    if (InputSockets[i].SocketType == SocketType.Light)
+                    {
+                        lightIndex = i;
+                        break;
+                    }
+                }
+                
+                if (lightIndex >= 0)
+                {
+                    InputSockets.Insert(lightIndex, socket);
+                }
+                else
+                {
+                    InputSockets.Add(socket);
+                }
+            }
+            else
+            {
+                // Light、その他は末尾に追加
+                InputSockets.Add(socket);
+            }
         }
 
         /// <summary>
@@ -267,7 +335,8 @@ namespace RayTraceVS.WPF.Models.Nodes
                 ToneMapOperator = ToneMapOperator,
                 DenoiserStabilization = DenoiserStabilization,
                 ShadowStrength = ShadowStrength,
-                EnableDenoiser = EnableDenoiser
+                EnableDenoiser = EnableDenoiser,
+                Gamma = Gamma
             };
         }
     }

@@ -3,65 +3,72 @@
   "driverVersion": "10DE-2684-51001462-00A1",
   "adapterLUID": 96185,
   "shaders": {
-    "RayTraceCompute": {
-      "sourceHash": "358cc970b3eb6910b6dad002cc6c09d7b0314836701035c2e9c18e43edb88734",
-      "compiledAt": "",
-      "dependencies": {}
-    },
     "RayGen": {
-      "sourceHash": "97493d3f54ef5ebc114e0ebf8405ea16328ed3a33bd77544a7faf1015127d3eb",
-      "compiledAt": "",
+      "sourceHash": "0b466c0a92cb0267439bffcb55cb240854b762cd408757d59de090db8213ca81",
+      "compiledAt": "2026-01-21T16:58:11",
       "dependencies": {
-        "Common.hlsli": "1627ca6591307a55cd70e0836a1668f0b369fe2287019c85670396002149b3df",
+        "Common.hlsli": "bf69fb1b335ebd6489b8c80f9a36373cf27fceb6422499b9b4b4ca89d2aec9b0",
         "NRDEncoding.hlsli": "bf26d0fea30357df6cd6e099270cb11126f03f8eacfbfb0eea995e5161b8c41c"
       }
     },
     "ClosestHit": {
-      "sourceHash": "760ff181f317db79c7d9017b10afb810f2aaa0176b55a4c53133db4d7a88aabe",
-      "compiledAt": "2026-01-21T06:52:53",
+      "sourceHash": "5b979f884ddeeba7ba52a865deea856d45935f05d0132aa4438baae9ace2754a",
+      "compiledAt": "2026-01-21T16:58:12",
       "dependencies": {
-        "Common.hlsli": "1627ca6591307a55cd70e0836a1668f0b369fe2287019c85670396002149b3df",
+        "Common.hlsli": "bf69fb1b335ebd6489b8c80f9a36373cf27fceb6422499b9b4b4ca89d2aec9b0",
         "NRDEncoding.hlsli": "bf26d0fea30357df6cd6e099270cb11126f03f8eacfbfb0eea995e5161b8c41c"
       }
     },
     "Miss": {
-      "sourceHash": "c12af9325fc8a68ba72eb07d9c169aa96a503bb053694f022f2c2d2720408445",
-      "compiledAt": "",
+      "sourceHash": "f27a780f9bb163825b8f1620a236ec3b4b8cb486448a57abdaaba63d3fcaa953",
+      "compiledAt": "2026-01-21T16:58:11",
       "dependencies": {
-        "Common.hlsli": "1627ca6591307a55cd70e0836a1668f0b369fe2287019c85670396002149b3df"
+        "Common.hlsli": "bf69fb1b335ebd6489b8c80f9a36373cf27fceb6422499b9b4b4ca89d2aec9b0"
       }
     },
     "Intersection": {
-      "sourceHash": "627441f5343f0975887c7c3a28eeb6cd2ba425443a345ac950393047ac231eb3",
-      "compiledAt": "",
+      "sourceHash": "ab492563fedc40d675635404adcae7404f0c9af3d06b869d861d6790e23c7a35",
+      "compiledAt": "2026-01-21T16:58:12",
       "dependencies": {
-        "Common.hlsli": "1627ca6591307a55cd70e0836a1668f0b369fe2287019c85670396002149b3df"
+        "Common.hlsli": "bf69fb1b335ebd6489b8c80f9a36373cf27fceb6422499b9b4b4ca89d2aec9b0"
       }
     },
     "AnyHit_Shadow": {
-      "sourceHash": "b97d68bc2cf2a1bf59479ade248b230716bee9b706a31c43aec50ab2295f2041",
-      "compiledAt": "",
+      "sourceHash": "fe217b84cf3bd29e3d8719e572e479096d8cfa7ddc7141599dc5cb8a7f5cc4f0",
+      "compiledAt": "2026-01-21T16:58:12",
       "dependencies": {
-        "Common.hlsli": "1627ca6591307a55cd70e0836a1668f0b369fe2287019c85670396002149b3df"
+        "Common.hlsli": "bf69fb1b335ebd6489b8c80f9a36373cf27fceb6422499b9b4b4ca89d2aec9b0"
+      }
+    },
+    "AnyHit_SkipSelf": {
+      "sourceHash": "f0714cc8d7a705182ffe73688c2063e864eb5f140f060e44b943a5070fc6cce0",
+      "compiledAt": "2026-01-21T16:58:12",
+      "dependencies": {
+        "Common.hlsli": "bf69fb1b335ebd6489b8c80f9a36373cf27fceb6422499b9b4b4ca89d2aec9b0"
       }
     },
     "PhotonEmit": {
       "sourceHash": "b02cf1aca19b580793082eda4e6cb64d53cfff1ae6fda958a13cc0acf0128d65",
-      "compiledAt": "",
+      "compiledAt": "2026-01-21T16:58:13",
       "dependencies": {
-        "Common.hlsli": "1627ca6591307a55cd70e0836a1668f0b369fe2287019c85670396002149b3df"
+        "Common.hlsli": "bf69fb1b335ebd6489b8c80f9a36373cf27fceb6422499b9b4b4ca89d2aec9b0"
       }
     },
     "PhotonTrace": {
       "sourceHash": "7508866e1a99aebf93b326abbef7bb81bf7583e9227a8d914d09b1921d0ba992",
-      "compiledAt": "",
+      "compiledAt": "2026-01-21T16:58:13",
       "dependencies": {
-        "Common.hlsli": "1627ca6591307a55cd70e0836a1668f0b369fe2287019c85670396002149b3df"
+        "Common.hlsli": "bf69fb1b335ebd6489b8c80f9a36373cf27fceb6422499b9b4b4ca89d2aec9b0"
       }
     },
+    "RayTraceCompute": {
+      "sourceHash": "f7a85cced602b94538411c4806e5cf985c86c08cecc134ea7f3a7675d8b4c280",
+      "compiledAt": "2026-01-21T16:58:11",
+      "dependencies": {}
+    },
     "Composite": {
-      "sourceHash": "ac116bbbc4d570de7ed4bc3d13076b03a05c32b12772d0154ca4a32e22c8ac9f",
-      "compiledAt": "",
+      "sourceHash": "49e97559727ae48888f0c84f27b3c071472ddbaa5463b64562820778434394eb",
+      "compiledAt": "2026-01-21T16:58:27",
       "dependencies": {}
     }
   }

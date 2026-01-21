@@ -1,8 +1,6 @@
 // ClosestHit shader - Sphere, Plane, Box
 #include "Common.hlsli"
 
-#define SHADOW_RAY_DEPTH 100
-
 // Hash function for roughness perturbation
 float Hash(float2 p)
 {
@@ -44,14 +42,43 @@ float3 PerturbReflection(float3 reflectDir, float3 normal, float roughness, floa
 void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
 {
     payload.hit = 1;
+    payload.hitDistance = RayTCurrent();
     
+    // Store hit object info for caller to check self-intersection
+    payload.hitObjectType = attribs.objectType;
+    payload.hitObjectIndex = attribs.objectIndex;
+    
+    // Shadow ray: return material info for colored shadows
     if (payload.depth >= SHADOW_RAY_DEPTH)
     {
+        // Get transmission and color for the hit object
+        float transmission = 0.0;
+        float3 objectColor = float3(1, 1, 1);
+        
+        if (attribs.objectType == OBJECT_TYPE_SPHERE)
+        {
+            transmission = Spheres[attribs.objectIndex].transmission;
+            objectColor = Spheres[attribs.objectIndex].color.rgb;
+        }
+        else if (attribs.objectType == OBJECT_TYPE_PLANE)
+        {
+            transmission = Planes[attribs.objectIndex].transmission;
+            objectColor = Planes[attribs.objectIndex].color.rgb;
+        }
+        else // OBJECT_TYPE_BOX
+        {
+            transmission = Boxes[attribs.objectIndex].transmission;
+            objectColor = Boxes[attribs.objectIndex].color.rgb;
+        }
+        
+        // Store in payload for TraceSingleShadowRay to read
+        payload.shadowTransmissionAccum = transmission;
+        payload.shadowColorAccum = objectColor;
         return;
     }
     
     // Use scene-specified max bounces (defaults to 5 if unset)
-    uint maxBounces = (Scene.MaxBounces > 0) ? Scene.MaxBounces : 5;
+    uint maxBounces = (Scene.MaxBounces > 0) ? Scene.MaxBounces : 6;
     if (payload.depth >= maxBounces)
     {
         // Max depth reached - return approximate color instead of black
@@ -72,8 +99,13 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
     }
     
     float3 hitPosition = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
-    float3 normal = attribs.normal;
     float3 rayDir = WorldRayDirection();
+    
+    // Normal from Intersection shader (outward)
+    float3 normal = normalize(attribs.normal);
+    // If normal is already pointing against ray, frontFace should be true for entering
+    // But Intersection always returns normal against ray, so we need to check original geometry
+    // For now, use the sign of the normal to determine entering/exiting
     
     // Generate random seed for soft shadow sampling
     uint seed = asuint(hitPosition.x * 1000.0) ^ asuint(hitPosition.y * 2000.0) ^ asuint(hitPosition.z * 3000.0);
@@ -130,16 +162,50 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
         ior = b.ior;
         specular = b.specular;
         emission = b.emission;
+
+        // Recompute box normal from hit position (local space face)
+        float3 ax = normalize(b.axisX);
+        float3 ay = normalize(b.axisY);
+        float3 az = normalize(b.axisZ);
+        float3 localHit = float3(dot(hitPosition - b.center, ax),
+                                 dot(hitPosition - b.center, ay),
+                                 dot(hitPosition - b.center, az));
+        float3 d = abs(abs(localHit) - b.size);
+        float signX = (localHit.x >= 0.0) ? 1.0 : -1.0;
+        float signY = (localHit.y >= 0.0) ? 1.0 : -1.0;
+        float signZ = (localHit.z >= 0.0) ? 1.0 : -1.0;
+        float3 localNormal;
+        if (d.x < d.y && d.x < d.z)
+            localNormal = float3(signX, 0, 0);
+        else if (d.y < d.z)
+            localNormal = float3(0, signY, 0);
+        else
+            localNormal = float3(0, 0, signZ);
+        normal = normalize(ax * localNormal.x + ay * localNormal.y + az * localNormal.z);
     }
     
-    bool isGlass = transmission > 0.01;
+    // Enforce mutual exclusivity: metals are opaque (no transmission)
+    if (metallic >= 0.5)
+    {
+        transmission = 0.0;
+    }
+    
+    // Treat metal as opaque even if transmission is non-zero
+    bool isGlass = (transmission > 0.01) && (metallic < 0.5);
+    
+    // Final shading normal (ensure it faces the ray)
+    float3 N = (dot(rayDir, normal) < 0.0) ? normal : -normal;
+    
+    // frontFace for glass refraction: check if ray is entering or exiting
+    bool frontFace = dot(rayDir, N) < 0;
     
     // Glass (sphere or box) with Fresnel and reflection/refraction
     if (isGlass && (attribs.objectType == OBJECT_TYPE_SPHERE || attribs.objectType == OBJECT_TYPE_BOX))
     {
-        bool entering = dot(rayDir, normal) < 0;
-        float3 N = entering ? normal : -normal;   // N always points against incoming ray
-        float eta = entering ? (1.0 / ior) : ior; // n1/n2 (restored original IOR)
+        // Use frontFace to determine entering/exiting
+        // frontFace = true means ray is entering the object (coming from outside)
+        bool entering = frontFace;
+        float eta = entering ? (1.0 / ior) : ior; // n1/n2
         
         // Fresnel term (Schlick)
         float cosTheta = saturate(dot(-rayDir, N));
@@ -206,6 +272,8 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
             reflPayload.targetObjectType = attribs.objectType;
             reflPayload.targetObjectIndex = attribs.objectIndex;
             reflPayload.thicknessQuery = 0;
+            reflPayload.shadowColorAccum = float3(1, 1, 1);
+            reflPayload.shadowTransmissionAccum = 1.0;
             
             TraceRay(SceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, reflectRay, reflPayload);
             reflectColor = reflPayload.color;
@@ -250,6 +318,8 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
                 refrPayload.targetObjectType = 0;
                 refrPayload.targetObjectIndex = 0;
                 refrPayload.thicknessQuery = 0;
+                refrPayload.shadowColorAccum = float3(1, 1, 1);
+                refrPayload.shadowTransmissionAccum = 1.0;
                 
                 TraceRay(SceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, refractRay, refrPayload);
                 refractColor = refrPayload.color;
@@ -374,7 +444,6 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
     // diffuseColor = baseColor * (1 - metallic)
     // ============================================
     
-    float3 N = normal;
     float3 V = -rayDir;
     
     // Universal PBR: F0 interpolation based on metallic
@@ -389,17 +458,44 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
     float3 reflectColor = float3(0, 0, 0);
     if (metallic > 0.1 && payload.depth < maxBounces)
     {
-        float3 reflectDir = reflect(rayDir, normal);
+        float3 reflectDir = reflect(rayDir, N);
         
         // Apply roughness perturbation for blurry reflections
         float2 reflectSeed = hitPosition.xy * 1000.0 + float2(payload.depth, payload.depth * 0.5);
-        float3 perturbedDir = PerturbReflection(reflectDir, normal, roughness, reflectSeed);
+        float3 perturbedDir = PerturbReflection(reflectDir, N, roughness, reflectSeed);
+        
         
         RayDesc reflectRay;
-        reflectRay.Origin = hitPosition + normal * 0.01;
+        reflectRay.Origin = hitPosition + N * 0.01;
         reflectRay.Direction = perturbedDir;
         reflectRay.TMin = 0.001;
         reflectRay.TMax = 10000.0;
+        
+        // For boxes, compute exit distance and start after it to avoid self-hit
+        if (attribs.objectType == OBJECT_TYPE_BOX)
+        {
+            BoxData b = Boxes[attribs.objectIndex];
+            float3 ax = normalize(b.axisX);
+            float3 ay = normalize(b.axisY);
+            float3 az = normalize(b.axisZ);
+            float3 localOrigin = float3(dot(reflectRay.Origin - b.center, ax),
+                                        dot(reflectRay.Origin - b.center, ay),
+                                        dot(reflectRay.Origin - b.center, az));
+            float3 localDir = float3(dot(reflectRay.Direction, ax),
+                                     dot(reflectRay.Direction, ay),
+                                     dot(reflectRay.Direction, az));
+            
+            float3 t0 = (-b.size - localOrigin) / localDir;
+            float3 t1 = ( b.size - localOrigin) / localDir;
+            float3 tMin = min(t0, t1);
+            float3 tMax = max(t0, t1);
+            float tNear = max(max(tMin.x, tMin.y), tMin.z);
+            float tFar = min(min(tMax.x, tMax.y), tMax.z);
+            if (tFar > 0.0)
+            {
+                reflectRay.TMin = max(tFar + 0.01, 0.001);
+            }
+        }
         
         RayPayload reflectPayload;
         reflectPayload.color = float3(0, 0, 0);
@@ -418,14 +514,33 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
         reflectPayload.shadowVisibility = 1.0;
         reflectPayload.shadowPenumbra = 0.0;
         reflectPayload.shadowDistance = NRD_FP16_MAX;
-        reflectPayload.targetObjectType = 0;
-        reflectPayload.targetObjectIndex = 0;
+        // Skip self-intersection for reflection rays
+        reflectPayload.targetObjectType = attribs.objectType;
+        reflectPayload.targetObjectIndex = attribs.objectIndex;
         reflectPayload.thicknessQuery = 0;
+        reflectPayload.hitObjectType = 0;
+        reflectPayload.hitObjectIndex = 0;
+        reflectPayload.shadowColorAccum = float3(1, 1, 1);
+        reflectPayload.shadowTransmissionAccum = 1.0;
         
-        TraceRay(SceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, reflectRay, reflectPayload);
+        // Use reflection hit group (index 2) to enable AnyHit_SkipSelf
+        TraceRay(SceneBVH, RAY_FLAG_NONE, 0xFF, 2, 0, 0, reflectRay, reflectPayload);
         
-        // Reflection color tinted by material color (for metals)
-        reflectColor = reflectPayload.color * color.rgb;
+        
+        // Check if reflection hit the same object (self-intersection on box faces)
+        bool hitSameObject = (reflectPayload.hitObjectType == attribs.objectType &&
+                             reflectPayload.hitObjectIndex == attribs.objectIndex);
+        
+        if (hitSameObject)
+        {
+            // Self-intersection: use sky color instead
+            reflectColor = GetSkyColor(perturbedDir) * color.rgb;
+        }
+        else
+        {
+            // Normal reflection: tint by material color (for metals)
+            reflectColor = reflectPayload.color * color.rgb;
+        }
     }
     
     // Direct lighting accumulation
@@ -438,6 +553,7 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
     bestShadowForSigma.visibility = 1.0;
     bestShadowForSigma.penumbra = 0.0;
     bestShadowForSigma.occluderDistance = NRD_FP16_MAX;
+    bestShadowForSigma.shadowColor = float3(1, 1, 1);  // No tint by default
     float bestShadowWeight = -1.0;
     
     // Process all lights with Universal PBR BRDF
@@ -483,7 +599,15 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
                         bestShadowForSigma = shadow;
                     }
                     
-                    float3 radiance = light.color.rgb * light.intensity * attenuation * shadow.visibility;
+                    // Apply shadow strength: 0 = no shadow, 1 = normal, >1 = darker
+                    float shadowAmount = 1.0 - shadow.visibility;
+                    shadowAmount *= Scene.ShadowStrength;
+                    shadowAmount = saturate(shadowAmount);
+                    float adjustedVisibility = 1.0 - shadowAmount;
+                    
+                    // Apply colored shadow: multiply by shadow color for translucent objects
+                    // shadow.shadowColor is white (1,1,1) for opaque shadows, colored for translucent
+                    float3 radiance = light.color.rgb * light.intensity * attenuation * adjustedVisibility * shadow.shadowColor;
                     
                     // Half vector
                     float3 H = normalize(V + L);
@@ -535,7 +659,14 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
         
         if (NdotL > 0.0)
         {
-            float3 radiance = Scene.LightColor.rgb * Scene.LightIntensity * attenuation * shadow.visibility;
+            // Apply shadow strength: 0 = no shadow, 1 = normal, >1 = darker
+            float shadowAmount = 1.0 - shadow.visibility;
+            shadowAmount *= Scene.ShadowStrength;
+            shadowAmount = saturate(shadowAmount);
+            float adjustedVisibility = 1.0 - shadowAmount;
+            
+            // Apply colored shadow: multiply by shadow color for translucent objects
+            float3 radiance = Scene.LightColor.rgb * Scene.LightIntensity * attenuation * adjustedVisibility * shadow.shadowColor;
             
             float3 H = normalize(V + L);
             float NdotV = max(dot(N, V), 0.001);
@@ -564,11 +695,20 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
     float reflectionWeight = metallic * (1.0 - roughness * 0.5);
     float directWeight = 1.0 - reflectionWeight * 0.5;
     
-    float3 finalColor = ambient 
-                      + directDiffuse * directWeight 
-                      + directSpecular 
-                      + reflectColor * reflectionWeight
-                      + emission;
+    float3 finalColor;
+    if (metallic > 0.99 && transmission <= 0.01)
+    {
+        // Pure metal: reflection only (no diffuse/ambient)
+        finalColor = reflectColor + emission;
+    }
+    else
+    {
+        finalColor = ambient 
+                   + directDiffuse * directWeight 
+                   + directSpecular 
+                   + reflectColor * reflectionWeight
+                   + emission;
+    }
     
     payload.color = saturate(finalColor);
     
@@ -576,19 +716,31 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
     if (payload.depth == 0)
     {
         float hitDistance = RayTCurrent();
-        payload.diffuseRadiance = ambient + directDiffuse * directWeight + reflectColor * reflectionWeight + emission;
-        payload.specularRadiance = directSpecular;
+        bool isPureMetal = (metallic >= 0.5);
+        if (isPureMetal)
+        {
+            // Mirror-only output for Composite path
+            payload.diffuseRadiance = reflectColor + emission;
+            payload.specularRadiance = float3(0, 0, 0);
+            payload.shadowVisibility = 1.0;
+            payload.shadowPenumbra = 0.0;
+            payload.shadowDistance = NRD_FP16_MAX;
+        }
+        else
+        {
+            payload.diffuseRadiance = ambient + directDiffuse * directWeight + reflectColor * reflectionWeight + emission;
+            payload.specularRadiance = directSpecular;
+            // SIGMA shadow input
+            payload.shadowVisibility = bestShadowForSigma.visibility;
+            payload.shadowPenumbra = bestShadowForSigma.penumbra;
+            payload.shadowDistance = bestShadowForSigma.occluderDistance;
+        }
         payload.hitDistance = hitDistance;
-        payload.worldNormal = normal;
+        payload.worldNormal = N;
         payload.roughness = roughness;
         payload.worldPosition = hitPosition;
         payload.viewZ = hitDistance;
         payload.metallic = metallic;
         payload.albedo = color.rgb;
-        
-        // SIGMA shadow input
-        payload.shadowVisibility = bestShadowForSigma.visibility;
-        payload.shadowPenumbra = bestShadowForSigma.penumbra;
-        payload.shadowDistance = bestShadowForSigma.occluderDistance;
     }
 }

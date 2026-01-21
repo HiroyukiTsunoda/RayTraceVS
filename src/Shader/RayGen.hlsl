@@ -140,6 +140,8 @@ void RayGen()
         payload.targetObjectType = 0;
         payload.targetObjectIndex = 0;
         payload.thicknessQuery = 0;
+        payload.shadowColorAccum = float3(1, 1, 1);
+        payload.shadowTransmissionAccum = 1.0;
         
         // レイトレーシング実行
         TraceRay(

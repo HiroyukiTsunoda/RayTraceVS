@@ -173,6 +173,11 @@ namespace RayTraceVS::DXEngine
         if (!CreateTexture(m_gBuffer.RawSpecularBackup, DXGI_FORMAT_R16G16B16A16_FLOAT, L"GBuffer_RawSpecularBackup"))
             return false;
 
+        // Create backup buffer for raw diffuse (before NRD processing)
+        // This is needed to preserve point light illumination which NRD may smooth out
+        if (!CreateTexture(m_gBuffer.RawDiffuseBackup, DXGI_FORMAT_R16G16B16A16_FLOAT, L"GBuffer_RawDiffuseBackup"))
+            return false;
+
         if (!CreateTexture(m_gBuffer.NormalRoughness, DXGI_FORMAT_R8G8B8A8_UNORM, L"GBuffer_NormalRoughness"))
             return false;
 
@@ -1247,6 +1252,7 @@ namespace RayTraceVS::DXEngine
         m_gBuffer.DiffuseRadianceHitDist.Reset();
         m_gBuffer.SpecularRadianceHitDist.Reset();
         m_gBuffer.RawSpecularBackup.Reset();
+        m_gBuffer.RawDiffuseBackup.Reset();
         m_gBuffer.NormalRoughness.Reset();
         m_gBuffer.ViewZ.Reset();
         m_gBuffer.MotionVectors.Reset();
