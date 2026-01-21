@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Threading;
@@ -6,9 +7,28 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using RayTraceVS.WPF.Services;
 using RayTraceVS.WPF.Models;
+using RayTraceVS.Interop;
 
 namespace RayTraceVS.WPF.Views
 {
+    /// <summary>
+    /// シーンパラメーターを保持するレコード（非同期レンダリング用）
+    /// </summary>
+    internal record SceneParams(
+        SphereData[] Spheres,
+        PlaneData[] Planes,
+        BoxData[] Boxes,
+        CameraData Camera,
+        LightData[] Lights,
+        int SamplesPerPixel,
+        int MaxBounces,
+        float Exposure,
+        int ToneMapOperator,
+        float DenoiserStabilization,
+        float ShadowStrength,
+        bool EnableDenoiser,
+        float Gamma);
+
     public partial class RenderWindow : Window
     {
         private RenderService? renderService;
@@ -17,7 +37,11 @@ namespace RayTraceVS.WPF.Views
         private WriteableBitmap? renderBitmap;
         
         private bool isRendering = false;
-        private bool needsRedraw = false;
+        
+        // 非同期レンダリング用フィールド
+        private bool _isRenderingInProgress = false;
+        private SceneParams? _pendingSceneParams = null;
+        private readonly object _renderLock = new object();
         
         // 解像度を1920x1080に固定
         private const int RenderWidth = 1920;
@@ -51,13 +75,33 @@ namespace RayTraceVS.WPF.Views
         
         private void OnSceneChanged(object? sender, EventArgs e)
         {
-            // シーンが変更されたら再描画が必要
-            if (isRendering)
+            if (!isRendering || renderService == null || nodeGraph == null || sceneEvaluator == null)
+                return;
+
+            // UIスレッドでシーン評価（パラメーター取得）を1回だけ実行
+            var evaluated = sceneEvaluator.EvaluateScene(nodeGraph);
+            var sceneParams = new SceneParams(
+                evaluated.Item1, evaluated.Item2, evaluated.Item3,
+                evaluated.Item4, evaluated.Item5,
+                evaluated.SamplesPerPixel, evaluated.MaxBounces,
+                evaluated.Exposure, evaluated.ToneMapOperator,
+                evaluated.DenoiserStabilization, evaluated.ShadowStrength,
+                evaluated.EnableDenoiser, evaluated.Gamma);
+
+            lock (_renderLock)
             {
-                needsRedraw = true;
-                // UIスレッドでテンポラルデノイズのために複数回描画
-                Dispatcher.BeginInvoke(new Action(() => RenderMultiplePasses()), DispatcherPriority.Render);
+                if (_isRenderingInProgress)
+                {
+                    // レンダリング中 → キューに保存（上書き）
+                    _pendingSceneParams = sceneParams;
+                    return;
+                }
+                
+                _isRenderingInProgress = true;
             }
+
+            // 非同期でレンダリング開始
+            _ = RenderWithParamsAsync(sceneParams);
         }
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
@@ -166,28 +210,30 @@ namespace RayTraceVS.WPF.Views
 
         private void StartRendering()
         {
-            if (isRendering || renderService == null)
+            if (isRendering || renderService == null || nodeGraph == null || sceneEvaluator == null)
                 return;
 
             isRendering = true;
             StatusText.Text = "状態: レンダリング中";
-
-            // テンポラルデノイズのために最低回数描画
-            RenderMultiplePasses();
             UpdateInfo();
-        }
-        
-        /// <summary>
-        /// テンポラルデノイズのために最低回数描画する
-        /// 最終フレームのみ画面に表示（中間フレームは内部処理のみ）
-        /// </summary>
-        private void RenderMultiplePasses()
-        {
-            for (int i = 0; i < MinRenderPassesForTemporal; i++)
+
+            // 初回レンダリング：シーン評価してパラメーター取得
+            var evaluated = sceneEvaluator.EvaluateScene(nodeGraph);
+            var sceneParams = new SceneParams(
+                evaluated.Item1, evaluated.Item2, evaluated.Item3,
+                evaluated.Item4, evaluated.Item5,
+                evaluated.SamplesPerPixel, evaluated.MaxBounces,
+                evaluated.Exposure, evaluated.ToneMapOperator,
+                evaluated.DenoiserStabilization, evaluated.ShadowStrength,
+                evaluated.EnableDenoiser, evaluated.Gamma);
+
+            lock (_renderLock)
             {
-                bool isLastPass = (i == MinRenderPassesForTemporal - 1);
-                RenderOnce(updateDisplay: isLastPass);
+                _isRenderingInProgress = true;
             }
+
+            // 非同期でレンダリング開始
+            _ = RenderWithParamsAsync(sceneParams);
         }
 
         private void StopRendering()
@@ -200,83 +246,128 @@ namespace RayTraceVS.WPF.Views
         }
 
         /// <summary>
-        /// 1フレーム描画する
+        /// 指定されたパラメーターで非同期にレンダリングを実行する
+        /// キューに保留中のパラメーターがあれば、完了後に再度レンダリングを実行する
         /// </summary>
-        /// <param name="updateDisplay">trueの場合のみ画面に表示（falseは内部処理のみ）</param>
-        private void RenderOnce(bool updateDisplay = true)
+        private async Task RenderWithParamsAsync(SceneParams sceneParams)
         {
-            if (!isRendering || renderService == null || nodeGraph == null || sceneEvaluator == null || renderBitmap == null)
-                return;
-
-            needsRedraw = false;
-
-            try
+            while (true)
             {
-                // ノードグラフからシーンデータを評価
-                var (spheres, planes, boxes, camera, lights, samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization, shadowStrength, enableDenoiser, gamma) = sceneEvaluator.EvaluateScene(nodeGraph);
+                byte[]? finalPixelData = null;
                 
-                // シーン更新
-                renderService.UpdateScene(spheres, planes, boxes, camera, lights, samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization, shadowStrength, enableDenoiser, gamma);
-                
-                // レンダリング（GPU側で描画実行）
-                renderService.Render();
-                
-                // 最終フレームのみ画面に転送
-                if (!updateDisplay)
-                    return;
-                
-                // ピクセルデータを取得して画面に表示
-                var pixelData = renderService.GetPixelData();
-                
-                if (pixelData != null)
+                try
                 {
-                    renderBitmap.Lock();
-                    try
+                    // バックグラウンドスレッドで複数パスレンダリング
+                    finalPixelData = await Task.Run(() =>
                     {
-                        unsafe
+                        for (int i = 0; i < MinRenderPassesForTemporal; i++)
                         {
-                            byte* pBackBuffer = (byte*)renderBitmap.BackBuffer;
-                            int stride = renderBitmap.BackBufferStride;
+                            // レンダリング停止チェック
+                            if (!isRendering || renderService == null)
+                                return null;
+
+                            // 同じパラメーターでシーン更新＆レンダリング
+                            renderService.UpdateScene(
+                                sceneParams.Spheres, sceneParams.Planes, sceneParams.Boxes,
+                                sceneParams.Camera, sceneParams.Lights,
+                                sceneParams.SamplesPerPixel, sceneParams.MaxBounces,
+                                sceneParams.Exposure, sceneParams.ToneMapOperator,
+                                sceneParams.DenoiserStabilization, sceneParams.ShadowStrength,
+                                sceneParams.EnableDenoiser, sceneParams.Gamma);
                             
-                            // RGBA to BGRA conversion using uint32 swap for better performance
-                            fixed (byte* pSrc = pixelData)
-                            {
-                                for (int y = 0; y < RenderHeight; y++)
-                                {
-                                    uint* srcRow = (uint*)(pSrc + y * RenderWidth * 4);
-                                    uint* dstRow = (uint*)(pBackBuffer + y * stride);
-                                    
-                                    for (int x = 0; x < RenderWidth; x++)
-                                    {
-                                        uint rgba = srcRow[x];
-                                        // RGBA -> BGRA: swap R and B
-                                        uint r = (rgba >> 0) & 0xFF;
-                                        uint g = (rgba >> 8) & 0xFF;
-                                        uint b = (rgba >> 16) & 0xFF;
-                                        uint a = (rgba >> 24) & 0xFF;
-                                        dstRow[x] = (a << 24) | (r << 16) | (g << 8) | b;
-                                    }
-                                }
-                            }
+                            renderService.Render();
                         }
                         
-                        renderBitmap.AddDirtyRect(new Int32Rect(0, 0, RenderWidth, RenderHeight));
-                    }
-                    finally
+                        // 最後にピクセルデータを取得
+                        return renderService?.GetPixelData();
+                    });
+
+                    // UIスレッドで画面更新
+                    if (finalPixelData != null && isRendering)
                     {
-                        renderBitmap.Unlock();
+                        UpdateDisplay(finalPixelData);
                     }
                 }
-                else
+                catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine("Pixel data is null!");
+                    System.Diagnostics.Debug.WriteLine($"Render error: {ex.Message}");
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        MessageBox.Show($"レンダリングエラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                        StopRendering();
+                    });
+                    
+                    lock (_renderLock)
+                    {
+                        _isRenderingInProgress = false;
+                        _pendingSceneParams = null;
+                    }
+                    return;
+                }
+
+                // キューを確認
+                lock (_renderLock)
+                {
+                    if (_pendingSceneParams != null)
+                    {
+                        // キューから取り出して次のレンダリングへ
+                        sceneParams = _pendingSceneParams;
+                        _pendingSceneParams = null;
+                        // ループ継続
+                    }
+                    else
+                    {
+                        // キューが空 → 終了
+                        _isRenderingInProgress = false;
+                        break;
+                    }
                 }
             }
-            catch (Exception ex)
+        }
+
+        /// <summary>
+        /// ピクセルデータを画面に転送する
+        /// </summary>
+        private void UpdateDisplay(byte[] pixelData)
+        {
+            if (renderBitmap == null)
+                return;
+
+            renderBitmap.Lock();
+            try
             {
-                System.Diagnostics.Debug.WriteLine($"Render error: {ex.Message}");
-                MessageBox.Show($"レンダリングエラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-                StopRendering();
+                unsafe
+                {
+                    byte* pBackBuffer = (byte*)renderBitmap.BackBuffer;
+                    int stride = renderBitmap.BackBufferStride;
+                    
+                    // RGBA to BGRA conversion using uint32 swap for better performance
+                    fixed (byte* pSrc = pixelData)
+                    {
+                        for (int y = 0; y < RenderHeight; y++)
+                        {
+                            uint* srcRow = (uint*)(pSrc + y * RenderWidth * 4);
+                            uint* dstRow = (uint*)(pBackBuffer + y * stride);
+                            
+                            for (int x = 0; x < RenderWidth; x++)
+                            {
+                                uint rgba = srcRow[x];
+                                // RGBA -> BGRA: swap R and B
+                                uint r = (rgba >> 0) & 0xFF;
+                                uint g = (rgba >> 8) & 0xFF;
+                                uint b = (rgba >> 16) & 0xFF;
+                                uint a = (rgba >> 24) & 0xFF;
+                                dstRow[x] = (a << 24) | (r << 16) | (g << 8) | b;
+                            }
+                        }
+                    }
+                }
+                
+                renderBitmap.AddDirtyRect(new Int32Rect(0, 0, RenderWidth, RenderHeight));
+            }
+            finally
+            {
+                renderBitmap.Unlock();
             }
         }
 

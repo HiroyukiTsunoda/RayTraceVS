@@ -117,7 +117,8 @@
                                                      Background="#3C3C3C"
                                                      Foreground="{StaticResource TextBrush}"
                                                      BorderBrush="{StaticResource BorderBrush}"
-                                                     Padding="5,3" TextAlignment="Center"/>
+                                                     Padding="5,3" TextAlignment="Center"
+                                                     KeyDown="TextBox_KeyDown"/>
                                         </Grid>
                                         <TextBlock Text="1: プレビュー / 4-8: 高品質 / 16+: 最高品質" 
                                                    Foreground="{StaticResource TextSecondaryBrush}"
@@ -145,7 +146,8 @@
                                                      Background="#3C3C3C"
                                                      Foreground="{StaticResource TextBrush}"
                                                      BorderBrush="{StaticResource BorderBrush}"
-                                                     Padding="5,3" TextAlignment="Center"/>
+                                                     Padding="5,3" TextAlignment="Center"
+                                                     KeyDown="TextBox_KeyDown"/>
                                         </Grid>
                                         <TextBlock Text="ガラス/メタルの反射・屈折の最大回数" 
                                                    Foreground="{StaticResource TextSecondaryBrush}"
@@ -173,7 +175,8 @@
                                                      Background="#3C3C3C"
                                                      Foreground="{StaticResource TextBrush}"
                                                      BorderBrush="{StaticResource BorderBrush}"
-                                                     Padding="5,3" TextAlignment="Center"/>
+                                                     Padding="5,3" TextAlignment="Center"
+                                                     KeyDown="TextBox_KeyDown"/>
                                         </Grid>
 
                                         <!-- ToneMapOperator -->
@@ -214,7 +217,8 @@
                                                      Background="#3C3C3C"
                                                      Foreground="{StaticResource TextBrush}"
                                                      BorderBrush="{StaticResource BorderBrush}"
-                                                     Padding="5,3" TextAlignment="Center"/>
+                                                     Padding="5,3" TextAlignment="Center"
+                                                     KeyDown="TextBox_KeyDown"/>
                                         </Grid>
                                         <TextBlock Text="2.2: 標準sRGB / 1.0: リニア" 
                                                    Foreground="{StaticResource TextSecondaryBrush}"
@@ -242,7 +246,8 @@
                                                      Background="#3C3C3C"
                                                      Foreground="{StaticResource TextBrush}"
                                                      BorderBrush="{StaticResource BorderBrush}"
-                                                     Padding="5,3" TextAlignment="Center"/>
+                                                     Padding="5,3" TextAlignment="Center"
+                                                     KeyDown="TextBox_KeyDown"/>
                                         </Grid>
                                         <TextBlock Text="0.0: 影なし / 1.0: 通常 / 1.5+: 濃い影" 
                                                    Foreground="{StaticResource TextSecondaryBrush}"
@@ -295,7 +300,8 @@
                                                      Background="#3C3C3C"
                                                      Foreground="{StaticResource TextBrush}"
                                                      BorderBrush="{StaticResource BorderBrush}"
-                                                     Padding="5,3" TextAlignment="Center"/>
+                                                     Padding="5,3" TextAlignment="Center"
+                                                     KeyDown="TextBox_KeyDown"/>
                                         </Grid>
                                         <TextBlock Text="0: DoF無効 / 0.05-0.2: 弱いボケ / 0.5+: 強いボケ" 
                                                    Foreground="{StaticResource TextSecondaryBrush}"
@@ -323,7 +329,8 @@
                                                      Background="#3C3C3C"
                                                      Foreground="{StaticResource TextBrush}"
                                                      BorderBrush="{StaticResource BorderBrush}"
-                                                     Padding="5,3" TextAlignment="Center"/>
+                                                     Padding="5,3" TextAlignment="Center"
+                                                     KeyDown="TextBox_KeyDown"/>
                                         </Grid>
                                         <TextBlock Text="ピントが合う距離（カメラからの距離）" 
                                                    Foreground="{StaticResource TextSecondaryBrush}"

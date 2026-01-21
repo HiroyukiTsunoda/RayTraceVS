@@ -123,14 +123,20 @@ RayTraceVSのノードエディタが完全に実装され、直感的なノー�
    - ドラッグ＆ドロップロジック
    - パン・ズーム処理
    - キーボード入力処理
+   - ハンドラー分離（`Views/Handlers/`）
+     - `ConnectionHandler.cs` - 接続作成
+     - `NodeDragHandler.cs` - ノードドラッグ
+     - `PanZoomHandler.cs` - パン・ズーム
+     - `SelectionHandler.cs` - 選択処理
 
 2. **Node**: ノードの基底クラス
    - 位置、タイトル、カテゴリ
    - 入力・出力ソケットの管理
    - 選択状態の管理
+   - PBRプロパティ（Metallic/Roughness/Transmission/IOR/Emission）
 
 3. **NodeSocket**: ソケット（入出力ポート）
-   - ソケットタイプ（Object, Vector3, Float, etc.）
+   - ソケットタイプ（Object, Vector3, Float, Color, Material, etc.）
    - 親ノードへの参照
    - 値の保持
 
@@ -143,6 +149,7 @@ RayTraceVSのノードエディタが完全に実装され、直感的なノー�
    - ノードコレクションの管理
    - 接続コレクションの管理
    - 選択状態の管理
+   - レンダリング設定（SamplesPerPixel, MaxBounces, Exposure等）
 
 ### カスタムコンバーター
 

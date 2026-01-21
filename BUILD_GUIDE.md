@@ -169,8 +169,12 @@ msbuild RayTraceVS.sln /p:Configuration=Release /p:Platform=x64
 - `RayTraceVS.DXEngine.dll`
 - `RayTraceVS.Interop.dll`
 - `NRD.dll`（デノイザー用）
-- すべての`.cso`シェーダーファイル（`Shaders\`フォルダ内）
+- `Shader/`フォルダ（HLSLソース + キャッシュ）
+  - `.hlsl` / `.hlsli` シェーダーソースファイル
+  - `Cache/shader_cache.json`（コンパイル済みシェーダーキャッシュ）
 - 必要なランタイム依存関係（.NET 8.0ランタイム）
+
+> 💡 シェーダーキャッシュ（`shader_cache.json`）は初回起動時に自動生成されます。ソースファイルが変更されると自動的に再コンパイルされます。
 
 ### インストーラー作成（オプション）
 

@@ -33,20 +33,26 @@ RayTraceVS/
 │   ├── RayTraceVS.WPF/                     # C# WPFプロジェクト
 │   │   ├── ViewModels/                     # MVVM ViewModels
 │   │   ├── Views/                          # WPF Views
+│   │   │   └── Handlers/                   # 入力ハンドラー（接続/ドラッグ/パン等）
 │   │   ├── Converters/                     # 値コンバーター
+│   │   ├── Commands/                       # コマンドシステム
+│   │   ├── Utils/                          # ユーティリティ
 │   │   ├── Models/                         # データモデル
-│   │   │   └── Nodes/                      # ノードタイプ
+│   │   │   ├── Nodes/                      # ノードタイプ（オブジェクト/マテリアル/数学等）
+│   │   │   ├── Data/                       # データ型定義
+│   │   │   └── Serialization/              # シリアライゼーション
 │   │   └── Services/                       # サービス層
+│   │       └── Interfaces/                 # サービスインターフェース
 │   │
 │   ├── RayTraceVS.DXEngine/                # C++ DirectX12プロジェクト
 │   │   ├── DXContext.h/.cpp                # DX12初期化
 │   │   ├── DXRPipeline.h/.cpp              # DXRパイプライン
 │   │   ├── AccelerationStructure.h/.cpp   # BLAS/TLAS構築
 │   │   ├── RenderTarget.h/.cpp             # レンダーターゲット管理
-│   │   ├── ShaderCache.h/.cpp              # シェーダーキャッシュ
+│   │   ├── ShaderCache.h/.cpp              # シェーダーキャッシュ（DXC）
 │   │   ├── NativeBridge.h/.cpp             # ネイティブブリッジ
-│   │   ├── Denoiser/                       # NRDデノイザー
-│   │   └── Shaders/                        # HLSLシェーダー
+│   │   ├── Denoiser/                       # NRDデノイザー（REBLUR + SIGMA）
+│   │   └── Scene/Objects/                  # シーンオブジェクト（Sphere/Plane/Box）
 │   │
 │   ├── RayTraceVS.Interop/                 # C++/CLI相互運用プロジェクト
 │   │   ├── EngineWrapper.h/.cpp            # エンジンラッパー
@@ -54,6 +60,13 @@ RayTraceVS/
 │   │   └── Marshalling.h/.cpp              # データ変換
 │   │
 │   └── Shader/                             # シェーダーソース（共有）
+│       ├── Common.hlsli                    # 共通定義（空間ハッシュ対応）
+│       ├── NRDEncoding.hlsli               # NRDエンコーディング
+│       ├── RayGen.hlsl                     # レイ生成 + G-Buffer出力
+│       ├── ClosestHit.hlsl                 # 統合マテリアル処理
+│       ├── Intersection.hlsl               # 交差判定（球/平面/ボックス）
+│       ├── Composite.hlsl                  # 最終合成 + トーンマッピング
+│       ├── PhotonEmit.hlsl                 # フォトン放出（コースティクス）
 │       └── Cache/                          # コンパイル済みシェーダーキャッシュ
 │
 ├── sample_scene.rtvs                       # サンプルシーンファイル
@@ -308,9 +321,20 @@ RayTraceVS/
 - [ ] パストレーシング（より正確なGI）
 - [ ] アニメーション機能
 - [ ] リアルタイムプレビュー（低解像度）
-- [ ] アンドゥ/リドゥ
+- [ ] アンドゥ/リドゥ（コマンドシステム基盤は実装済み）
 - [ ] 画像シーケンス出力
 - [ ] HDR画像出力
+
+## 実装済みの主要機能
+
+- [x] NRDデノイザー統合（REBLUR + SIGMA）
+- [x] フォトンマッピングによるコースティクス（空間ハッシュ最適化）
+- [x] PBRマテリアルシステム（Metallic/Roughness/Transmission/IOR/Emission）
+- [x] ソフトシャドウ（エリアライトサンプリング）
+- [x] 被写界深度（DoF）シミュレーション
+- [x] トーンマッピング（Reinhard / ACES Filmic）
+- [x] シェーダーキャッシュ（DXC + JSON管理）
+- [x] GGX-like roughness perturbation
 
 ## ライセンス
 
