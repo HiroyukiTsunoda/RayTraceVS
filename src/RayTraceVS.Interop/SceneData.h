@@ -64,7 +64,8 @@ namespace RayTraceVS::Interop
         float Padding2;
     };
 
-    // Box data (with PBR material) - 96 bytes, 16-byte aligned
+    // Box data (with PBR material and rotation) - 144 bytes, 16-byte aligned
+    // OBB (Oriented Bounding Box) support via local axes
     [StructLayout(LayoutKind::Sequential)]
     public value struct BoxData
     {
@@ -72,17 +73,24 @@ namespace RayTraceVS::Interop
         float Padding1;
         Vector3 Size;       // half-extents (width/2, height/2, depth/2)
         float Padding2;
+        // Local axes (rotation matrix columns) for OBB
+        Vector3 AxisX;      // Local X axis in world space
+        float Padding3;
+        Vector3 AxisY;      // Local Y axis in world space
+        float Padding4;
+        Vector3 AxisZ;      // Local Z axis in world space
+        float Padding5;
         Vector4 Color;
         float Metallic;
         float Roughness;
         float Transmission;
         float IOR;
         float Specular;     // Specular intensity (0.0 = none, 1.0 = full)
-        float Padding3;
-        float Padding4;
-        float Padding5;
-        Vector3 Emission;   // Emissive color (self-illumination)
         float Padding6;
+        float Padding7;
+        float Padding8;
+        Vector3 Emission;   // Emissive color (self-illumination)
+        float Padding9;
     };
 
     // Camera data

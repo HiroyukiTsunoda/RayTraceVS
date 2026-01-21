@@ -79,10 +79,21 @@ namespace RayTraceVS.WPF.Models.Nodes
                 size.Z * transform.Scale.Z * 0.5f
             );
 
+            // 回転行列を Quaternion から直接作成
+            var rotationMatrix = Matrix4x4.CreateFromQuaternion(transform.Rotation);
+
+            // Local axes in world space (use columns)
+            var axisX = new Vector3(rotationMatrix.M11, rotationMatrix.M21, rotationMatrix.M31);
+            var axisY = new Vector3(rotationMatrix.M12, rotationMatrix.M22, rotationMatrix.M32);
+            var axisZ = new Vector3(rotationMatrix.M13, rotationMatrix.M23, rotationMatrix.M33);
+
             return new BoxData
             {
                 Center = transform.Position,
                 Size = scaledSize,  // half-extents
+                AxisX = axisX,
+                AxisY = axisY,
+                AxisZ = axisZ,
                 Material = material
             };
         }

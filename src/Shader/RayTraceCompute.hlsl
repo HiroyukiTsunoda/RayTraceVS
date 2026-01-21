@@ -556,8 +556,13 @@ void CSMain(uint3 DTid : SV_DispatchThreadID)
     else
     {
         // Determine material type and shade accordingly
-        bool isGlass = hit.Transmission > 0.01;
-        bool isMetal = hit.Metallic > 0.5;
+        // Enforce mutual exclusivity: metals are opaque
+        if (hit.Metallic >= 0.5)
+        {
+            hit.Transmission = 0.0;
+        }
+        bool isGlass = (hit.Transmission > 0.01) && (hit.Metallic < 0.5);
+        bool isMetal = hit.Metallic >= 0.5;
         
         if (isGlass)
         {
@@ -684,16 +689,8 @@ void CSMain(uint3 DTid : SV_DispatchThreadID)
             HitInfo reflectHit = TraceRay(reflectRay);
             float3 reflectColor = reflectHit.Hit ? CalculateLighting(reflectHit, reflectRay) : GetSkyColor(perturbedDir);
             
-            // Metal reflection is tinted by base color
+            // Metal reflection is tinted by base color (no diffuse component)
             color = reflectColor * fresnel;
-            
-            // Blend with diffuse based on roughness (rough metals show more diffuse-like behavior)
-            if (hit.Roughness > 0.1)
-            {
-                float3 diffuse = CalculateLighting(hit, ray);
-                float diffuseBlend = hit.Roughness * hit.Roughness; // Perceptually linear
-                color = lerp(color, diffuse * hit.Color.rgb, diffuseBlend * 0.5);
-            }
         }
         else
         {

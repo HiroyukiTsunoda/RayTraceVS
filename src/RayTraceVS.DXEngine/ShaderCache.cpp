@@ -152,6 +152,11 @@ namespace RayTraceVS::DXEngine
             { L"Common.hlsli" }
         };
 
+        shaderDefinitions[L"AnyHit_SkipSelf"] = {
+            L"AnyHit_SkipSelf", ShaderType::DXRLibrary, L"",
+            { L"Common.hlsli" }
+        };
+
         shaderDefinitions[L"PhotonEmit"] = {
             L"PhotonEmit", ShaderType::DXRLibrary, L"",
             { L"Common.hlsli" }

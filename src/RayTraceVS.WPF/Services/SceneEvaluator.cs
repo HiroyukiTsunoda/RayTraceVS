@@ -27,19 +27,20 @@ namespace RayTraceVS.WPF.Services
 {
     public class SceneEvaluator
     {
-        public (InteropSphereData[], InteropPlaneData[], InteropBoxData[], InteropCameraData, InteropLightData[], int SamplesPerPixel, int MaxBounces, float Exposure, int ToneMapOperator, float DenoiserStabilization, float ShadowStrength, bool EnableDenoiser) EvaluateScene(NodeGraph nodeGraph)
+        public (InteropSphereData[], InteropPlaneData[], InteropBoxData[], InteropCameraData, InteropLightData[], int SamplesPerPixel, int MaxBounces, float Exposure, int ToneMapOperator, float DenoiserStabilization, float ShadowStrength, bool EnableDenoiser, float Gamma) EvaluateScene(NodeGraph nodeGraph)
         {
             var spheres = new List<InteropSphereData>();
             var planes = new List<InteropPlaneData>();
             var boxes = new List<InteropBoxData>();
             var lights = new List<InteropLightData>();
             int samplesPerPixel = 1;
-            int maxBounces = 4;
+            int maxBounces = 6;
             float exposure = 1.0f;
             int toneMapOperator = 2;
             float denoiserStabilization = 1.0f;
             float shadowStrength = 1.0f;
             bool enableDenoiser = true;
+            float gamma = 1.0f;
             InteropCameraData camera = new InteropCameraData
             {
                 Position = new InteropVector3(0, 2, -5),
@@ -95,12 +96,13 @@ namespace RayTraceVS.WPF.Services
                     
                     // レンダリング設定を取得
                     samplesPerPixel = sceneData.SamplesPerPixel > 0 ? sceneData.SamplesPerPixel : 1;
-                    maxBounces = sceneData.MaxBounces > 0 ? sceneData.MaxBounces : 4;
+                    maxBounces = sceneData.MaxBounces > 0 ? sceneData.MaxBounces : 6;
                     exposure = sceneData.Exposure > 0 ? sceneData.Exposure : 1.0f;
                     toneMapOperator = sceneData.ToneMapOperator;
                     denoiserStabilization = sceneData.DenoiserStabilization > 0 ? sceneData.DenoiserStabilization : 1.0f;
                     shadowStrength = sceneData.ShadowStrength >= 0 ? sceneData.ShadowStrength : 1.0f;
                     enableDenoiser = sceneData.EnableDenoiser;
+                    gamma = sceneData.Gamma > 0 ? sceneData.Gamma : 1.0f;
                 }
             }
             else
@@ -166,10 +168,14 @@ namespace RayTraceVS.WPF.Services
                         }
                         else
                         {
+                            // Default: identity rotation (axis-aligned)
                             boxData = new BoxData
                             {
                                 Center = boxNode.ObjectTransform.Position,
                                 Size = boxNode.Size * 0.5f,  // half-extents
+                                AxisX = Vector3.UnitX,
+                                AxisY = Vector3.UnitY,
+                                AxisZ = Vector3.UnitZ,
                                 Material = MaterialData.Default
                             };
                         }
@@ -240,7 +246,7 @@ namespace RayTraceVS.WPF.Services
                 }
             }
 
-            return (spheres.ToArray(), planes.ToArray(), boxes.ToArray(), camera, lights.ToArray(), samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization, shadowStrength, enableDenoiser);
+            return (spheres.ToArray(), planes.ToArray(), boxes.ToArray(), camera, lights.ToArray(), samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization, shadowStrength, enableDenoiser, gamma);
         }
 
         private InteropSphereData ConvertSphereData(SphereData data)
@@ -305,6 +311,10 @@ namespace RayTraceVS.WPF.Services
             {
                 Center = new InteropVector3(data.Center.X, data.Center.Y, data.Center.Z),
                 Size = new InteropVector3(data.Size.X, data.Size.Y, data.Size.Z),
+                // OBB local axes
+                AxisX = new InteropVector3(data.AxisX.X, data.AxisX.Y, data.AxisX.Z),
+                AxisY = new InteropVector3(data.AxisY.X, data.AxisY.Y, data.AxisY.Z),
+                AxisZ = new InteropVector3(data.AxisZ.X, data.AxisZ.Y, data.AxisZ.Z),
                 Color = new InteropVector4(material.BaseColor.X, material.BaseColor.Y, material.BaseColor.Z, material.BaseColor.W),
                 Metallic = material.Metallic,
                 Roughness = material.Roughness,

@@ -14,35 +14,58 @@ void AnyHit_Shadow(inout RayPayload payload, in ProceduralAttributes attribs)
     uint objectType = attribs.objectType;
     uint objectIndex = attribs.objectIndex;
     
-    // Check if the hit object is transparent (glass)
+    // Get material properties (transmission and color)
     float transmission = 0.0;
+    float3 objectColor = float3(1, 1, 1);
     
     if (objectType == OBJECT_TYPE_SPHERE)
     {
         transmission = Spheres[objectIndex].transmission;
+        objectColor = Spheres[objectIndex].color.rgb;
     }
     else if (objectType == OBJECT_TYPE_PLANE)
     {
         transmission = Planes[objectIndex].transmission;
+        objectColor = Planes[objectIndex].color.rgb;
     }
     else // OBJECT_TYPE_BOX
     {
         transmission = Boxes[objectIndex].transmission;
+        objectColor = Boxes[objectIndex].color.rgb;
     }
     
-    // If the object is highly transparent (glass), ignore it for shadow
-    // This allows light to pass through glass objects
-    if (transmission > 0.5)
+    // Handle translucent objects: accumulate color and transmission
+    if (transmission > 0.01)
     {
-        // Ignore this hit and continue searching
-        IgnoreHit();
-        return;
+        // Calculate the tint color: more transparent = less tint
+        // When transmission is high (e.g., 0.9), object color has less influence
+        // When transmission is low (e.g., 0.3), object color has more influence
+        float3 tintColor = lerp(objectColor, float3(1, 1, 1), transmission);
+        
+        // Accumulate the shadow color and transmission
+        payload.shadowColorAccum *= tintColor;
+        payload.shadowTransmissionAccum *= transmission;
+        
+        // If there's still significant light passing through, continue tracing
+        if (payload.shadowTransmissionAccum > 0.01)
+        {
+            // Record the first occluder distance if not already set
+            if (payload.hitDistance >= 10000.0)
+            {
+                payload.hitDistance = RayTCurrent();
+            }
+            
+            // Ignore this hit and continue searching for more occluders
+            IgnoreHit();
+            return;
+        }
     }
     
-    // Opaque or semi-transparent object blocks light
-    // Mark as in shadow and accept hit (will terminate due to ray flags)
+    // Opaque object or accumulated transmission too low - full shadow
     payload.hit = true;
     payload.hitDistance = RayTCurrent();
+    payload.shadowColorAccum = float3(0, 0, 0);
+    payload.shadowTransmissionAccum = 0.0;
     
     // AcceptHitAndEndSearch() is implicit when using
     // RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH flag

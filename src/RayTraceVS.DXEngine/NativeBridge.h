@@ -84,6 +84,10 @@ namespace RayTraceVS::Interop::Bridge
     {
         Vector3Native center;
         Vector3Native size;  // half-extents
+        // Local axes (rotation matrix columns) for OBB
+        Vector3Native axisX;
+        Vector3Native axisY;
+        Vector3Native axisZ;
         MaterialNative material;
     };
 
@@ -103,7 +107,7 @@ namespace RayTraceVS::Interop::Bridge
     DXENGINE_API void DestroyScene(RayTraceVS::DXEngine::Scene* scene);
     DXENGINE_API void ClearScene(RayTraceVS::DXEngine::Scene* scene);
     DXENGINE_API void SetCamera(RayTraceVS::DXEngine::Scene* scene, const CameraDataNative& camera);
-    DXENGINE_API void SetRenderSettings(RayTraceVS::DXEngine::Scene* scene, int samplesPerPixel, int maxBounces, float exposure, int toneMapOperator, float denoiserStabilization, float shadowStrength, bool enableDenoiser);
+    DXENGINE_API void SetRenderSettings(RayTraceVS::DXEngine::Scene* scene, int samplesPerPixel, int maxBounces, float exposure, int toneMapOperator, float denoiserStabilization, float shadowStrength, bool enableDenoiser, float gamma);
     DXENGINE_API void AddSphere(RayTraceVS::DXEngine::Scene* scene, const SphereDataNative& sphere);
     DXENGINE_API void AddPlane(RayTraceVS::DXEngine::Scene* scene, const PlaneDataNative& plane);
     DXENGINE_API void AddBox(RayTraceVS::DXEngine::Scene* scene, const BoxDataNative& box);

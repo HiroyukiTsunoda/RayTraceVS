@@ -32,7 +32,8 @@ namespace RayTraceVS::Interop
             int toneMapOperator,
             float denoiserStabilization,
             float shadowStrength,
-            bool enableDenoiser);
+            bool enableDenoiser,
+            float gamma);
 
         // Rendering
         void Render();

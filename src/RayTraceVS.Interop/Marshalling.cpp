@@ -62,6 +62,10 @@ namespace RayTraceVS::Interop
         Bridge::BoxDataNative native;
         native.center = { managedBox.Center.X, managedBox.Center.Y, managedBox.Center.Z };
         native.size = { managedBox.Size.X, managedBox.Size.Y, managedBox.Size.Z };
+        // OBB local axes
+        native.axisX = { managedBox.AxisX.X, managedBox.AxisX.Y, managedBox.AxisX.Z };
+        native.axisY = { managedBox.AxisY.X, managedBox.AxisY.Y, managedBox.AxisY.Z };
+        native.axisZ = { managedBox.AxisZ.X, managedBox.AxisZ.Y, managedBox.AxisZ.Z };
         native.material.color = { managedBox.Color.X, managedBox.Color.Y, managedBox.Color.Z, managedBox.Color.W };
         native.material.metallic = managedBox.Metallic;
         native.material.roughness = managedBox.Roughness;

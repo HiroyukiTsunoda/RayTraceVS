@@ -18,5 +18,6 @@ namespace RayTraceVS.WPF.Models.Data
         public float DenoiserStabilization;
         public float ShadowStrength;
         public bool EnableDenoiser;
+        public float Gamma;
     }
 }

@@ -237,6 +237,7 @@ namespace RayTraceVS.WPF.Services
                     properties["DenoiserStabilization"] = sceneNode.DenoiserStabilization;
                     properties["ShadowStrength"] = sceneNode.ShadowStrength;
                     properties["EnableDenoiser"] = sceneNode.EnableDenoiser;
+                    properties["Gamma"] = sceneNode.Gamma;
                     break;
 
                 case Vector3Node vector3:
@@ -479,6 +480,8 @@ namespace RayTraceVS.WPF.Services
                         sceneNode.ShadowStrength = Convert.ToSingle(shadowObj);
                     if (properties.TryGetValue("EnableDenoiser", out var denoiserObj))
                         sceneNode.EnableDenoiser = Convert.ToBoolean(denoiserObj);
+                    if (properties.TryGetValue("Gamma", out var gammaObj))
+                        sceneNode.Gamma = Convert.ToSingle(gammaObj);
                     break;
 
                 case Vector3Node vector3:

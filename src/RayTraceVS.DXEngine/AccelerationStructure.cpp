@@ -110,34 +110,78 @@ namespace RayTraceVS::DXEngine
 
         UINT sphereIndex = 0, planeIndex = 0, boxIndex = 0;
 
+        // Collect objects by type to match shader PrimitiveIndex ordering
+        std::vector<Sphere*> spheres;
+        std::vector<Plane*> planes;
+        std::vector<Box*> boxes;
+        spheres.reserve(objects.size());
+        planes.reserve(objects.size());
+        boxes.reserve(objects.size());
+
         for (const auto& obj : objects)
         {
-            AABB aabb;
-            GeometryInstanceInfo info;
-
             if (auto sphere = dynamic_cast<Sphere*>(obj.get()))
-            {
-                aabb = CalculateSphereAABB(sphere->GetCenter(), sphere->GetRadius());
-                info.type = ObjectType::Sphere;
-                info.objectIndex = sphereIndex++;
-            }
+                spheres.push_back(sphere);
             else if (auto plane = dynamic_cast<Plane*>(obj.get()))
-            {
-                aabb = CalculatePlaneAABB(plane->GetPosition(), plane->GetNormal());
-                info.type = ObjectType::Plane;
-                info.objectIndex = planeIndex++;
-            }
+                planes.push_back(plane);
             else if (auto box = dynamic_cast<Box*>(obj.get()))
-            {
-                aabb = CalculateBoxAABB(box->GetCenter(), box->GetSize());
-                info.type = ObjectType::Box;
-                info.objectIndex = boxIndex++;
-            }
-            else
-            {
-                continue;
-            }
+                boxes.push_back(box);
+        }
 
+        for (auto sphere : spheres)
+        {
+            AABB aabb = CalculateSphereAABB(sphere->GetCenter(), sphere->GetRadius());
+            GeometryInstanceInfo info;
+            info.type = ObjectType::Sphere;
+            info.objectIndex = sphereIndex++;
+            aabbs.push_back(aabb);
+            instanceInfo.push_back(info);
+        }
+
+        for (auto plane : planes)
+        {
+            AABB aabb = CalculatePlaneAABB(plane->GetPosition(), plane->GetNormal());
+            GeometryInstanceInfo info;
+            info.type = ObjectType::Plane;
+            info.objectIndex = planeIndex++;
+            aabbs.push_back(aabb);
+            instanceInfo.push_back(info);
+        }
+
+        for (auto box : boxes)
+        {
+            // Compute AABB for OBB using axes (world-space)
+            const XMFLOAT3 center = box->GetCenter();
+            const XMFLOAT3 size = box->GetSize(); // half-extents
+            XMFLOAT3 ax = box->GetAxisX();
+            XMFLOAT3 ay = box->GetAxisY();
+            XMFLOAT3 az = box->GetAxisZ();
+            // Normalize axes to be safe
+            auto norm = [](const XMFLOAT3& v) {
+                float len = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+                if (len > 1e-6f) return XMFLOAT3(v.x / len, v.y / len, v.z / len);
+                return XMFLOAT3(0.0f, 0.0f, 0.0f);
+            };
+            ax = norm(ax);
+            ay = norm(ay);
+            az = norm(az);
+
+            // AABB half-extents = sum of absolute axis components scaled by size
+            const float hx = std::abs(ax.x) * size.x + std::abs(ay.x) * size.y + std::abs(az.x) * size.z;
+            const float hy = std::abs(ax.y) * size.x + std::abs(ay.y) * size.y + std::abs(az.y) * size.z;
+            const float hz = std::abs(ax.z) * size.x + std::abs(ay.z) * size.y + std::abs(az.z) * size.z;
+
+            AABB aabb;
+            aabb.MinX = center.x - hx;
+            aabb.MinY = center.y - hy;
+            aabb.MinZ = center.z - hz;
+            aabb.MaxX = center.x + hx;
+            aabb.MaxY = center.y + hy;
+            aabb.MaxZ = center.z + hz;
+
+            GeometryInstanceInfo info;
+            info.type = ObjectType::Box;
+            info.objectIndex = boxIndex++;
             aabbs.push_back(aabb);
             instanceInfo.push_back(info);
         }
@@ -187,7 +231,8 @@ namespace RayTraceVS::DXEngine
         // Create geometry descriptor for procedural primitives
         D3D12_RAYTRACING_GEOMETRY_DESC geometryDesc = {};
         geometryDesc.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_PROCEDURAL_PRIMITIVE_AABBS;
-        geometryDesc.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
+        // Allow any-hit shaders (needed for shadow/skip-self handling)
+        geometryDesc.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_NONE;
         geometryDesc.AABBs.AABBCount = static_cast<UINT64>(aabbs.size());
         geometryDesc.AABBs.AABBs.StartAddress = aabbBuffer->GetGPUVirtualAddress();
         geometryDesc.AABBs.AABBs.StrideInBytes = sizeof(AABB);

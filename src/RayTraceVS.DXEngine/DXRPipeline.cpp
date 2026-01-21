@@ -471,6 +471,13 @@ namespace RayTraceVS::DXEngine
                 gb.Padding1 = 0;
                 gb.Size = box->GetSize();
                 gb.Padding2 = 0;
+                // OBB local axes
+                gb.AxisX = box->GetAxisX();
+                gb.Padding3 = 0;
+                gb.AxisY = box->GetAxisY();
+                gb.Padding4 = 0;
+                gb.AxisZ = box->GetAxisZ();
+                gb.Padding5 = 0;
                 const Material& mat = box->GetMaterial();
                 gb.Color = mat.color;
                 gb.Metallic = mat.metallic;
@@ -478,11 +485,30 @@ namespace RayTraceVS::DXEngine
                 gb.Transmission = mat.transmission;
                 gb.IOR = mat.ior;
                 gb.Specular = mat.specular;
-                gb.Padding3 = 0;
-                gb.Padding4 = 0;
-                gb.Padding5 = 0;
-                gb.Emission = mat.emission;
                 gb.Padding6 = 0;
+                gb.Padding7 = 0;
+                gb.Padding8 = 0;
+                gb.Emission = mat.emission;
+                gb.Padding9 = 0;
+                
+                // DEBUG: Log box axes orthonormality check
+                char debugBuf[512];
+                float lenX = sqrtf(gb.AxisX.x * gb.AxisX.x + gb.AxisX.y * gb.AxisX.y + gb.AxisX.z * gb.AxisX.z);
+                float lenY = sqrtf(gb.AxisY.x * gb.AxisY.x + gb.AxisY.y * gb.AxisY.y + gb.AxisY.z * gb.AxisY.z);
+                float lenZ = sqrtf(gb.AxisZ.x * gb.AxisZ.x + gb.AxisZ.y * gb.AxisZ.y + gb.AxisZ.z * gb.AxisZ.z);
+                float dotXY = gb.AxisX.x * gb.AxisY.x + gb.AxisX.y * gb.AxisY.y + gb.AxisX.z * gb.AxisY.z;
+                float dotXZ = gb.AxisX.x * gb.AxisZ.x + gb.AxisX.y * gb.AxisZ.y + gb.AxisX.z * gb.AxisZ.z;
+                float dotYZ = gb.AxisY.x * gb.AxisZ.x + gb.AxisY.y * gb.AxisZ.y + gb.AxisY.z * gb.AxisZ.z;
+                sprintf_s(debugBuf, "BOX[%zu] Axes: lenX=%.4f, lenY=%.4f, lenZ=%.4f, dotXY=%.4f, dotXZ=%.4f, dotYZ=%.4f", 
+                    Boxes.size(), lenX, lenY, lenZ, dotXY, dotXZ, dotYZ);
+                LOG_INFO(debugBuf);
+                sprintf_s(debugBuf, "BOX[%zu] AxisX=(%.4f,%.4f,%.4f) AxisY=(%.4f,%.4f,%.4f) AxisZ=(%.4f,%.4f,%.4f)", 
+                    Boxes.size(), gb.AxisX.x, gb.AxisX.y, gb.AxisX.z, gb.AxisY.x, gb.AxisY.y, gb.AxisY.z, gb.AxisZ.x, gb.AxisZ.y, gb.AxisZ.z);
+                LOG_INFO(debugBuf);
+                sprintf_s(debugBuf, "BOX[%zu] Material: BaseColor=(%.3f,%.3f,%.3f) Metallic=%.3f Roughness=%.3f Transmission=%.3f IOR=%.3f Specular=%.3f",
+                    Boxes.size(), gb.Color.x, gb.Color.y, gb.Color.z, gb.Metallic, gb.Roughness, gb.Transmission, gb.IOR, gb.Specular);
+                LOG_INFO(debugBuf);
+                
                 Boxes.push_back(gb);
             }
         }
@@ -526,12 +552,33 @@ namespace RayTraceVS::DXEngine
         mappedConstantData->NumBoxes = (UINT)Boxes.size();
         mappedConstantData->NumLights = (UINT)gpuLights.size();
 
+        // Check if object counts changed - trigger acceleration structure rebuild
+        UINT currentSphereCount = (UINT)spheres.size();
+        UINT currentPlaneCount = (UINT)planes.size();
+        UINT currentBoxCount = (UINT)Boxes.size();
+        
+        if (currentSphereCount != lastSphereCount ||
+            currentPlaneCount != lastPlaneCount ||
+            currentBoxCount != lastBoxCount)
+        {
+            needsAccelerationStructureRebuild = true;
+            lastSphereCount = currentSphereCount;
+            lastPlaneCount = currentPlaneCount;
+            lastBoxCount = currentBoxCount;
+            
+            char buf[256];
+            sprintf_s(buf, "Object count changed: Spheres=%u, Planes=%u, Boxes=%u -> rebuild AS",
+                currentSphereCount, currentPlaneCount, currentBoxCount);
+            LOG_INFO(buf);
+        }
+
         // Store UI parameters for later passes
         exposure = (float)scene->GetExposure();
         toneMapOperator = scene->GetToneMapOperator();
         denoiserStabilization = (float)scene->GetDenoiserStabilization();
         shadowStrength = (float)scene->GetShadowStrength();
         denoiserEnabled = scene->GetEnableDenoiser();
+        gamma = (float)scene->GetGamma();
         
         // Upload object data to GPU buffers
         if (!spheres.empty() && sphereUploadBuffer)
@@ -875,7 +922,7 @@ namespace RayTraceVS::DXEngine
         ranges[15].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 9);  // u9 - ShadowData
         ranges[16].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 10); // u10 - ShadowTranslucency
         ranges[17].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 11); // u11 - PhotonHashTable
-
+        
         CD3DX12_ROOT_PARAMETER1 rootParameters[18];
         for (int i = 0; i < 18; i++)
         {
@@ -1115,11 +1162,13 @@ namespace RayTraceVS::DXEngine
         LOG_INFO(("Loading DXR shaders from: " + std::string(shaderBasePath.begin(), shaderBasePath.end())).c_str());
         
         ComPtr<ID3DBlob> anyHitShadowShader;
+        ComPtr<ID3DBlob> anyHitSkipSelfShader;
         if (!LoadOrCompileDXRShader(L"RayGen", &rayGenShader) ||
             !LoadOrCompileDXRShader(L"Miss", &missShader) ||
             !LoadOrCompileDXRShader(L"ClosestHit", &closestHitShader) ||
             !LoadOrCompileDXRShader(L"Intersection", &intersectionShader) ||
-            !LoadOrCompileDXRShader(L"AnyHit_Shadow", &anyHitShadowShader))
+            !LoadOrCompileDXRShader(L"AnyHit_Shadow", &anyHitShadowShader) ||
+            !LoadOrCompileDXRShader(L"AnyHit_SkipSelf", &anyHitSkipSelfShader))
         {
             LOG_ERROR("Failed to load/compile DXR shaders");
             return false;
@@ -1142,6 +1191,7 @@ namespace RayTraceVS::DXEngine
         AddLibrary(closestHitShader.Get(), L"ClosestHit");
         AddLibrary(intersectionShader.Get(), L"SphereIntersection");
         AddLibrary(anyHitShadowShader.Get(), L"AnyHit_Shadow");
+        AddLibrary(anyHitSkipSelfShader.Get(), L"AnyHit_SkipSelf");
         
         // Hit group 0: Primary rays (ClosestHit + Intersection)
         auto hitGroup = stateObjectDesc.CreateSubobject<CD3DX12_HIT_GROUP_SUBOBJECT>();
@@ -1156,6 +1206,14 @@ namespace RayTraceVS::DXEngine
         shadowHitGroup->SetAnyHitShaderImport(L"AnyHit_Shadow");
         shadowHitGroup->SetIntersectionShaderImport(L"SphereIntersection");
         shadowHitGroup->SetHitGroupType(D3D12_HIT_GROUP_TYPE_PROCEDURAL_PRIMITIVE);
+
+        // Hit group 2: Reflection rays (AnyHit_SkipSelf + ClosestHit + Intersection)
+        auto reflectHitGroup = stateObjectDesc.CreateSubobject<CD3DX12_HIT_GROUP_SUBOBJECT>();
+        reflectHitGroup->SetHitGroupExport(L"ReflectHitGroup");
+        reflectHitGroup->SetClosestHitShaderImport(L"ClosestHit");
+        reflectHitGroup->SetAnyHitShaderImport(L"AnyHit_SkipSelf");
+        reflectHitGroup->SetIntersectionShaderImport(L"SphereIntersection");
+        reflectHitGroup->SetHitGroupType(D3D12_HIT_GROUP_TYPE_PROCEDURAL_PRIMITIVE);
         
         // Shader config
         auto shaderConfig = stateObjectDesc.CreateSubobject<CD3DX12_RAYTRACING_SHADER_CONFIG_SUBOBJECT>();
@@ -1167,9 +1225,11 @@ namespace RayTraceVS::DXEngine
         //   NRD: float3 worldPosition (12) + float metallic (4) = 16 bytes
         //   NRD: float3 albedo (12) + float shadowVisibility (4) = 16 bytes
         //   SIGMA: float shadowPenumbra (4) + float shadowDistance (4) + float padding2 (4) = 12 bytes
-        //   Thickness query: 3 * uint (12) + padding (4) = 16 bytes
-        //   Total: 132 bytes (align to 8 -> 136)
-        UINT payloadSize = 136;
+        //   Thickness query: 3 * uint (12) + uint hitObjectType (4) = 16 bytes
+        //   Colored shadow: float3 shadowColorAccum (12) + float shadowTransmissionAccum (4) = 16 bytes
+        //   Hit object info: uint hitObjectIndex (4) + padding (4) = 8 bytes
+        //   Total: 156 bytes (align to 8 -> 160)
+        UINT payloadSize = 160;
         // ProceduralAttributes: float3 normal (12) + uint objectType (4) + uint objectIndex (4) = 20 bytes
         UINT attribSize = 12 + 4 + 4;   // 20 bytes
         shaderConfig->Config(payloadSize, attribSize);
@@ -1235,8 +1295,9 @@ namespace RayTraceVS::DXEngine
         void* missId = stateObjectProperties->GetShaderIdentifier(L"Miss");
         void* hitGroupId = stateObjectProperties->GetShaderIdentifier(L"HitGroup");
         void* shadowHitGroupId = stateObjectProperties->GetShaderIdentifier(L"ShadowHitGroup");
+        void* reflectHitGroupId = stateObjectProperties->GetShaderIdentifier(L"ReflectHitGroup");
         
-        if (!rayGenId || !missId || !hitGroupId || !shadowHitGroupId)
+        if (!rayGenId || !missId || !hitGroupId || !shadowHitGroupId || !reflectHitGroupId)
         {
             LOG_ERROR("Failed to get shader identifiers");
             return false;
@@ -1271,9 +1332,9 @@ namespace RayTraceVS::DXEngine
             missShaderTable->Unmap(0, nullptr);
         }
         
-        // Hit group shader table (2 entries: HitGroup at index 0, ShadowHitGroup at index 1)
+        // Hit group shader table (3 entries: HitGroup=0, ShadowHitGroup=1, ReflectHitGroup=2)
         {
-            UINT hitGroupTableSize = shaderTableRecordSize * 2;  // 2 hit groups
+            UINT hitGroupTableSize = shaderTableRecordSize * 3;  // 3 hit groups
             CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(hitGroupTableSize);
             device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &desc,
                 D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&hitGroupShaderTable));
@@ -1285,6 +1346,8 @@ namespace RayTraceVS::DXEngine
             memcpy(dst, hitGroupId, shaderIdSize);
             // Hit group 1: Shadow rays
             memcpy(dst + shaderTableRecordSize, shadowHitGroupId, shaderIdSize);
+            // Hit group 2: Reflection rays (skip self)
+            memcpy(dst + shaderTableRecordSize * 2, reflectHitGroupId, shaderIdSize);
             hitGroupShaderTable->Unmap(0, nullptr);
         }
         
@@ -1396,7 +1459,7 @@ namespace RayTraceVS::DXEngine
         }
         cpuHandle.Offset(1, dxrDescriptorSize);
         
-        // [9-16] UAVs for G-Buffer (NRD denoiser)
+        // [10-17] UAVs for G-Buffer (NRD denoiser)
         if (denoiser && denoiser->IsReady())
         {
             auto& gBuffer = denoiser->GetGBuffer();
@@ -1404,47 +1467,47 @@ namespace RayTraceVS::DXEngine
             gbufferUavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
             gbufferUavDesc.Texture2D.MipSlice = 0;
             
-            // [9] u3: DiffuseRadianceHitDist (RGBA16F)
+            // [10] u3: DiffuseRadianceHitDist (RGBA16F)
             gbufferUavDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
             device->CreateUnorderedAccessView(gBuffer.DiffuseRadianceHitDist.Get(), nullptr, &gbufferUavDesc, cpuHandle);
             cpuHandle.Offset(1, dxrDescriptorSize);
             
-            // [10] u4: SpecularRadianceHitDist (RGBA16F)
+            // [11] u4: SpecularRadianceHitDist (RGBA16F)
             device->CreateUnorderedAccessView(gBuffer.SpecularRadianceHitDist.Get(), nullptr, &gbufferUavDesc, cpuHandle);
             cpuHandle.Offset(1, dxrDescriptorSize);
             
-            // [11] u5: NormalRoughness (RGBA8)
+            // [12] u5: NormalRoughness (RGBA8)
             gbufferUavDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
             device->CreateUnorderedAccessView(gBuffer.NormalRoughness.Get(), nullptr, &gbufferUavDesc, cpuHandle);
             cpuHandle.Offset(1, dxrDescriptorSize);
             
-            // [12] u8: Albedo (RGBA8) - placed at index 12 for DXR compatibility
+            // [13] u8: Albedo (RGBA8) - placed at index 13 for DXR compatibility
             gbufferUavDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
             device->CreateUnorderedAccessView(gBuffer.Albedo.Get(), nullptr, &gbufferUavDesc, cpuHandle);
             cpuHandle.Offset(1, dxrDescriptorSize);
             
-            // [13] u7: MotionVectors (RG16F)
+            // [14] u7: MotionVectors (RG16F)
             gbufferUavDesc.Format = DXGI_FORMAT_R16G16_FLOAT;
             device->CreateUnorderedAccessView(gBuffer.MotionVectors.Get(), nullptr, &gbufferUavDesc, cpuHandle);
             cpuHandle.Offset(1, dxrDescriptorSize);
             
-            // [14] u6: ViewZ (R32F) - placed at index 14
+            // [15] u6: ViewZ (R32F) - placed at index 15
             gbufferUavDesc.Format = DXGI_FORMAT_R32_FLOAT;
             device->CreateUnorderedAccessView(gBuffer.ViewZ.Get(), nullptr, &gbufferUavDesc, cpuHandle);
             cpuHandle.Offset(1, dxrDescriptorSize);
             
-            // [15] u9: ShadowData (RG16F)
+            // [16] u9: ShadowData (RG16F)
             gbufferUavDesc.Format = DXGI_FORMAT_R16G16_FLOAT;
             device->CreateUnorderedAccessView(gBuffer.ShadowData.Get(), nullptr, &gbufferUavDesc, cpuHandle);
             cpuHandle.Offset(1, dxrDescriptorSize);
             
-            // [16] u10: ShadowTranslucency (RGBA16F)
+            // [17] u10: ShadowTranslucency (RGBA16F)
             gbufferUavDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
             device->CreateUnorderedAccessView(gBuffer.ShadowTranslucency.Get(), nullptr, &gbufferUavDesc, cpuHandle);
             cpuHandle.Offset(1, dxrDescriptorSize);
         }
         
-        // [17] UAV for photon hash table (u11)
+        // [18] UAV for photon hash table (u11)
         if (photonHashTableBuffer)
         {
             D3D12_UNORDERED_ACCESS_VIEW_DESC hashUavDesc = {};
@@ -1548,7 +1611,7 @@ namespace RayTraceVS::DXEngine
         dispatchDesc.MissShaderTable.StrideInBytes = shaderTableRecordSize;
         
         dispatchDesc.HitGroupTable.StartAddress = hitGroupShaderTable->GetGPUVirtualAddress();
-        dispatchDesc.HitGroupTable.SizeInBytes = shaderTableRecordSize * 2;
+        dispatchDesc.HitGroupTable.SizeInBytes = shaderTableRecordSize * 3;
         dispatchDesc.HitGroupTable.StrideInBytes = shaderTableRecordSize;
         
         dispatchDesc.Width = width;
@@ -2297,6 +2360,69 @@ namespace RayTraceVS::DXEngine
             rawSpecularInSrvState = true;  // Now in SRV state for next frame
         }
         
+        // CRITICAL: Copy raw diffuse data BEFORE NRD processes it
+        // NRD may corrupt the original DiffuseRadianceHitDist buffer, losing point light illumination
+        if (gBuffer.RawDiffuseBackup && gBuffer.DiffuseRadianceHitDist)
+        {
+            // Track RawDiffuseBackup state across frames
+            static bool rawDiffuseInSrvState = false;
+            
+            // CRITICAL: First, flush ALL UAV writes with an explicit UAV barrier
+            // This ensures ray tracing shader has finished writing to DiffuseRadianceHitDist
+            D3D12_RESOURCE_BARRIER uavFlush = {};
+            uavFlush.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+            uavFlush.UAV.pResource = gBuffer.DiffuseRadianceHitDist.Get();  // Specific resource
+            commandList->ResourceBarrier(1, &uavFlush);
+            
+            // Transition resources for copy operation
+            D3D12_RESOURCE_BARRIER copyBarriers[2] = {};
+            int barrierCount = 0;
+            
+            // Source: UAV -> COPY_SOURCE
+            copyBarriers[barrierCount].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            copyBarriers[barrierCount].Transition.pResource = gBuffer.DiffuseRadianceHitDist.Get();
+            copyBarriers[barrierCount].Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+            copyBarriers[barrierCount].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
+            copyBarriers[barrierCount].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+            barrierCount++;
+            
+            // Dest: Previous state -> COPY_DEST
+            copyBarriers[barrierCount].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            copyBarriers[barrierCount].Transition.pResource = gBuffer.RawDiffuseBackup.Get();
+            copyBarriers[barrierCount].Transition.StateBefore = rawDiffuseInSrvState 
+                ? D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE 
+                : D3D12_RESOURCE_STATE_COMMON;
+            copyBarriers[barrierCount].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST;
+            copyBarriers[barrierCount].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+            barrierCount++;
+            
+            commandList->ResourceBarrier(barrierCount, copyBarriers);
+            
+            // Perform the copy
+            commandList->CopyResource(gBuffer.RawDiffuseBackup.Get(), gBuffer.DiffuseRadianceHitDist.Get());
+            
+            // Transition back for NRD and Composite usage
+            D3D12_RESOURCE_BARRIER postCopyBarriers[2] = {};
+            
+            // Source: COPY_SOURCE -> UAV (NRD needs it as UAV)
+            postCopyBarriers[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            postCopyBarriers[0].Transition.pResource = gBuffer.DiffuseRadianceHitDist.Get();
+            postCopyBarriers[0].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
+            postCopyBarriers[0].Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+            postCopyBarriers[0].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+            
+            // Dest: COPY_DEST -> SRV (Composite reads it)
+            postCopyBarriers[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            postCopyBarriers[1].Transition.pResource = gBuffer.RawDiffuseBackup.Get();
+            postCopyBarriers[1].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+            postCopyBarriers[1].Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+            postCopyBarriers[1].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+            
+            commandList->ResourceBarrier(2, postCopyBarriers);
+            
+            rawDiffuseInSrvState = true;  // Now in SRV state for next frame
+        }
+        
         // Apply denoising
         denoiser->Denoise(commandList, settings);
         
@@ -2433,7 +2559,7 @@ namespace RayTraceVS::DXEngine
         CD3DX12_ROOT_PARAMETER1 rootParams[3];
         rootParams[0].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_ALL);
         rootParams[1].InitAsDescriptorTable(1, &uavRange, D3D12_SHADER_VISIBILITY_ALL);
-        rootParams[2].InitAsConstants(8, 0); // b0: OutputSize (2), ExposureValue, ToneMapOperator, DebugMode, DebugTileScale, UseDenoisedShadow, ShadowStrength
+        rootParams[2].InitAsConstants(9, 0); // b0: OutputSize (2), ExposureValue, ToneMapOperator, DebugMode, DebugTileScale, UseDenoisedShadow, ShadowStrength, Gamma
         
         CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSigDesc;
         rootSigDesc.Init_1_1(_countof(rootParams), rootParams, 2, staticSamplers,
@@ -2547,7 +2673,7 @@ namespace RayTraceVS::DXEngine
             { output.SpecularRadiance.Get(),       DXGI_FORMAT_R16G16B16A16_FLOAT }, // t1 DenoisedSpecular
             { gBuffer.Albedo.Get(),                DXGI_FORMAT_R8G8B8A8_UNORM },     // t2 GBuffer_Albedo
             { output.DenoisedShadow.Get(),         DXGI_FORMAT_R16G16B16A16_FLOAT }, // t3 DenoisedShadow (SIGMA output - RGBA16F required)
-            { gBuffer.DiffuseRadianceHitDist.Get(),DXGI_FORMAT_R16G16B16A16_FLOAT }, // t4 GBuffer_DiffuseIn
+            { gBuffer.RawDiffuseBackup.Get(),      DXGI_FORMAT_R16G16B16A16_FLOAT }, // t4 GBuffer_DiffuseIn (copy before NRD to preserve point lights)
             { gBuffer.SpecularRadianceHitDist.Get(),DXGI_FORMAT_R16G16B16A16_FLOAT },// t5 GBuffer_SpecularIn (corrupted by NRD)
             { gBuffer.NormalRoughness.Get(),       DXGI_FORMAT_R8G8B8A8_UNORM },     // t6 GBuffer_NormalRoughness
             { gBuffer.ViewZ.Get(),                 DXGI_FORMAT_R32_FLOAT },          // t7 GBuffer_ViewZ
@@ -2591,7 +2717,7 @@ namespace RayTraceVS::DXEngine
         commandList->SetComputeRootDescriptorTable(0, srvTableHandle);  // SRVs
         commandList->SetComputeRootDescriptorTable(1, uavTableHandle);  // UAV
         
-        // Set constants: OutputSize (2 uints), ExposureValue, ToneMapOperator, DebugMode, DebugTileScale, UseDenoisedShadow, ShadowStrength
+        // Set constants: OutputSize (2 uints), ExposureValue, ToneMapOperator, DebugMode, DebugTileScale, UseDenoisedShadow, ShadowStrength, Gamma
         // Shadow source: 0 = InputShadow(t9/noisy), 1 = DenoisedShadow(t3/SIGMA), 2 = No shadow (debug)
         UINT forceUseDenoisedShadow = 1;  // Enable SIGMA denoised shadow
         
@@ -2604,7 +2730,9 @@ namespace RayTraceVS::DXEngine
             float debugTileScale;
             UINT useDenoisedShadow;
             float shadowStrength;
-        } constants = { width, height, exposure, (float)toneMapOperator, 0, 0.15f, forceUseDenoisedShadow, shadowStrength };
+            float gammaValue;
+        // DebugMode: 0 = Off (normal rendering)
+        } constants = { width, height, exposure, (float)toneMapOperator, 0, 0.15f, forceUseDenoisedShadow, shadowStrength, gamma };
         
         commandList->SetComputeRoot32BitConstants(2, sizeof(constants) / 4, &constants, 0);
         

@@ -39,14 +39,17 @@
 - ✅ MVVMアーキテクチャ（CommunityToolkit.Mvvm）
 
 #### 5. DXR レイトレーシングオブジェクト（dxr-objects）
-- ✅ 球（Sphere）- カスタム交差シェーダー
-- ✅ 平面（Plane）
-- ✅ 円柱（Cylinder）- カスタム交差シェーダー
-- ✅ マテリアルシステム
-  - 色（Color）
-  - 反射率（Reflectivity）
-  - 透明度（Transparency）
-  - 屈折率（IOR）
+- ✅ 球（Sphere）- カスタム交差シェーダー（2次方程式）
+- ✅ 平面（Plane）- カスタム交差シェーダー
+- ✅ ボックス（Box）- カスタム交差シェーダー（スラブ法）
+- ✅ PBRマテリアルシステム
+  - Metallic（金属度）
+  - Roughness（粗さ）
+  - Transmission（透過度）
+  - IOR（屈折率）
+  - Specular（スペキュラ強度）
+  - Emission（発光）
+- ✅ GPU構造体サイズ: Sphere/Plane=80 bytes、Box=96 bytes
 
 #### 6. C#/C++相互運用（interop）
 - ✅ EngineWrapperクラス
@@ -56,15 +59,32 @@
 
 #### 7. DXR レンダリングパイプライン（rendering-pipeline）
 - ✅ DXRPipelineクラス
-- ✅ アクセラレーション構造（BLAS/TLAS）
+- ✅ アクセラレーション構造（BLAS/TLAS、プロシージャルAABB）
 - ✅ HLSLシェーダー
-  - RayGen.hlsl - レイ生成
-  - ClosestHit.hlsl - ヒット処理
-  - Miss.hlsl - ミスシェーダー
-  - Intersection.hlsl - カスタム交差判定
-  - Common.hlsli - 共通定義
-- ✅ ライティング計算（拡散反射、スペキュラー）
-- ✅ 再帰的レイトレーシング（反射、屈折）
+  - RayGen.hlsl - レイ生成、G-Buffer出力、DoF
+  - ClosestHit.hlsl - 統合マテリアル処理（Diffuse/Metal/Glass/Emission）
+  - ClosestHit_Diffuse.hlsl / ClosestHit_Metal.hlsl - レガシーシェーダー
+  - Miss.hlsl - ミスシェーダー（空の色）
+  - Intersection.hlsl - カスタム交差判定（球/平面/ボックス）
+  - Composite.hlsl - 最終合成、トーンマッピング、ガンマ補正
+  - PhotonEmit.hlsl / PhotonTrace.hlsl - フォトンマッピング
+  - Common.hlsli - 共通定義（空間ハッシュ対応）
+  - NRDEncoding.hlsli - NRDデノイザー用エンコーディング
+- ✅ ライティング計算（拡散反射、Blinn-Phong スペキュラ、フレネル）
+- ✅ ソフトシャドウ（エリアライトサンプリング）
+- ✅ 再帰的レイトレーシング（反射、屈折、Scene.MaxBounces設定可能）
+- ✅ GGX-like roughness perturbation
+
+#### 7.1 NRDデノイザー統合
+- ✅ REBLUR（Diffuse/Specularデノイズ）
+- ✅ SIGMA（シャドウデノイズ）
+- ✅ G-Buffer構成（Radiance、HitDist、Normal、Roughness、ViewZ、Motion、Albedo、Shadow）
+- ✅ ミラーバイパス（roughness < 0.05）
+
+#### 7.2 フォトンマッピング（コースティクス）
+- ✅ フォトン放出（最大262,144フォトン）
+- ✅ 空間ハッシュによるO(1)フォトン検索
+- ✅ フォトン収集とコースティクス計算
 
 #### 8. レンダリングウィンドウ（render-window）
 - ✅ RenderWindow（別ウィンドウ）
@@ -78,13 +98,12 @@
 - ✅ 依存関係解決
 - ✅ SceneEvaluatorサービス
 - ✅ ノードタイプ
-  - SphereNode
-  - PlaneNode
-  - CylinderNode
-  - CameraNode
-  - LightNode
-  - SceneNode
-  - Vector3Node
+  - **オブジェクト**: SphereNode、PlaneNode、BoxNode
+  - **マテリアル**: DiffuseMaterialNode、MetalMaterialNode、GlassMaterialNode、EmissionMaterialNode、MaterialBSDFNode
+  - **カメラ**: CameraNode（DoF対応）
+  - **ライト**: LightNode、DirectionalLightNode、AmbientLightNode
+  - **数学**: Vector3Node、Vector4Node、FloatNode、ColorNode、AddNode、SubNode、MulNode、DivNode
+  - **シーン**: SceneNode
 
 #### 10. 保存/読み込み（polish）
 - ✅ SceneFileServiceクラス
@@ -112,14 +131,25 @@
 - `Scene/Objects/RayTracingObject.h` - 基底クラス
 - `Scene/Objects/Sphere.h/cpp` - 球
 - `Scene/Objects/Plane.h/cpp` - 平面
-- `Scene/Objects/Cylinder.h/cpp` - 円柱
+- `Scene/Objects/Box.h/cpp` - ボックス
+
+**デノイザー:**
+- `Denoiser/NRDDenoiser.h/cpp` - NRDデノイザー統合
 
 **シェーダー:**
-- `Shaders/Common.hlsli` - 共通定義
-- `Shaders/RayGen.hlsl` - レイ生成
-- `Shaders/ClosestHit.hlsl` - 最近接ヒット
-- `Shaders/Miss.hlsl` - ミス
-- `Shaders/Intersection.hlsl` - カスタム交差判定
+- `Common.hlsli` - 共通定義、構造体、空間ハッシュ
+- `NRDEncoding.hlsli` - NRDエンコーディング
+- `RayGen.hlsl` - レイ生成、G-Buffer出力、DoF
+- `ClosestHit.hlsl` - 統合マテリアル処理（Diffuse/Metal/Glass/Emission）
+- `ClosestHit_Diffuse.hlsl` - ディフューズ専用（レガシー）
+- `ClosestHit_Metal.hlsl` - 金属専用（レガシー）
+- `Miss.hlsl` - ミスシェーダー
+- `Intersection.hlsl` - カスタム交差判定（球/平面/ボックス）
+- `AnyHit_Shadow.hlsl` - シャドウレイ処理
+- `Composite.hlsl` - 最終合成、トーンマッピング
+- `PhotonEmit.hlsl` - フォトン放出
+- `PhotonTrace.hlsl` - フォトントレース
+- `BuildPhotonHash.hlsl` - 空間ハッシュ構築
 
 ### C++/CLI Interop (6ファイル)
 - `EngineWrapper.h/cpp` - エンジンラッパー
@@ -150,11 +180,25 @@
 **ノードタイプ:**
 - `Nodes/SphereNode.cs` - 球ノード
 - `Nodes/PlaneNode.cs` - 平面ノード
-- `Nodes/CylinderNode.cs` - 円柱ノード
-- `Nodes/CameraNode.cs` - カメラノード
-- `Nodes/LightNode.cs` - ライトノード
+- `Nodes/BoxNode.cs` - ボックスノード
+- `Nodes/CameraNode.cs` - カメラノード（DoF対応）
+- `Nodes/LightNode.cs` - ポイントライトノード
+- `Nodes/DirectionalLightNode.cs` - ディレクショナルライトノード
+- `Nodes/AmbientLightNode.cs` - アンビエントライトノード
 - `Nodes/SceneNode.cs` - シーンノード
+- `Nodes/DiffuseMaterialNode.cs` - ディフューズマテリアルノード
+- `Nodes/MetalMaterialNode.cs` - 金属マテリアルノード
+- `Nodes/GlassMaterialNode.cs` - ガラスマテリアルノード
+- `Nodes/EmissionMaterialNode.cs` - 発光マテリアルノード
+- `Nodes/MaterialBSDFNode.cs` - BSDFマテリアルノード
 - `Nodes/Vector3Node.cs` - Vector3ノード
+- `Nodes/Vector4Node.cs` - Vector4ノード
+- `Nodes/FloatNode.cs` - Floatノード
+- `Nodes/ColorNode.cs` - Colorノード
+- `Nodes/AddNode.cs` - 加算ノード
+- `Nodes/SubNode.cs` - 減算ノード
+- `Nodes/MulNode.cs` - 乗算ノード
+- `Nodes/DivNode.cs` - 除算ノード
 
 **Services:**
 - `RenderService.cs` - レンダリングサービス
@@ -167,22 +211,29 @@
 
 **使用技術:**
 - DirectX 12 API
-- DXR (DirectX Raytracing) 1.1
+- DXR (DirectX Raytracing)
+- DXC (DirectX Shader Compiler) → DXIL出力
 - HLSL Shader Model 6.3+
-- アクセラレーション構造（BLAS/TLAS）
+- アクセラレーション構造（BLAS/TLAS、プロシージャルAABB）
+- NRD (NVIDIA Real-time Denoiser) - REBLUR + SIGMA
 
 **レイトレーシングパイプライン:**
-1. レイ生成（RayGen）
-2. アクセラレーション構造トラバーサル
-3. カスタム交差判定（Intersection）
-4. ヒット処理（ClosestHit）
-5. ライティング計算
-6. 再帰的レイトレーシング（反射/屈折）
+1. レイ生成（RayGen）+ G-Buffer出力
+2. アクセラレーション構造トラバーサル（BVH）
+3. カスタム交差判定（Intersection）- 球/平面/ボックス
+4. ヒット処理（ClosestHit）- 統合マテリアル処理
+5. ライティング計算（ソフトシャドウ対応）
+6. コースティクス（空間ハッシュによるフォトン検索）
+7. 再帰的レイトレーシング（反射/屈折、GGX-like摂動）
+8. デノイズ（NRD: REBLUR + SIGMA）
+9. 最終合成（アルベド乗算、トーンマッピング、ガンマ補正）
 
 **最適化:**
 - BVH（Bounding Volume Hierarchy）による高速化
+- 空間ハッシュによるO(1)フォトン検索
 - GPU並列実行
-- シェーダー最適化
+- シェーダーキャッシュ（.cso）
+- ミラーバイパス（低roughnessでNRDスキップ）
 
 ### WPF ノードエディタ
 

@@ -131,24 +131,32 @@ namespace RayTraceVS::DXEngine
         float Padding2;         // 4  -> 80
     };
 
-    // GPU box data (with PBR material) - 96 bytes, 16-byte aligned
+    // GPU box data (with PBR material and rotation) - 144 bytes, 16-byte aligned
+    // OBB (Oriented Bounding Box) support via local axes
     struct alignas(16) GPUBox
     {
         XMFLOAT3 Center;        // 12
         float Padding1;         // 4  -> 16
-        XMFLOAT3 Size;          // 12
+        XMFLOAT3 Size;          // 12 (half-extents)
         float Padding2;         // 4  -> 32
-        XMFLOAT4 Color;         // 16 -> 48
+        // Local axes (rotation matrix columns) - for OBB
+        XMFLOAT3 AxisX;         // 12 (local X axis in world space)
+        float Padding3;         // 4  -> 48
+        XMFLOAT3 AxisY;         // 12 (local Y axis in world space)
+        float Padding4;         // 4  -> 64
+        XMFLOAT3 AxisZ;         // 12 (local Z axis in world space)
+        float Padding5;         // 4  -> 80
+        XMFLOAT4 Color;         // 16 -> 96
         float Metallic;         // 4
         float Roughness;        // 4
         float Transmission;     // 4
-        float IOR;              // 4  -> 64
+        float IOR;              // 4  -> 112
         float Specular;         // 4
-        float Padding3;         // 4
-        float Padding4;         // 4
-        float Padding5;         // 4  -> 80
+        float Padding6;         // 4
+        float Padding7;         // 4
+        float Padding8;         // 4  -> 128
         XMFLOAT3 Emission;      // 12
-        float Padding6;         // 4  -> 96
+        float Padding9;         // 4  -> 144
     };
 
     // ============================================
@@ -276,6 +284,7 @@ namespace RayTraceVS::DXEngine
         int toneMapOperator = 2;
         float denoiserStabilization = 1.0f;
         float shadowStrength = 1.0f;
+        float gamma = 1.0f;
 
         // AoS Object buffers (for Compute Shader fallback)
         ComPtr<ID3D12Resource> sphereBuffer;
@@ -396,6 +405,11 @@ namespace RayTraceVS::DXEngine
         // Cached scene pointer for acceleration structure rebuild
         Scene* lastScene = nullptr;
         bool needsAccelerationStructureRebuild = true;
+        
+        // Cached object counts for detecting scene changes
+        UINT lastSphereCount = 0;
+        UINT lastPlaneCount = 0;
+        UINT lastBoxCount = 0;
 
         // ============================================
         // Shader Cache System

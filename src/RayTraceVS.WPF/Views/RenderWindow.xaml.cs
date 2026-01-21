@@ -213,10 +213,10 @@ namespace RayTraceVS.WPF.Views
             try
             {
                 // ノードグラフからシーンデータを評価
-                var (spheres, planes, boxes, camera, lights, samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization, shadowStrength, enableDenoiser) = sceneEvaluator.EvaluateScene(nodeGraph);
+                var (spheres, planes, boxes, camera, lights, samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization, shadowStrength, enableDenoiser, gamma) = sceneEvaluator.EvaluateScene(nodeGraph);
                 
                 // シーン更新
-                renderService.UpdateScene(spheres, planes, boxes, camera, lights, samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization, shadowStrength, enableDenoiser);
+                renderService.UpdateScene(spheres, planes, boxes, camera, lights, samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization, shadowStrength, enableDenoiser, gamma);
                 
                 // レンダリング（GPU側で描画実行）
                 renderService.Render();

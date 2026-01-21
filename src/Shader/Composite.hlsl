@@ -37,6 +37,7 @@ cbuffer CompositeConstants : register(b0)
     float DebugTileScale;   // Size of debug tiles (0.15 = 15% of screen height)
     uint UseDenoisedShadow; // 1 = apply SIGMA-denoised shadow
     float ShadowStrength;   // Multiplier for shadow contrast (1.0 = normal)
+    float GammaValue;       // Gamma correction value (2.2 = standard sRGB, 1.0 = linear)
 };
 
 // ============================================
@@ -61,7 +62,7 @@ float3 ACESFilm(float3 x)
     return saturate((x * (a * x + b)) / (x * (c * x + d) + e));
 }
 
-// Gamma correction
+// Gamma correction (standard sRGB)
 float3 LinearToSRGB(float3 color)
 {
     float3 srgb;
@@ -69,6 +70,12 @@ float3 LinearToSRGB(float3 color)
         ? 12.92 * color 
         : 1.055 * pow(color, 1.0 / 2.4) - 0.055;
     return srgb;
+}
+
+// Custom gamma correction
+float3 ApplyGamma(float3 color, float gamma)
+{
+    return pow(max(color, 0.0), 1.0 / gamma);
 }
 
 // ============================================
@@ -312,10 +319,13 @@ void CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
     // (GBuffer_DiffuseIn now contains the complete finalColor from RayGen for all pixels)
     
     // Correct SIGMA workflow:
-    // GBuffer_DiffuseIn = radiance WITHOUT albedo, WITHOUT shadow
-    // We apply albedo and SIGMA shadow here in Composite
+    // GBuffer_DiffuseIn = diffuse radiance (ambient + directDiffuse + reflections + emission)
+    // RawSpecularBackup = specular radiance (directSpecular)
+    // Combine both for complete lighting
     
     float3 inputColor = GBuffer_DiffuseIn.SampleLevel(LinearSampler, uv, 0).rgb;
+    float3 inputSpecular = RawSpecularBackup.SampleLevel(LinearSampler, uv, 0).rgb;
+    inputColor += inputSpecular;  // Add specular component for point light highlights
     
     // For hit pixels, apply SIGMA shadow
     // Metal/Glass set shadowVisibility=1.0 in their G-Buffer output, so SIGMA won't darken them
@@ -327,8 +337,38 @@ void CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
     // No need to apply shadow here - this avoids white artifacts at object edges
     // UseDenoisedShadow flag is ignored since shadow is already applied
     
-    // Output
-    OutputTexture[pixelCoord] = float4(saturate(inputColor), 1.0);
+    // Apply exposure
+    inputColor *= ExposureValue;
+    
+    // Apply tone mapping based on ToneMapOperator
+    float3 tonemapped;
+    if (ToneMapOperator < 0.5)
+    {
+        // 0 = Reinhard
+        tonemapped = ReinhardToneMap(inputColor);
+    }
+    else if (ToneMapOperator < 1.5)
+    {
+        // 1 = ACES
+        tonemapped = ACESFilm(inputColor);
+    }
+    else
+    {
+        // 2 = None
+        tonemapped = inputColor;
+    }
+    
+    // Apply gamma correction and output
+    // Use custom gamma if not 2.2, otherwise use accurate sRGB curve
+    if (abs(GammaValue - 2.2) < 0.01)
+    {
+        finalColor = LinearToSRGB(saturate(tonemapped));
+    }
+    else
+    {
+        finalColor = ApplyGamma(saturate(tonemapped), GammaValue);
+    }
+    OutputTexture[pixelCoord] = float4(finalColor, 1.0);
 }
 
 // ============================================
