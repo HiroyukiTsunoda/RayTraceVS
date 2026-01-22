@@ -78,6 +78,9 @@ void RayGen()
     float minShadowDistance = NRD_FP16_MAX;
     int occludedSampleCount = 0;
     
+    // Get max bounces from scene settings
+    uint maxBounces = (Scene.MaxBounces > 0) ? min(Scene.MaxBounces, 32) : 8;
+    
     for (uint s = 0; s < sampleCount; s++)
     {
         // ピクセル内のランダムオフセット（アンチエイリアシング）
@@ -111,80 +114,145 @@ void RayGen()
             rayDir = normalize(focusPoint - rayOrigin);
         }
         
-        // レイディスクリプタ
-        RayDesc ray;
-        ray.Origin = rayOrigin;
-        ray.Direction = rayDir;
-        ray.TMin = 0.001;
-        ray.TMax = 10000.0;
+        // ============================================
+        // Loop-based ray tracing (no recursion in ClosestHit)
+        // ============================================
+        float3 throughput = float3(1, 1, 1);  // Accumulated color attenuation
+        float3 sampleColor = float3(0, 0, 0); // Final color for this sample
+        float rayTMin = 0.001;
         
-        // ペイロード初期化
-        RayPayload payload;
-        payload.color = GetSkyColor(rayDir);  // 背景色（空のグラデーション）
-        payload.depth = 0;
-        payload.hit = 0;
-        payload.padding = 0.0;
-        // Initialize NRD fields
-        payload.diffuseRadiance = float3(0, 0, 0);
-        payload.specularRadiance = float3(0, 0, 0);
-        payload.hitDistance = 10000.0;
-        payload.worldNormal = float3(0, 1, 0);
-        payload.roughness = 1.0;
-        payload.worldPosition = float3(0, 0, 0);
-        payload.viewZ = 10000.0;
-        payload.metallic = 0.0;
-        payload.albedo = float3(0, 0, 0);
-        payload.shadowVisibility = 1.0;
-        payload.shadowPenumbra = 0.0;
-        payload.shadowDistance = NRD_FP16_MAX;
-        payload.targetObjectType = 0;
-        payload.targetObjectIndex = 0;
-        payload.thicknessQuery = 0;
-        payload.shadowColorAccum = float3(1, 1, 1);
-        payload.shadowTransmissionAccum = 1.0;
+        // Store primary ray NRD data
+        bool primaryHitRecorded = false;
         
-        // レイトレーシング実行
-        TraceRay(
-            SceneBVH,                           // アクセラレーション構造
-            RAY_FLAG_NONE,                      // レイフラグ
-            0xFF,                               // インスタンスマスク
-            0,                                  // RayContributionToHitGroupIndex
-            0,                                  // MultiplierForGeometryContributionToHitGroupIndex
-            0,                                  // MissShaderIndex
-            ray,                                // レイ
-            payload                             // ペイロード
-        );
-        
-        accumulatedColor += payload.color;
-        accumulatedDiffuse += payload.diffuseRadiance;
-        accumulatedSpecular += payload.specularRadiance;
-        accumulatedHitDist += payload.hitDistance;
-        accumulatedShadowVisibility += payload.shadowVisibility;
-        accumulatedShadowPenumbra += payload.shadowPenumbra;
-        if (payload.shadowDistance < NRD_FP16_MAX)
+        for (uint bounce = 0; bounce < maxBounces; bounce++)
         {
-            occludedSampleCount++;
-            minShadowDistance = min(minShadowDistance, payload.shadowDistance);
+            // レイディスクリプタ
+            RayDesc ray;
+            ray.Origin = rayOrigin;
+            ray.Direction = rayDir;
+            ray.TMin = rayTMin;
+            ray.TMax = 10000.0;
+            
+            // ペイロード初期化
+            RayPayload payload;
+            payload.color = float3(0, 0, 0);
+            payload.depth = bounce;  // Use bounce count as depth
+            payload.hit = 0;
+            payload.padding = 0.0;
+            // Initialize NRD fields
+            payload.diffuseRadiance = float3(0, 0, 0);
+            payload.specularRadiance = float3(0, 0, 0);
+            payload.hitDistance = 10000.0;
+            payload.worldNormal = float3(0, 1, 0);
+            payload.roughness = 1.0;
+            payload.worldPosition = float3(0, 0, 0);
+            payload.viewZ = 10000.0;
+            payload.metallic = 0.0;
+            payload.albedo = float3(0, 0, 0);
+            payload.shadowVisibility = 1.0;
+            payload.shadowPenumbra = 0.0;
+            payload.shadowDistance = NRD_FP16_MAX;
+            payload.targetObjectType = 0;
+            payload.targetObjectIndex = 0;
+            payload.thicknessQuery = 0;
+            payload.shadowColorAccum = float3(1, 1, 1);
+            payload.shadowTransmissionAccum = 1.0;
+            // Initialize loop-based fields
+            payload.nextRayOrigin = float3(0, 0, 0);
+            payload.nextRayDirection = float3(0, 0, 0);
+            payload.throughput = float3(1, 1, 1);
+            payload.continueTrace = 0.0;
+            payload.nextRayTMin = 0.001;
+            payload.throughputPad = 0.0;
+            
+            // レイトレーシング実行
+            TraceRay(
+                SceneBVH,                           // アクセラレーション構造
+                RAY_FLAG_NONE,                      // レイフラグ
+                0xFF,                               // インスタンスマスク
+                0,                                  // RayContributionToHitGroupIndex
+                0,                                  // MultiplierForGeometryContributionToHitGroupIndex
+                0,                                  // MissShaderIndex
+                ray,                                // レイ
+                payload                             // ペイロード
+            );
+            
+            // Accumulate color with throughput
+            sampleColor += throughput * payload.color;
+            
+            // Record primary ray NRD data (first bounce only, first hit)
+            if (bounce == 0 && payload.hit && !primaryHitRecorded)
+            {
+                accumulatedDiffuse += payload.diffuseRadiance;
+                accumulatedSpecular += payload.specularRadiance;
+                accumulatedHitDist += payload.hitDistance;
+                accumulatedShadowVisibility += payload.shadowVisibility;
+                accumulatedShadowPenumbra += payload.shadowPenumbra;
+                if (payload.shadowDistance < NRD_FP16_MAX)
+                {
+                    occludedSampleCount++;
+                    minShadowDistance = min(minShadowDistance, payload.shadowDistance);
+                }
+                
+                // Record first hit data for NRD
+                if (!anyHit)
+                {
+                    primaryNormal = payload.worldNormal;
+                    primaryRoughness = payload.roughness;
+                    primaryPosition = payload.worldPosition;
+                    primaryViewZ = payload.viewZ;
+                    primaryMetallic = payload.metallic;
+                    primaryAlbedo = payload.albedo;
+                    
+                    // SIGMA: Store raw shadow from PRIMARY sample only (no averaging!)
+                    primaryShadowVisibility = payload.shadowVisibility;
+                    primaryShadowPenumbra = payload.shadowPenumbra;
+                    primaryShadowDistance = payload.shadowDistance;
+                    
+                    anyHit = true;
+                }
+                primaryHitRecorded = true;
+            }
+            
+            // Check if we should continue tracing
+            if (payload.continueTrace < 0.5)
+            {
+                // Miss or terminal hit - add sky color if miss
+                if (!payload.hit)
+                {
+                    sampleColor += throughput * GetSkyColor(rayDir);
+                }
+                break;
+            }
+            
+            // Update throughput for next bounce
+            throughput *= payload.throughput;
+            
+            // Russian roulette for path termination (after a few bounces)
+            if (bounce > 3)
+            {
+                float maxThroughput = max(throughput.r, max(throughput.g, throughput.b));
+                if (maxThroughput < 0.1)
+                {
+                    // Use pixel-based random for Russian roulette
+                    uint rrSeed = launchIndex.x * 1973 + launchIndex.y * 9277 + s * 26699 + bounce * 12345;
+                    float rrRand = Hash(rrSeed);
+                    if (rrRand > maxThroughput * 10.0)
+                    {
+                        break;  // Terminate path
+                    }
+                    // Boost throughput to maintain unbiased result
+                    throughput /= maxThroughput * 10.0;
+                }
+            }
+            
+            // Setup next ray from payload
+            rayOrigin = payload.nextRayOrigin;
+            rayDir = payload.nextRayDirection;
+            rayTMin = payload.nextRayTMin;
         }
         
-        // 最初のヒットからNRDデータを取得（プライマリレイの情報）
-        if (payload.hit && !anyHit)
-        {
-            primaryNormal = payload.worldNormal;
-            primaryRoughness = payload.roughness;
-            primaryPosition = payload.worldPosition;
-            primaryViewZ = payload.viewZ;
-            primaryMetallic = payload.metallic;
-            primaryAlbedo = payload.albedo;
-            
-            // SIGMA: Store raw shadow from PRIMARY sample only (no averaging!)
-            // This is critical - SIGMA expects noisy single-sample input
-            primaryShadowVisibility = payload.shadowVisibility;
-            primaryShadowPenumbra = payload.shadowPenumbra;
-            primaryShadowDistance = payload.shadowDistance;
-            
-            anyHit = true;
-        }
+        accumulatedColor += sampleColor;
     }
     
     // 平均を取って結果を出力

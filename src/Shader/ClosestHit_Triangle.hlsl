@@ -138,6 +138,9 @@ void ClosestHit_Triangle(inout RayPayload payload, in BuiltInTriangleIntersectio
     float3 N = frontFace ? normal : -normal;
     
     // Glass with Fresnel and reflection/refraction
+    // ============================================
+    // LOOP-BASED: No recursive TraceRay - return next ray info instead
+    // ============================================
     if (isGlass)
     {
         bool entering = frontFace;
@@ -166,113 +169,12 @@ void ClosestHit_Triangle(inout RayPayload payload, in BuiltInTriangleIntersectio
             }
         }
         
-        float3 reflectColor = float3(0, 0, 0);
-        float3 refractColor = float3(0, 0, 0);
-        
-        bool nearLimit = (payload.depth + 1) >= maxBounces;
-        
-        // Trace reflection
-        {
-            RayDesc reflectRay;
-            reflectRay.Origin = hitPosition + N * 0.002;
-            reflectRay.Direction = reflectDir;
-            reflectRay.TMin = 0.001;
-            reflectRay.TMax = 10000.0;
-            
-            RayPayload reflPayload;
-            reflPayload.color = GetSkyColor(reflectRay.Direction);
-            reflPayload.depth = payload.depth + 1;
-            reflPayload.hit = 0;
-            reflPayload.padding = 0.0;
-            reflPayload.diffuseRadiance = float3(0, 0, 0);
-            reflPayload.specularRadiance = float3(0, 0, 0);
-            reflPayload.hitDistance = 10000.0;
-            reflPayload.worldNormal = float3(0, 1, 0);
-            reflPayload.roughness = 1.0;
-            reflPayload.worldPosition = float3(0, 0, 0);
-            reflPayload.viewZ = 10000.0;
-            reflPayload.metallic = 0.0;
-            reflPayload.albedo = float3(0, 0, 0);
-            reflPayload.shadowVisibility = 1.0;
-            reflPayload.shadowPenumbra = 0.0;
-            reflPayload.shadowDistance = NRD_FP16_MAX;
-            reflPayload.targetObjectType = OBJECT_TYPE_MESH;
-            reflPayload.targetObjectIndex = instanceIndex;
-            reflPayload.thicknessQuery = 0;
-            reflPayload.shadowColorAccum = float3(1, 1, 1);
-            reflPayload.shadowTransmissionAccum = 1.0;
-            
-            TraceRay(SceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, reflectRay, reflPayload);
-            reflectColor = reflPayload.color;
-        }
-        
-        // Trace refraction if not total internal reflection
-        if (!tir)
-        {
-            float3 skyFallback = GetSkyColor(refractDir);
-            
-            if (!nearLimit)
-            {
-                RayDesc refractRay;
-                // Offset in opposite direction of normal to pass through surface
-                refractRay.Origin = hitPosition - N * 0.002;
-                refractRay.Direction = refractDir;
-                refractRay.TMin = 0.001;
-                refractRay.TMax = 10000.0;
-                
-                RayPayload refrPayload;
-                refrPayload.color = skyFallback;
-                refrPayload.depth = payload.depth + 1;
-                refrPayload.hit = 0;
-                refrPayload.padding = 0.0;
-                refrPayload.diffuseRadiance = float3(0, 0, 0);
-                refrPayload.specularRadiance = float3(0, 0, 0);
-                refrPayload.hitDistance = 10000.0;
-                refrPayload.worldNormal = float3(0, 1, 0);
-                refrPayload.roughness = 1.0;
-                refrPayload.worldPosition = float3(0, 0, 0);
-                refrPayload.viewZ = 10000.0;
-                refrPayload.metallic = 0.0;
-                refrPayload.albedo = float3(0, 0, 0);
-                refrPayload.shadowVisibility = 1.0;
-                refrPayload.shadowPenumbra = 0.0;
-                refrPayload.shadowDistance = NRD_FP16_MAX;
-                refrPayload.targetObjectType = 0;
-                refrPayload.targetObjectIndex = 0;
-                refrPayload.thicknessQuery = 0;
-                refrPayload.shadowColorAccum = float3(1, 1, 1);
-                refrPayload.shadowTransmissionAccum = 1.0;
-                
-                TraceRay(SceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, refractRay, refrPayload);
-                refractColor = refrPayload.color;
-                
-                float refractLuminance = dot(refractColor, float3(0.299, 0.587, 0.114));
-                if (refractLuminance < 0.05)
-                {
-                    refractColor = lerp(skyFallback, refractColor, refractLuminance / 0.05);
-                }
-            }
-            else
-            {
-                refractColor = skyFallback * lerp(float3(1, 1, 1), color.rgb, 0.5);
-            }
-        }
-        else
-        {
-            refractColor = GetSkyColor(rayDir);
-        }
-        
         float fresnel = tir ? 1.0 : FresnelSchlick(cosTheta, f0);
         
-        float tintStrength = (payload.depth == 0) ? 1.0 : 0.4;
-        float3 tintedRefract = refractColor * lerp(float3(1, 1, 1), color.rgb, tintStrength);
-        
-        payload.color = lerp(tintedRefract, reflectColor, fresnel);
-        
-        // Specular highlight for glass surface
+        // ★ Specular highlight for glass surface (computed immediately)
+        float3 specularHighlight = float3(0, 0, 0);
         if (specular > 0.01)
         {
-            float3 specularHighlight = float3(0, 0, 0);
             float3 viewDir = -rayDir;
             
             for (uint li = 0; li < Scene.NumLights; li++)
@@ -305,8 +207,35 @@ void ClosestHit_Triangle(inout RayPayload payload, in BuiltInTriangleIntersectio
                     specularHighlight += light.color.rgb * light.intensity * spec * specFresnel * attenuation;
                 }
             }
-            
-            payload.color += specularHighlight * specular * (1.0 - roughness);
+        }
+        
+        // Output specular highlight immediately
+        payload.color = specularHighlight * specular * (1.0 - roughness);
+        
+        // ============================================
+        // LOOP-BASED: Probabilistically choose reflection OR refraction
+        // ============================================
+        float randChoice = RandomFloat(seed);
+        
+        if (tir || randChoice < fresnel)
+        {
+            // Choose REFLECTION
+            payload.nextRayOrigin = hitPosition + N * 0.002;
+            payload.nextRayDirection = reflectDir;
+            payload.nextRayTMin = 0.001;
+            payload.throughput = float3(1, 1, 1);  // Reflection: white throughput
+            payload.continueTrace = 1.0;
+        }
+        else
+        {
+            // Choose REFRACTION
+            payload.nextRayOrigin = hitPosition - N * 0.002;  // Offset opposite to normal
+            payload.nextRayDirection = refractDir;
+            payload.nextRayTMin = 0.001;
+            // Tint by glass color
+            float tintStrength = (payload.depth == 0) ? 1.0 : 0.4;
+            payload.throughput = lerp(float3(1, 1, 1), color.rgb, tintStrength);
+            payload.continueTrace = 1.0;
         }
         
         // NRD outputs for glass (primary rays only)
@@ -333,59 +262,50 @@ void ClosestHit_Triangle(inout RayPayload payload, in BuiltInTriangleIntersectio
     float3 F0 = lerp(0.04.xxx, color.rgb, metallic);
     float3 diffuseColor = color.rgb * (1.0 - metallic);
     
-    // Reflection for metallic surfaces
-    float3 reflectColor = float3(0, 0, 0);
-    if (metallic > 0.1 && payload.depth < maxBounces)
+    // ============================================
+    // LOOP-BASED: Metallic reflection - return next ray instead of recursive trace
+    // ============================================
+    if (metallic > 0.5)
     {
         float3 reflectDir = reflect(rayDir, N);
         float2 reflectSeed = hitPosition.xy * 1000.0 + float2(payload.depth, payload.depth * 0.5);
         float3 perturbedDir = PerturbReflection(reflectDir, N, roughness, reflectSeed);
         
-        RayDesc reflectRay;
-        reflectRay.Origin = hitPosition + N * 0.01;
-        reflectRay.Direction = perturbedDir;
-        reflectRay.TMin = 0.001;
-        reflectRay.TMax = 10000.0;
+        // Setup next ray for loop continuation
+        payload.nextRayOrigin = hitPosition + N * 0.01;
+        payload.nextRayDirection = perturbedDir;
+        payload.nextRayTMin = 0.001;
+        // Metal reflection: tint by material color
+        payload.throughput = color.rgb;
+        payload.continueTrace = 1.0;
         
-        RayPayload reflectPayload;
-        reflectPayload.color = float3(0, 0, 0);
-        reflectPayload.depth = payload.depth + 1;
-        reflectPayload.hit = 0;
-        reflectPayload.padding = 0.0;
-        reflectPayload.diffuseRadiance = float3(0, 0, 0);
-        reflectPayload.specularRadiance = float3(0, 0, 0);
-        reflectPayload.hitDistance = 10000.0;
-        reflectPayload.worldNormal = float3(0, 1, 0);
-        reflectPayload.roughness = 1.0;
-        reflectPayload.worldPosition = float3(0, 0, 0);
-        reflectPayload.viewZ = 10000.0;
-        reflectPayload.metallic = 0.0;
-        reflectPayload.albedo = float3(0, 0, 0);
-        reflectPayload.shadowVisibility = 1.0;
-        reflectPayload.shadowPenumbra = 0.0;
-        reflectPayload.shadowDistance = NRD_FP16_MAX;
-        reflectPayload.targetObjectType = OBJECT_TYPE_MESH;
-        reflectPayload.targetObjectIndex = instanceIndex;
-        reflectPayload.thicknessQuery = 0;
-        reflectPayload.hitObjectType = 0;
-        reflectPayload.hitObjectIndex = 0;
-        reflectPayload.shadowColorAccum = float3(1, 1, 1);
-        reflectPayload.shadowTransmissionAccum = 1.0;
+        // No direct lighting contribution for pure metals - all comes from reflection
+        payload.color = emission;
         
-        TraceRay(SceneBVH, RAY_FLAG_NONE, 0xFF, 2, 0, 0, reflectRay, reflectPayload);
-        
-        bool hitSameObject = (reflectPayload.hitObjectType == OBJECT_TYPE_MESH &&
-                             reflectPayload.hitObjectIndex == instanceIndex);
-        
-        if (hitSameObject)
+        // NRD outputs (primary rays only)
+        if (payload.depth == 0)
         {
-            reflectColor = GetSkyColor(perturbedDir) * color.rgb;
+            float hitDistance = RayTCurrent();
+            payload.diffuseRadiance = emission;
+            payload.specularRadiance = float3(0, 0, 0);
+            payload.hitDistance = hitDistance;
+            payload.worldNormal = N;
+            payload.roughness = roughness;
+            payload.worldPosition = hitPosition;
+            payload.viewZ = hitDistance;
+            payload.metallic = metallic;
+            payload.albedo = color.rgb;
+            // Metals don't receive traditional shadows
+            payload.shadowVisibility = 1.0;
+            payload.shadowPenumbra = 0.0;
+            payload.shadowDistance = NRD_FP16_MAX;
         }
-        else
-        {
-            reflectColor = reflectPayload.color * color.rgb;
-        }
+        return;
     }
+    
+    // ============================================
+    // Non-metallic, non-glass: Direct lighting only (terminal)
+    // ============================================
     
     // Direct lighting
     float3 ambient = float3(0, 0, 0);
@@ -514,47 +434,29 @@ void ClosestHit_Triangle(inout RayPayload payload, in BuiltInTriangleIntersectio
         ambient = lerp(diffuseColor, color.rgb * 0.3, metallic) * 0.2;
     }
     
-    // Combine reflection and direct lighting
-    float reflectionWeight = metallic * (1.0 - roughness * 0.5);
-    float directWeight = 1.0 - reflectionWeight * 0.5;
-    
-    float3 finalColor;
-    if (metallic > 0.99 && transmission <= 0.01)
-    {
-        finalColor = reflectColor + emission;
-    }
-    else
-    {
-        finalColor = ambient 
-                   + directDiffuse * directWeight 
-                   + directSpecular 
-                   + reflectColor * reflectionWeight
-                   + emission;
-    }
+    // Combine direct lighting (no recursive reflection for diffuse surfaces)
+    float3 finalColor = ambient + directDiffuse + directSpecular + emission;
     
     payload.color = saturate(finalColor);
+    
+    // ============================================
+    // LOOP-BASED: Diffuse surfaces terminate the ray (no continuation)
+    // ============================================
+    payload.continueTrace = 0.0;
+    payload.nextRayOrigin = float3(0, 0, 0);
+    payload.nextRayDirection = float3(0, 0, 0);
+    payload.throughput = float3(1, 1, 1);
     
     // NRD outputs (primary rays only)
     if (payload.depth == 0)
     {
         float hitDistance = RayTCurrent();
-        bool isPureMetal = (metallic >= 0.5);
-        if (isPureMetal)
-        {
-            payload.diffuseRadiance = reflectColor + emission;
-            payload.specularRadiance = float3(0, 0, 0);
-            payload.shadowVisibility = 1.0;
-            payload.shadowPenumbra = 0.0;
-            payload.shadowDistance = NRD_FP16_MAX;
-        }
-        else
-        {
-            payload.diffuseRadiance = ambient + directDiffuse * directWeight + reflectColor * reflectionWeight + emission;
-            payload.specularRadiance = directSpecular;
-            payload.shadowVisibility = bestShadowForSigma.visibility;
-            payload.shadowPenumbra = bestShadowForSigma.penumbra;
-            payload.shadowDistance = bestShadowForSigma.occluderDistance;
-        }
+        payload.diffuseRadiance = ambient + directDiffuse + emission;
+        payload.specularRadiance = directSpecular;
+        // SIGMA shadow input
+        payload.shadowVisibility = bestShadowForSigma.visibility;
+        payload.shadowPenumbra = bestShadowForSigma.penumbra;
+        payload.shadowDistance = bestShadowForSigma.occluderDistance;
         payload.hitDistance = hitDistance;
         payload.worldNormal = N;
         payload.roughness = roughness;

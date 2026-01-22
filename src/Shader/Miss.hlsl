@@ -19,4 +19,12 @@ void Miss(inout RayPayload payload)
     payload.targetObjectType = 0;
     payload.targetObjectIndex = 0;
     payload.thicknessQuery = 0;
+    
+    // ============================================
+    // LOOP-BASED: Miss terminates the ray trace loop
+    // ============================================
+    payload.continueTrace = 0.0;
+    payload.nextRayOrigin = float3(0, 0, 0);
+    payload.nextRayDirection = float3(0, 0, 0);
+    payload.throughput = float3(1, 1, 1);
 }
