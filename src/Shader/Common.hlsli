@@ -76,15 +76,10 @@ struct RayPayload
     
     uint hitObjectIndex;        // Index of hit object (output)
     
-    // ============================================
-    // Loop-based ray tracing fields
-    // ============================================
-    float3 nextRayOrigin;       // Next ray origin for loop continuation
-    float continueTrace;        // 1.0 = continue tracing, 0.0 = terminate
-    float3 nextRayDirection;    // Next ray direction for loop continuation
-    float nextRayTMin;          // TMin for next ray (to skip self-intersection)
-    float3 throughput;          // Accumulated color throughput (attenuation)
-    float throughputPad;        // Padding for alignment
+    // Loop-based ray tracing
+    float4 loopRayOrigin;       // xyz = nextRayOrigin, w = continueTrace
+    float4 loopRayDirection;    // xyz = nextRayDirection, w = nextRayTMin
+    float4 loopThroughput;      // xyz = throughput, w = unused
 };
 
 // シャドウレイ用ペイロード
@@ -519,7 +514,8 @@ float3 GetSkyColor(float3 direction)
         skyColor *= lerp(0.8, 0.4, groundFade);
     }
     
-    return skyColor;
+    // Reduce sky intensity to avoid blown-out highlights under exposure
+    return skyColor * 0.7;
 }
 
 // ============================================
@@ -730,6 +726,9 @@ float TraceSingleShadowRay(float3 rayOrigin, float3 rayDir, float maxDist, out f
         shadowPayload.thicknessQuery = 0;
         shadowPayload.shadowColorAccum = float3(1, 1, 1);
         shadowPayload.shadowTransmissionAccum = 0.0;  // Will be set by ClosestHit
+        shadowPayload.loopRayOrigin = float4(0, 0, 0, 0);
+        shadowPayload.loopRayDirection = float4(0, 0, 0, 0);
+        shadowPayload.loopThroughput = float4(1, 1, 1, 0);
         
         TraceRay(SceneBVH, 
                  RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,
