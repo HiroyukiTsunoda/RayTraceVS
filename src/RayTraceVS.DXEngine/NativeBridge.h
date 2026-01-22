@@ -3,6 +3,8 @@
 // Fully native bridge interface
 // No managed types
 
+#include <cstdint>
+
 #ifdef DXENGINE_EXPORTS
 #define DXENGINE_API __declspec(dllexport)
 #else
@@ -91,6 +93,28 @@ namespace RayTraceVS::Interop::Bridge
         MaterialNative material;
     };
 
+    // Mesh cache data (shared geometry)
+    struct MeshCacheDataNative
+    {
+        const char* name;           // Mesh name (key)
+        const float* vertices;      // 8 floats per vertex (pos3 + pad + normal3 + pad)
+        const uint32_t* indices;
+        uint32_t vertexCount;
+        uint32_t indexCount;
+        Vector3Native boundsMin;
+        Vector3Native boundsMax;
+    };
+
+    // Mesh instance data (per-instance transform + material)
+    struct MeshInstanceDataNative
+    {
+        const char* meshName;       // Reference to MeshCacheDataNative by name
+        Vector3Native position;
+        Vector3Native rotation;     // Euler angles (degrees)
+        Vector3Native scale;
+        MaterialNative material;
+    };
+
     // Bridge functions (fully native)
     DXENGINE_API RayTraceVS::DXEngine::DXContext* CreateDXContext();
     DXENGINE_API bool InitializeDXContext(RayTraceVS::DXEngine::DXContext* context, void* hwnd, int width, int height);
@@ -112,6 +136,8 @@ namespace RayTraceVS::Interop::Bridge
     DXENGINE_API void AddPlane(RayTraceVS::DXEngine::Scene* scene, const PlaneDataNative& plane);
     DXENGINE_API void AddBox(RayTraceVS::DXEngine::Scene* scene, const BoxDataNative& box);
     DXENGINE_API void AddLight(RayTraceVS::DXEngine::Scene* scene, const LightDataNative& light);
+    DXENGINE_API void AddMeshCache(RayTraceVS::DXEngine::Scene* scene, const MeshCacheDataNative& meshCache);
+    DXENGINE_API void AddMeshInstance(RayTraceVS::DXEngine::Scene* scene, const MeshInstanceDataNative& meshInstance);
 
     // Render target related
     DXENGINE_API RayTraceVS::DXEngine::RenderTarget* CreateRenderTarget(RayTraceVS::DXEngine::DXContext* context);

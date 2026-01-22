@@ -16,7 +16,7 @@ namespace RayTraceVS::DXEngine
     // Internal log function - writes to file
     inline void WriteLogToFile(const char* prefix, const char* message)
     {
-        std::ofstream log("C:\\git\\RayTraceVS\\debug_log.txt", std::ios::app);
+        std::ofstream log("C:\\git\\RayTraceVS\\debug.log", std::ios::app);
         if (log.is_open())
         {
             log << prefix << message << std::endl;
@@ -74,7 +74,7 @@ namespace RayTraceVS::DXEngine
     // Clear log file (call at startup)
     inline void ClearLogFile()
     {
-        std::ofstream log("C:\\git\\RayTraceVS\\debug_log.txt", std::ios::trunc);
+        std::ofstream log("C:\\git\\RayTraceVS\\debug.log", std::ios::trunc);
         log.close();
     }
 }

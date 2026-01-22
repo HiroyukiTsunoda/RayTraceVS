@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <string>
 #include <fstream>
+#include <map>
 
 #pragma comment(lib, "dxcompiler.lib")
 #pragma comment(lib, "d3dcompiler.lib")
@@ -620,6 +621,195 @@ namespace RayTraceVS::DXEngine
 
             commandList->CopyResource(lightBuffer.Get(), lightUploadBuffer.Get());
         }
+        
+        // ============================================
+        // Mesh Buffer Processing (FBX Support)
+        // ============================================
+        const auto& meshCaches = scene->GetMeshCaches();
+        const auto& meshInstances = scene->GetMeshInstances();
+        
+        // Track mesh instance count for acceleration structure rebuild
+        UINT currentMeshInstanceCount = static_cast<UINT>(meshInstances.size());
+        if (currentMeshInstanceCount != lastMeshInstanceCount)
+        {
+            needsAccelerationStructureRebuild = true;
+            lastMeshInstanceCount = currentMeshInstanceCount;
+            
+            char buf[256];
+            sprintf_s(buf, "Mesh instance count changed: %u -> rebuild AS", currentMeshInstanceCount);
+            LOG_INFO(buf);
+        }
+        
+        mappedConstantData->NumMeshInstances = currentMeshInstanceCount;
+        
+        if (!meshCaches.empty() && !meshInstances.empty())
+        {
+            // Build combined vertex/index buffers and mesh info
+            std::vector<GPUMeshVertex> allVertices;
+            std::vector<uint32_t> allIndices;
+            std::vector<GPUMeshInfo> meshInfos;
+            std::map<std::string, UINT> meshTypeIndexMap;  // meshName -> index in meshInfos
+            
+            UINT vertexOffset = 0;
+            UINT indexOffset = 0;
+            
+            for (const auto& [name, cache] : meshCaches)
+            {
+                GPUMeshInfo info = {};
+                info.VertexOffset = vertexOffset;
+                info.IndexOffset = indexOffset;
+                info.VertexCount = static_cast<UINT>(cache.vertices.size() / 8);  // 8 floats per vertex
+                info.IndexCount = static_cast<UINT>(cache.indices.size());
+                
+                meshTypeIndexMap[name] = static_cast<UINT>(meshInfos.size());
+                meshInfos.push_back(info);
+                
+                // Copy vertices (already in GPUMeshVertex format: 8 floats = 32 bytes)
+                for (size_t i = 0; i < cache.vertices.size(); i += 8)
+                {
+                    GPUMeshVertex v = {};
+                    v.Position = { cache.vertices[i], cache.vertices[i + 1], cache.vertices[i + 2] };
+                    v.Padding1 = 0;
+                    v.Normal = { cache.vertices[i + 4], cache.vertices[i + 5], cache.vertices[i + 6] };
+                    v.Padding2 = 0;
+                    allVertices.push_back(v);
+                }
+                
+                // Copy indices
+                allIndices.insert(allIndices.end(), cache.indices.begin(), cache.indices.end());
+                
+                vertexOffset += info.VertexCount;
+                indexOffset += info.IndexCount;
+            }
+            
+            // Build instance info and materials
+            std::vector<GPUMeshInstanceInfo> instanceInfos;
+            std::vector<GPUMeshMaterial> materials;
+            
+            for (const auto& inst : meshInstances)
+            {
+                auto it = meshTypeIndexMap.find(inst.meshName);
+                if (it == meshTypeIndexMap.end())
+                    continue;  // Skip if mesh not found
+                
+                GPUMeshInstanceInfo instInfo = {};
+                instInfo.MeshTypeIndex = it->second;
+                instInfo.MaterialIndex = static_cast<UINT>(materials.size());
+                instanceInfos.push_back(instInfo);
+                
+                GPUMeshMaterial mat = {};
+                mat.Color = inst.material.color;
+                mat.Metallic = inst.material.metallic;
+                mat.Roughness = inst.material.roughness;
+                mat.Transmission = inst.material.transmission;
+                mat.IOR = inst.material.ior;
+                mat.Specular = inst.material.specular;
+                mat.Padding1 = 0;
+                mat.Padding2 = 0;
+                mat.Emission = inst.material.emission;
+                mat.Padding3 = 0;
+                mat.Padding4 = 0;
+                materials.push_back(mat);
+            }
+            
+            // Create/Update GPU buffers
+            CD3DX12_HEAP_PROPERTIES uploadHeapProps(D3D12_HEAP_TYPE_UPLOAD);
+            
+            // Vertex buffer (t5)
+            if (!allVertices.empty())
+            {
+                UINT64 bufferSize = sizeof(GPUMeshVertex) * allVertices.size();
+                CD3DX12_RESOURCE_DESC bufDesc = CD3DX12_RESOURCE_DESC::Buffer(bufferSize);
+                
+                if (!meshVertexBuffer || meshVertexBuffer->GetDesc().Width < bufferSize)
+                {
+                    meshVertexBuffer.Reset();
+                    device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &bufDesc,
+                        D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&meshVertexBuffer));
+                }
+                
+                void* mapped = nullptr;
+                meshVertexBuffer->Map(0, nullptr, &mapped);
+                memcpy(mapped, allVertices.data(), bufferSize);
+                meshVertexBuffer->Unmap(0, nullptr);
+            }
+            
+            // Index buffer (t6)
+            if (!allIndices.empty())
+            {
+                UINT64 bufferSize = sizeof(uint32_t) * allIndices.size();
+                CD3DX12_RESOURCE_DESC bufDesc = CD3DX12_RESOURCE_DESC::Buffer(bufferSize);
+                
+                if (!meshIndexBuffer || meshIndexBuffer->GetDesc().Width < bufferSize)
+                {
+                    meshIndexBuffer.Reset();
+                    device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &bufDesc,
+                        D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&meshIndexBuffer));
+                }
+                
+                void* mapped = nullptr;
+                meshIndexBuffer->Map(0, nullptr, &mapped);
+                memcpy(mapped, allIndices.data(), bufferSize);
+                meshIndexBuffer->Unmap(0, nullptr);
+            }
+            
+            // Material buffer (t7)
+            if (!materials.empty())
+            {
+                UINT64 bufferSize = sizeof(GPUMeshMaterial) * materials.size();
+                CD3DX12_RESOURCE_DESC bufDesc = CD3DX12_RESOURCE_DESC::Buffer(bufferSize);
+                
+                if (!meshMaterialBuffer || meshMaterialBuffer->GetDesc().Width < bufferSize)
+                {
+                    meshMaterialBuffer.Reset();
+                    device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &bufDesc,
+                        D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&meshMaterialBuffer));
+                }
+                
+                void* mapped = nullptr;
+                meshMaterialBuffer->Map(0, nullptr, &mapped);
+                memcpy(mapped, materials.data(), bufferSize);
+                meshMaterialBuffer->Unmap(0, nullptr);
+            }
+            
+            // MeshInfo buffer (t8)
+            if (!meshInfos.empty())
+            {
+                UINT64 bufferSize = sizeof(GPUMeshInfo) * meshInfos.size();
+                CD3DX12_RESOURCE_DESC bufDesc = CD3DX12_RESOURCE_DESC::Buffer(bufferSize);
+                
+                if (!meshInfoBuffer || meshInfoBuffer->GetDesc().Width < bufferSize)
+                {
+                    meshInfoBuffer.Reset();
+                    device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &bufDesc,
+                        D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&meshInfoBuffer));
+                }
+                
+                void* mapped = nullptr;
+                meshInfoBuffer->Map(0, nullptr, &mapped);
+                memcpy(mapped, meshInfos.data(), bufferSize);
+                meshInfoBuffer->Unmap(0, nullptr);
+            }
+            
+            // Instance info buffer (t9)
+            if (!instanceInfos.empty())
+            {
+                UINT64 bufferSize = sizeof(GPUMeshInstanceInfo) * instanceInfos.size();
+                CD3DX12_RESOURCE_DESC bufDesc = CD3DX12_RESOURCE_DESC::Buffer(bufferSize);
+                
+                if (!meshInstanceBuffer || meshInstanceBuffer->GetDesc().Width < bufferSize)
+                {
+                    meshInstanceBuffer.Reset();
+                    device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &bufDesc,
+                        D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&meshInstanceBuffer));
+                }
+                
+                void* mapped = nullptr;
+                meshInstanceBuffer->Map(0, nullptr, &mapped);
+                memcpy(mapped, instanceInfos.data(), bufferSize);
+                meshInstanceBuffer->Unmap(0, nullptr);
+            }
+        }
     }
 
     void DXRPipeline::RenderWithComputeShader(RenderTarget* renderTarget, Scene* scene)
@@ -901,8 +1091,9 @@ namespace RayTraceVS::DXEngine
         // [8] UAV - Photon counter (u2)
         // [9-16] UAV - G-Buffer for NRD (u3-u10)
         // [17] UAV - Photon hash table (u11)
+        // [18-22] SRV - Mesh buffers (t5-t9)
         
-        CD3DX12_DESCRIPTOR_RANGE1 ranges[18];
+        CD3DX12_DESCRIPTOR_RANGE1 ranges[23];
         ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);  // u0 - Output
         ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);  // t0 - TLAS
         ranges[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0);  // b0 - Constants
@@ -922,9 +1113,15 @@ namespace RayTraceVS::DXEngine
         ranges[15].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 9);  // u9 - ShadowData
         ranges[16].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 10); // u10 - ShadowTranslucency
         ranges[17].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 11); // u11 - PhotonHashTable
+        // Mesh buffers for FBX support
+        ranges[18].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 5);  // t5 - MeshVertices
+        ranges[19].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 6);  // t6 - MeshIndices
+        ranges[20].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 7);  // t7 - MeshMaterials
+        ranges[21].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 8);  // t8 - MeshInfos
+        ranges[22].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 9);  // t9 - MeshInstances
         
-        CD3DX12_ROOT_PARAMETER1 rootParameters[18];
-        for (int i = 0; i < 18; i++)
+        CD3DX12_ROOT_PARAMETER1 rootParameters[23];
+        for (int i = 0; i < 23; i++)
         {
             rootParameters[i].InitAsDescriptorTable(1, &ranges[i]);
         }
@@ -1166,6 +1363,7 @@ namespace RayTraceVS::DXEngine
         if (!LoadOrCompileDXRShader(L"RayGen", &rayGenShader) ||
             !LoadOrCompileDXRShader(L"Miss", &missShader) ||
             !LoadOrCompileDXRShader(L"ClosestHit", &closestHitShader) ||
+            !LoadOrCompileDXRShader(L"ClosestHit_Triangle", &closestHitTriangleShader) ||
             !LoadOrCompileDXRShader(L"Intersection", &intersectionShader) ||
             !LoadOrCompileDXRShader(L"AnyHit_Shadow", &anyHitShadowShader) ||
             !LoadOrCompileDXRShader(L"AnyHit_SkipSelf", &anyHitSkipSelfShader))
@@ -1189,31 +1387,51 @@ namespace RayTraceVS::DXEngine
         AddLibrary(rayGenShader.Get(), L"RayGen");
         AddLibrary(missShader.Get(), L"Miss");
         AddLibrary(closestHitShader.Get(), L"ClosestHit");
+        AddLibrary(closestHitTriangleShader.Get(), L"ClosestHit_Triangle");
         AddLibrary(intersectionShader.Get(), L"SphereIntersection");
         AddLibrary(anyHitShadowShader.Get(), L"AnyHit_Shadow");
         AddLibrary(anyHitSkipSelfShader.Get(), L"AnyHit_SkipSelf");
         
-        // Hit group 0: Primary rays (ClosestHit + Intersection)
+        // Hit group 0: Primary rays for procedural geometry (ClosestHit + Intersection)
         auto hitGroup = stateObjectDesc.CreateSubobject<CD3DX12_HIT_GROUP_SUBOBJECT>();
         hitGroup->SetHitGroupExport(L"HitGroup");
         hitGroup->SetClosestHitShaderImport(L"ClosestHit");
         hitGroup->SetIntersectionShaderImport(L"SphereIntersection");
         hitGroup->SetHitGroupType(D3D12_HIT_GROUP_TYPE_PROCEDURAL_PRIMITIVE);
         
-        // Hit group 1: Shadow rays (AnyHit_Shadow + Intersection)
+        // Hit group 1: Shadow rays for procedural geometry (AnyHit_Shadow + Intersection)
         auto shadowHitGroup = stateObjectDesc.CreateSubobject<CD3DX12_HIT_GROUP_SUBOBJECT>();
         shadowHitGroup->SetHitGroupExport(L"ShadowHitGroup");
         shadowHitGroup->SetAnyHitShaderImport(L"AnyHit_Shadow");
         shadowHitGroup->SetIntersectionShaderImport(L"SphereIntersection");
         shadowHitGroup->SetHitGroupType(D3D12_HIT_GROUP_TYPE_PROCEDURAL_PRIMITIVE);
 
-        // Hit group 2: Reflection rays (AnyHit_SkipSelf + ClosestHit + Intersection)
+        // Hit group 2: Reflection rays for procedural geometry (AnyHit_SkipSelf + ClosestHit + Intersection)
         auto reflectHitGroup = stateObjectDesc.CreateSubobject<CD3DX12_HIT_GROUP_SUBOBJECT>();
         reflectHitGroup->SetHitGroupExport(L"ReflectHitGroup");
         reflectHitGroup->SetClosestHitShaderImport(L"ClosestHit");
         reflectHitGroup->SetAnyHitShaderImport(L"AnyHit_SkipSelf");
         reflectHitGroup->SetIntersectionShaderImport(L"SphereIntersection");
         reflectHitGroup->SetHitGroupType(D3D12_HIT_GROUP_TYPE_PROCEDURAL_PRIMITIVE);
+        
+        // Hit group 3: Triangle primary rays
+        auto triangleHitGroup = stateObjectDesc.CreateSubobject<CD3DX12_HIT_GROUP_SUBOBJECT>();
+        triangleHitGroup->SetHitGroupExport(L"TriangleHitGroup");
+        triangleHitGroup->SetClosestHitShaderImport(L"ClosestHit_Triangle");
+        triangleHitGroup->SetHitGroupType(D3D12_HIT_GROUP_TYPE_TRIANGLES);
+        
+        // Hit group 4: Triangle shadow rays
+        auto triangleShadowHitGroup = stateObjectDesc.CreateSubobject<CD3DX12_HIT_GROUP_SUBOBJECT>();
+        triangleShadowHitGroup->SetHitGroupExport(L"TriangleShadowHitGroup");
+        triangleShadowHitGroup->SetAnyHitShaderImport(L"AnyHit_Shadow");
+        triangleShadowHitGroup->SetHitGroupType(D3D12_HIT_GROUP_TYPE_TRIANGLES);
+        
+        // Hit group 5: Triangle reflection rays
+        auto triangleReflectHitGroup = stateObjectDesc.CreateSubobject<CD3DX12_HIT_GROUP_SUBOBJECT>();
+        triangleReflectHitGroup->SetHitGroupExport(L"TriangleReflectHitGroup");
+        triangleReflectHitGroup->SetClosestHitShaderImport(L"ClosestHit_Triangle");
+        triangleReflectHitGroup->SetAnyHitShaderImport(L"AnyHit_SkipSelf");
+        triangleReflectHitGroup->SetHitGroupType(D3D12_HIT_GROUP_TYPE_TRIANGLES);
         
         // Shader config
         auto shaderConfig = stateObjectDesc.CreateSubobject<CD3DX12_RAYTRACING_SHADER_CONFIG_SUBOBJECT>();
@@ -1272,8 +1490,9 @@ namespace RayTraceVS::DXEngine
         // [7-8] UAVs: photon map, photon counter (u1-u2)
         // [9-16] UAVs: G-Buffer for NRD (u3-u10)
         // [17] UAV: Photon hash table (u11)
+        // [18-22] SRVs: Mesh buffers (t5-t9)
         D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
-        heapDesc.NumDescriptors = 18;  // 9 + 8 for G-Buffer + 1 for photon hash
+        heapDesc.NumDescriptors = 23;  // 18 + 5 for mesh buffers
         heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
         heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
@@ -1290,16 +1509,27 @@ namespace RayTraceVS::DXEngine
     {
         auto device = dxContext->GetDevice();
         
-        // Get shader identifiers
+        // Get shader identifiers for procedural geometry (hit groups 0-2)
         void* rayGenId = stateObjectProperties->GetShaderIdentifier(L"RayGen");
         void* missId = stateObjectProperties->GetShaderIdentifier(L"Miss");
         void* hitGroupId = stateObjectProperties->GetShaderIdentifier(L"HitGroup");
         void* shadowHitGroupId = stateObjectProperties->GetShaderIdentifier(L"ShadowHitGroup");
         void* reflectHitGroupId = stateObjectProperties->GetShaderIdentifier(L"ReflectHitGroup");
         
+        // Get shader identifiers for triangle geometry (hit groups 3-5)
+        void* triangleHitGroupId = stateObjectProperties->GetShaderIdentifier(L"TriangleHitGroup");
+        void* triangleShadowHitGroupId = stateObjectProperties->GetShaderIdentifier(L"TriangleShadowHitGroup");
+        void* triangleReflectHitGroupId = stateObjectProperties->GetShaderIdentifier(L"TriangleReflectHitGroup");
+        
         if (!rayGenId || !missId || !hitGroupId || !shadowHitGroupId || !reflectHitGroupId)
         {
-            LOG_ERROR("Failed to get shader identifiers");
+            LOG_ERROR("Failed to get shader identifiers for procedural geometry");
+            return false;
+        }
+        
+        if (!triangleHitGroupId || !triangleShadowHitGroupId || !triangleReflectHitGroupId)
+        {
+            LOG_ERROR("Failed to get shader identifiers for triangle geometry");
             return false;
         }
         
@@ -1332,9 +1562,11 @@ namespace RayTraceVS::DXEngine
             missShaderTable->Unmap(0, nullptr);
         }
         
-        // Hit group shader table (3 entries: HitGroup=0, ShadowHitGroup=1, ReflectHitGroup=2)
+        // Hit group shader table (6 entries):
+        // 0-2: Procedural geometry (spheres, boxes, planes)
+        // 3-5: Triangle geometry (meshes)
         {
-            UINT hitGroupTableSize = shaderTableRecordSize * 3;  // 3 hit groups
+            UINT hitGroupTableSize = shaderTableRecordSize * 6;  // 6 hit groups
             CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(hitGroupTableSize);
             device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &desc,
                 D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&hitGroupShaderTable));
@@ -1342,12 +1574,18 @@ namespace RayTraceVS::DXEngine
             void* mapped = nullptr;
             hitGroupShaderTable->Map(0, nullptr, &mapped);
             BYTE* dst = static_cast<BYTE*>(mapped);
-            // Hit group 0: Primary rays
+            // Hit group 0: Primary rays (procedural)
             memcpy(dst, hitGroupId, shaderIdSize);
-            // Hit group 1: Shadow rays
+            // Hit group 1: Shadow rays (procedural)
             memcpy(dst + shaderTableRecordSize, shadowHitGroupId, shaderIdSize);
-            // Hit group 2: Reflection rays (skip self)
+            // Hit group 2: Reflection rays (procedural)
             memcpy(dst + shaderTableRecordSize * 2, reflectHitGroupId, shaderIdSize);
+            // Hit group 3: Primary rays (triangle)
+            memcpy(dst + shaderTableRecordSize * 3, triangleHitGroupId, shaderIdSize);
+            // Hit group 4: Shadow rays (triangle)
+            memcpy(dst + shaderTableRecordSize * 4, triangleShadowHitGroupId, shaderIdSize);
+            // Hit group 5: Reflection rays (triangle)
+            memcpy(dst + shaderTableRecordSize * 5, triangleReflectHitGroupId, shaderIdSize);
             hitGroupShaderTable->Unmap(0, nullptr);
         }
         
@@ -1365,9 +1603,10 @@ namespace RayTraceVS::DXEngine
             return false;
         }
         
-        if (!accelerationStructure->BuildProceduralTLAS())
+        // Use BuildCombinedTLAS to include both procedural objects and mesh instances
+        if (!accelerationStructure->BuildCombinedTLAS(scene))
         {
-            LOG_ERROR("Failed to build procedural TLAS");
+            LOG_ERROR("Failed to build combined TLAS");
             return false;
         }
         
@@ -1507,7 +1746,7 @@ namespace RayTraceVS::DXEngine
             cpuHandle.Offset(1, dxrDescriptorSize);
         }
         
-        // [18] UAV for photon hash table (u11)
+        // [17] UAV for photon hash table (u11)
         if (photonHashTableBuffer)
         {
             D3D12_UNORDERED_ACCESS_VIEW_DESC hashUavDesc = {};
@@ -1517,6 +1756,94 @@ namespace RayTraceVS::DXEngine
             hashUavDesc.Buffer.NumElements = PHOTON_HASH_TABLE_SIZE;
             hashUavDesc.Buffer.StructureByteStride = sizeof(PhotonHashCell);
             device->CreateUnorderedAccessView(photonHashTableBuffer.Get(), nullptr, &hashUavDesc, cpuHandle);
+        }
+        cpuHandle.Offset(1, dxrDescriptorSize);
+        
+        // [18-22] SRVs for mesh buffers (t5-t9)
+        D3D12_SHADER_RESOURCE_VIEW_DESC meshSrvDesc = {};
+        meshSrvDesc.Format = DXGI_FORMAT_UNKNOWN;
+        meshSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+        meshSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        meshSrvDesc.Buffer.FirstElement = 0;
+        
+        // [18] t5 - MeshVertices (GPUMeshVertex = 32 bytes)
+        if (meshVertexBuffer)
+        {
+            D3D12_RESOURCE_DESC desc = meshVertexBuffer->GetDesc();
+            meshSrvDesc.Buffer.NumElements = static_cast<UINT>(desc.Width / sizeof(GPUMeshVertex));
+            meshSrvDesc.Buffer.StructureByteStride = sizeof(GPUMeshVertex);
+            device->CreateShaderResourceView(meshVertexBuffer.Get(), &meshSrvDesc, cpuHandle);
+        }
+        else
+        {
+            // Create null SRV placeholder
+            meshSrvDesc.Buffer.NumElements = 1;
+            meshSrvDesc.Buffer.StructureByteStride = sizeof(GPUMeshVertex);
+            device->CreateShaderResourceView(nullptr, &meshSrvDesc, cpuHandle);
+        }
+        cpuHandle.Offset(1, dxrDescriptorSize);
+        
+        // [19] t6 - MeshIndices (uint = 4 bytes)
+        if (meshIndexBuffer)
+        {
+            D3D12_RESOURCE_DESC desc = meshIndexBuffer->GetDesc();
+            meshSrvDesc.Buffer.NumElements = static_cast<UINT>(desc.Width / sizeof(UINT));
+            meshSrvDesc.Buffer.StructureByteStride = sizeof(UINT);
+            device->CreateShaderResourceView(meshIndexBuffer.Get(), &meshSrvDesc, cpuHandle);
+        }
+        else
+        {
+            meshSrvDesc.Buffer.NumElements = 1;
+            meshSrvDesc.Buffer.StructureByteStride = sizeof(UINT);
+            device->CreateShaderResourceView(nullptr, &meshSrvDesc, cpuHandle);
+        }
+        cpuHandle.Offset(1, dxrDescriptorSize);
+        
+        // [20] t7 - MeshMaterials (GPUMeshMaterial = 64 bytes)
+        if (meshMaterialBuffer)
+        {
+            D3D12_RESOURCE_DESC desc = meshMaterialBuffer->GetDesc();
+            meshSrvDesc.Buffer.NumElements = static_cast<UINT>(desc.Width / sizeof(GPUMeshMaterial));
+            meshSrvDesc.Buffer.StructureByteStride = sizeof(GPUMeshMaterial);
+            device->CreateShaderResourceView(meshMaterialBuffer.Get(), &meshSrvDesc, cpuHandle);
+        }
+        else
+        {
+            meshSrvDesc.Buffer.NumElements = 1;
+            meshSrvDesc.Buffer.StructureByteStride = sizeof(GPUMeshMaterial);
+            device->CreateShaderResourceView(nullptr, &meshSrvDesc, cpuHandle);
+        }
+        cpuHandle.Offset(1, dxrDescriptorSize);
+        
+        // [21] t8 - MeshInfos (GPUMeshInfo = 16 bytes)
+        if (meshInfoBuffer)
+        {
+            D3D12_RESOURCE_DESC desc = meshInfoBuffer->GetDesc();
+            meshSrvDesc.Buffer.NumElements = static_cast<UINT>(desc.Width / sizeof(GPUMeshInfo));
+            meshSrvDesc.Buffer.StructureByteStride = sizeof(GPUMeshInfo);
+            device->CreateShaderResourceView(meshInfoBuffer.Get(), &meshSrvDesc, cpuHandle);
+        }
+        else
+        {
+            meshSrvDesc.Buffer.NumElements = 1;
+            meshSrvDesc.Buffer.StructureByteStride = sizeof(GPUMeshInfo);
+            device->CreateShaderResourceView(nullptr, &meshSrvDesc, cpuHandle);
+        }
+        cpuHandle.Offset(1, dxrDescriptorSize);
+        
+        // [22] t9 - MeshInstances (GPUMeshInstanceInfo = 8 bytes)
+        if (meshInstanceBuffer)
+        {
+            D3D12_RESOURCE_DESC desc = meshInstanceBuffer->GetDesc();
+            meshSrvDesc.Buffer.NumElements = static_cast<UINT>(desc.Width / sizeof(GPUMeshInstanceInfo));
+            meshSrvDesc.Buffer.StructureByteStride = sizeof(GPUMeshInstanceInfo);
+            device->CreateShaderResourceView(meshInstanceBuffer.Get(), &meshSrvDesc, cpuHandle);
+        }
+        else
+        {
+            meshSrvDesc.Buffer.NumElements = 1;
+            meshSrvDesc.Buffer.StructureByteStride = sizeof(GPUMeshInstanceInfo);
+            device->CreateShaderResourceView(nullptr, &meshSrvDesc, cpuHandle);
         }
     }
 
@@ -1559,8 +1886,12 @@ namespace RayTraceVS::DXEngine
         // Update scene data
         UpdateSceneData(scene, width, height);
         
+        // Check if mesh instances exist - if so, always rebuild TLAS to reflect transform changes
+        bool hasMeshInstances = !scene->GetMeshInstances().empty();
+        
         // Rebuild acceleration structures if needed
-        if (needsAccelerationStructureRebuild || scene != lastScene)
+        // Always rebuild if mesh instances exist (transform may have changed)
+        if (needsAccelerationStructureRebuild || scene != lastScene || hasMeshInstances)
         {
             LOG_DEBUG("RenderWithDXR: building acceleration structures");
             if (!BuildAccelerationStructures(scene))
@@ -1595,7 +1926,7 @@ namespace RayTraceVS::DXEngine
         commandList->SetComputeRootSignature(globalRootSignature.Get());
         
         CD3DX12_GPU_DESCRIPTOR_HANDLE gpuHandle(dxrSrvUavHeap->GetGPUDescriptorHandleForHeapStart());
-        for (int i = 0; i < 18; i++)
+        for (int i = 0; i < 23; i++)
         {
             commandList->SetComputeRootDescriptorTable(i, gpuHandle);
             gpuHandle.Offset(1, dxrDescriptorSize);
@@ -1611,7 +1942,7 @@ namespace RayTraceVS::DXEngine
         dispatchDesc.MissShaderTable.StrideInBytes = shaderTableRecordSize;
         
         dispatchDesc.HitGroupTable.StartAddress = hitGroupShaderTable->GetGPUVirtualAddress();
-        dispatchDesc.HitGroupTable.SizeInBytes = shaderTableRecordSize * 3;
+        dispatchDesc.HitGroupTable.SizeInBytes = shaderTableRecordSize * 6;  // 6 hit groups (3 procedural + 3 triangle)
         dispatchDesc.HitGroupTable.StrideInBytes = shaderTableRecordSize;
         
         dispatchDesc.Width = width;

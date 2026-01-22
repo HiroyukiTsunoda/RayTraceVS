@@ -25,6 +25,7 @@ namespace RayTraceVS.WPF.Models.Serialization
             Register<SphereNode>("Sphere");
             Register<PlaneNode>("Plane");
             Register<BoxNode>("Box");
+            Register<FBXMeshNode>("FBXMesh");
             
             // マテリアルノード
             Register<EmissionMaterialNode>("Emission");

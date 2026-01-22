@@ -42,6 +42,32 @@ namespace RayTraceVS.WPF.Models
         private bool isSelected;
 
         /// <summary>
+        /// ノードの作成順序を示すインデックス（描画順序の基準）
+        /// </summary>
+        [ObservableProperty]
+        private int creationIndex;
+
+        /// <summary>
+        /// ノードの描画幅（概算値、実際のUIサイズは異なる可能性あり）
+        /// </summary>
+        public virtual double NodeWidth => 150;
+
+        /// <summary>
+        /// ノードの描画高さ（ソケット数に基づいて計算）
+        /// </summary>
+        public virtual double NodeHeight
+        {
+            get
+            {
+                const double headerHeight = 30;
+                const double socketSpacing = 20;
+                const double padding = 20;
+                int maxSockets = Math.Max(InputSockets?.Count ?? 0, OutputSockets?.Count ?? 0);
+                return headerHeight + (maxSockets * socketSpacing) + padding;
+            }
+        }
+
+        /// <summary>
         /// ノードが「汚れている」（再評価が必要）かどうか
         /// </summary>
         [ObservableProperty]

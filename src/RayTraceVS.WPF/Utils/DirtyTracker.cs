@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using RayTraceVS.WPF.Models;
 
 namespace RayTraceVS.WPF.Utils
@@ -29,7 +30,9 @@ namespace RayTraceVS.WPF.Utils
         public void MarkDirty(Node node)
         {
             if (node == null || _dirtyNodes.Contains(node.Id))
+            {
                 return;
+            }
 
             // 幅優先探索で下流ノードを収集（非再帰）
             var queue = new Queue<Node>();
@@ -41,13 +44,17 @@ namespace RayTraceVS.WPF.Utils
                 
                 // 既にDirtyなら処理済みとしてスキップ（重複防止）
                 if (!_dirtyNodes.Add(current.Id))
+                {
                     continue;
+                }
 
                 // ノードのキャッシュを無効化（イベント発火なし）
                 current.InvalidateCacheOnly();
 
                 // 下流ノードをキューに追加
-                foreach (var downstream in _getDownstreamNodes(current))
+                var downstreamNodes = _getDownstreamNodes(current).ToList();
+                
+                foreach (var downstream in downstreamNodes)
                 {
                     if (!_dirtyNodes.Contains(downstream.Id))
                     {

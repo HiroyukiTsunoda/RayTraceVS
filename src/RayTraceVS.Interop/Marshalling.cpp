@@ -1,7 +1,18 @@
+// Define WIN32_LEAN_AND_MEAN before including Windows headers to avoid IServiceProvider conflict
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
 #include "Marshalling.h"
+#include <msclr/marshal_cppstd.h>
 
 namespace RayTraceVS::Interop
 {
+    std::string Marshalling::ToNativeString(System::String^ managedString)
+    {
+        if (managedString == nullptr)
+            return "";
+        return msclr::interop::marshal_as<std::string>(managedString);
+    }
+
     Bridge::CameraDataNative Marshalling::ToNativeCamera(CameraData managedCamera)
     {
         Bridge::CameraDataNative native;

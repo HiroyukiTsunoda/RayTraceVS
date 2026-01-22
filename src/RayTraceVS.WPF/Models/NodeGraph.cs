@@ -102,7 +102,8 @@ namespace RayTraceVS.WPF.Models
             foreach (var outputSocket in node.OutputSockets)
             {
                 var outgoingConnections = connections.Values
-                    .Where(c => c.OutputSocket?.Id == outputSocket.Id);
+                    .Where(c => c.OutputSocket?.Id == outputSocket.Id)
+                    .ToList();
                 
                 foreach (var conn in outgoingConnections)
                 {

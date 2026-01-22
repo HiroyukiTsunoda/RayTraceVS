@@ -1,6 +1,6 @@
 // 共通定義
 
-#define MAX_RECURSION_DEPTH 5
+#define MAX_RECURSION_DEPTH 4
 #define SHADOW_RAY_DEPTH 100  // Marker for shadow rays (depth >= this value)
 
 // Include NRD encoding helpers
@@ -10,6 +10,7 @@
 #define OBJECT_TYPE_SPHERE 0
 #define OBJECT_TYPE_PLANE 1
 #define OBJECT_TYPE_BOX 2
+#define OBJECT_TYPE_MESH 3
 
 // Light type constants
 #define LIGHT_TYPE_AMBIENT 0
@@ -280,6 +281,58 @@ StructuredBuffer<SphereData> Spheres : register(t1);
 StructuredBuffer<PlaneData> Planes : register(t2);
 StructuredBuffer<BoxData> Boxes : register(t3);
 StructuredBuffer<LightData> Lights : register(t4);
+
+// ============================================
+// Mesh Data Buffers (for FBX triangle meshes)
+// ============================================
+
+// メッシュ頂点データ（Position + Normal インターリーブ）- 32 bytes
+struct MeshVertex
+{
+    float3 position;    // 12 bytes
+    float padding1;     // 4 bytes -> 16
+    float3 normal;      // 12 bytes
+    float padding2;     // 4 bytes -> 32
+};
+
+// メッシュ情報（各メッシュ種類の頂点/インデックスオフセット）- 16 bytes
+struct MeshInfo
+{
+    uint vertexOffset;  // MeshVertices内の開始インデックス
+    uint indexOffset;   // MeshIndices内の開始インデックス
+    uint vertexCount;   // このメッシュの頂点数
+    uint indexCount;    // このメッシュのインデックス数
+};
+
+// メッシュマテリアル（インスタンスごと）- 64 bytes
+struct MeshMaterial
+{
+    float4 color;       // 16 bytes -> 16
+    float metallic;     // 4
+    float roughness;    // 4
+    float transmission; // 4
+    float ior;          // 4 -> 32
+    float specular;     // 4
+    float3 emission;    // 12 -> 48
+    float padding1;     // 4
+    float padding2;     // 4
+    float padding3;     // 4
+    float padding4;     // 4 -> 64
+};
+
+// メッシュインスタンス情報（TLASインスタンスごと）- 8 bytes
+struct MeshInstanceInfo
+{
+    uint meshTypeIndex;     // MeshInfos内のインデックス（どのメッシュ種類か）
+    uint materialIndex;     // MeshMaterials内のインデックス
+};
+
+// Mesh buffers (SRV)
+StructuredBuffer<MeshVertex> MeshVertices : register(t5);           // 全メッシュの頂点を統合
+StructuredBuffer<uint> MeshIndices : register(t6);                  // 全メッシュのインデックスを統合
+StructuredBuffer<MeshMaterial> MeshMaterials : register(t7);        // インスタンスごとのマテリアル
+StructuredBuffer<MeshInfo> MeshInfos : register(t8);                // メッシュ種類ごとのオフセット情報
+StructuredBuffer<MeshInstanceInfo> MeshInstances : register(t9);    // インスタンスごとの参照情報
 
 // Photon map buffer (for caustics)
 RWStructuredBuffer<Photon> PhotonMap : register(u1);

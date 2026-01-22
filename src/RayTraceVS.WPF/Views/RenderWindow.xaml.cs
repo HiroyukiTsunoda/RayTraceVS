@@ -20,6 +20,8 @@ namespace RayTraceVS.WPF.Views
         BoxData[] Boxes,
         CameraData Camera,
         LightData[] Lights,
+        MeshInstanceData[] MeshInstances,
+        MeshCacheData[] MeshCaches,
         int SamplesPerPixel,
         int MaxBounces,
         float Exposure,
@@ -49,7 +51,7 @@ namespace RayTraceVS.WPF.Views
         
         // テンポラルデノイズのための最低描画回数
         // 1回目: 履歴なし、2回目: テンポラル蓄積開始、3回目以降: 安定化
-        private const int MinRenderPassesForTemporal = 5;
+        private const int MinRenderPassesForTemporal = 1; // DEBUG: reduced from 5 to isolate crash
 
         public RenderWindow()
         {
@@ -83,6 +85,7 @@ namespace RayTraceVS.WPF.Views
             var sceneParams = new SceneParams(
                 evaluated.Item1, evaluated.Item2, evaluated.Item3,
                 evaluated.Item4, evaluated.Item5,
+                evaluated.Item6, evaluated.Item7,  // MeshInstances, MeshCaches
                 evaluated.SamplesPerPixel, evaluated.MaxBounces,
                 evaluated.Exposure, evaluated.ToneMapOperator,
                 evaluated.DenoiserStabilization, evaluated.ShadowStrength,
@@ -222,6 +225,7 @@ namespace RayTraceVS.WPF.Views
             var sceneParams = new SceneParams(
                 evaluated.Item1, evaluated.Item2, evaluated.Item3,
                 evaluated.Item4, evaluated.Item5,
+                evaluated.Item6, evaluated.Item7,  // MeshInstances, MeshCaches
                 evaluated.SamplesPerPixel, evaluated.MaxBounces,
                 evaluated.Exposure, evaluated.ToneMapOperator,
                 evaluated.DenoiserStabilization, evaluated.ShadowStrength,
@@ -270,6 +274,7 @@ namespace RayTraceVS.WPF.Views
                             renderService.UpdateScene(
                                 sceneParams.Spheres, sceneParams.Planes, sceneParams.Boxes,
                                 sceneParams.Camera, sceneParams.Lights,
+                                sceneParams.MeshInstances, sceneParams.MeshCaches,
                                 sceneParams.SamplesPerPixel, sceneParams.MaxBounces,
                                 sceneParams.Exposure, sceneParams.ToneMapOperator,
                                 sceneParams.DenoiserStabilization, sceneParams.ShadowStrength,

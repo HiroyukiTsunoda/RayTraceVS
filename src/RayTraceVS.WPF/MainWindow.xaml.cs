@@ -329,6 +329,17 @@ namespace RayTraceVS.WPF
                 {
                     NodeEditor.RefreshConnectionLines();
                 }), System.Windows.Threading.DispatcherPriority.Loaded);
+                
+                // キャッシュにないFBXノードが除外された場合は警告を表示
+                if (sceneService.RemovedNodeInfos.Count > 0)
+                {
+                    var message = "以下のノードはキャッシュにメッシュデータがないため除外されました：\n\n" +
+                                  string.Join("\n", sceneService.RemovedNodeInfos) +
+                                  "\n\nResource/Modelフォルダに対応するFBXファイルを配置して再起動してください。";
+                    
+                    MessageBox.Show(message, "警告：ノードが除外されました",
+                                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
             }
         }
 

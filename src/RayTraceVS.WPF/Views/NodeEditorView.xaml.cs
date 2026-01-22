@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
@@ -8,6 +9,8 @@ using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using RayTraceVS.WPF.Commands;
 using RayTraceVS.WPF.ViewModels;
 using RayTraceVS.WPF.Models;
@@ -57,8 +60,13 @@ namespace RayTraceVS.WPF.Views
         private const double MaxZoom = 5.0;
         private const double ZoomSpeed = 0.001;
         
-        // 接続線のPath要素を管理（必ず最後に追加＝最前面に描画）
+        // 接続線のPath要素を管理（後方互換性のため維持）
         private Dictionary<NodeConnection, Path> connectionPaths = new Dictionary<NodeConnection, Path>();
+        
+        // 分割された接続線のPath要素を管理
+        private Dictionary<NodeConnection, Path> middlePaths = new Dictionary<NodeConnection, Path>();
+        private Dictionary<NodeConnection, Path> startSegmentPaths = new Dictionary<NodeConnection, Path>();
+        private Dictionary<NodeConnection, Path> endSegmentPaths = new Dictionary<NodeConnection, Path>();
 
         public NodeEditorView()
         {
@@ -69,6 +77,8 @@ namespace RayTraceVS.WPF.Views
             transformGroup.Children.Add(panTransform);
             NodeCanvas.RenderTransform = transformGroup;
             NodeCanvas.RenderTransformOrigin = new Point(0, 0);
+            // 新しいレイヤーはNodeCanvas内にあるため、親のトランスフォームが適用される
+            // 後方互換性のためConnectionLayerのトランスフォームも設定
             ConnectionLayer.RenderTransform = transformGroup;
             ConnectionLayer.RenderTransformOrigin = new Point(0, 0);
             
@@ -97,7 +107,7 @@ namespace RayTraceVS.WPF.Views
         }
         
         /// <summary>
-        /// 接続線のPath要素を再構築（ConnectionLayerに追加）
+        /// 接続線のPath要素を再構築（分割されたレイヤーに追加）
         /// </summary>
         private void RebuildConnectionPaths()
         {
@@ -105,16 +115,71 @@ namespace RayTraceVS.WPF.Views
             if (viewModel == null) return;
 
             // 既存の接続線Pathをすべて削除
+            ClearAllConnectionPaths();
+
+            // 新しい接続線Pathを追加
+            foreach (var connection in viewModel.Connections)
+            {
+                AddConnectionToLayers(connection);
+            }
+        }
+
+        /// <summary>
+        /// すべての接続線Pathをクリア
+        /// </summary>
+        private void ClearAllConnectionPaths()
+        {
+            // 中間部分
+            foreach (var path in middlePaths.Values)
+            {
+                MiddleConnectionLayer.Children.Remove(path);
+            }
+            middlePaths.Clear();
+
+            // 始点側端部分
+            foreach (var path in startSegmentPaths.Values)
+            {
+                EndSegmentLayer.Children.Remove(path);
+            }
+            startSegmentPaths.Clear();
+
+            // 終点側端部分
+            foreach (var path in endSegmentPaths.Values)
+            {
+                EndSegmentLayer.Children.Remove(path);
+            }
+            endSegmentPaths.Clear();
+
+            // 選択ノード用レイヤー
+            SelectedConnectionLayer.Children.Clear();
+
+            // 後方互換性のため古いPathも削除
             foreach (var path in connectionPaths.Values)
             {
                 ConnectionLayer.Children.Remove(path);
             }
             connectionPaths.Clear();
+        }
 
-            // 新しい接続線Pathを追加（ConnectionLayerに追加＝ノードの下に描画）
-            foreach (var connection in viewModel.Connections)
+        /// <summary>
+        /// 接続線を適切なレイヤーに追加
+        /// </summary>
+        private void AddConnectionToLayers(NodeConnection connection)
+        {
+            var outputNode = connection.OutputSocket?.ParentNode;
+            var inputNode = connection.InputSocket?.ParentNode;
+            
+            if (outputNode == null || inputNode == null)
+                return;
+
+            bool isOutputSelected = outputNode.IsSelected;
+            bool isInputSelected = inputNode.IsSelected;
+            bool isSelected = isOutputSelected || isInputSelected;
+
+            if (isSelected)
             {
-                var path = new Path
+                // 選択ノードの接続線は全体をSelectedConnectionLayerに描画
+                var fullPath = new Path
                 {
                     Stroke = connection.ConnectionColor,
                     StrokeThickness = 3,
@@ -122,21 +187,107 @@ namespace RayTraceVS.WPF.Views
                     IsHitTestVisible = false,
                     Opacity = 0.9
                 };
+                SelectedConnectionLayer.Children.Add(fullPath);
+                connectionPaths[connection] = fullPath;
                 
-                // ConnectionLayerに追加（ノードの下に描画される）
-                ConnectionLayer.Children.Add(path);
-                connectionPaths[connection] = path;
-                
-                // 接続の変更を監視
-                connection.PropertyChanged += (s, e) =>
-                {
-                    if (e.PropertyName == nameof(NodeConnection.PathGeometry) && connectionPaths.TryGetValue(connection, out var p))
-                    {
-                        p.Data = connection.PathGeometry;
-                    }
-                };
+                // 変更を監視
+                connection.PropertyChanged += ConnectionPropertyChangedHandler;
             }
-            
+            else
+            {
+                // 非選択ノードの接続線は分割して描画
+                
+                // 中間部分（最下層）
+                var middlePath = new Path
+                {
+                    Stroke = connection.ConnectionColor,
+                    StrokeThickness = 3,
+                    Data = connection.MiddlePathGeometry,
+                    IsHitTestVisible = false,
+                    Opacity = 0.9
+                };
+                MiddleConnectionLayer.Children.Add(middlePath);
+                middlePaths[connection] = middlePath;
+
+                // 始点側端部分（出力ノードのZIndexに合わせる）
+                var startPath = new Path
+                {
+                    Stroke = connection.ConnectionColor,
+                    StrokeThickness = 3,
+                    Data = connection.StartSegmentGeometry,
+                    IsHitTestVisible = false,
+                    Opacity = 0.9
+                };
+                Panel.SetZIndex(startPath, outputNode.CreationIndex + 1);
+                EndSegmentLayer.Children.Add(startPath);
+                startSegmentPaths[connection] = startPath;
+
+                // 終点側端部分（入力ノードのZIndexに合わせる）
+                var endPath = new Path
+                {
+                    Stroke = connection.ConnectionColor,
+                    StrokeThickness = 3,
+                    Data = connection.EndSegmentGeometry,
+                    IsHitTestVisible = false,
+                    Opacity = 0.9
+                };
+                Panel.SetZIndex(endPath, inputNode.CreationIndex + 1);
+                EndSegmentLayer.Children.Add(endPath);
+                endSegmentPaths[connection] = endPath;
+
+                // 変更を監視
+                connection.PropertyChanged += ConnectionSegmentPropertyChangedHandler;
+            }
+        }
+
+        /// <summary>
+        /// 接続線のプロパティ変更ハンドラ（選択時用）
+        /// </summary>
+        private void ConnectionPropertyChangedHandler(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (sender is NodeConnection connection && 
+                e.PropertyName == nameof(NodeConnection.PathGeometry) && 
+                connectionPaths.TryGetValue(connection, out var path))
+            {
+                path.Data = connection.PathGeometry;
+            }
+        }
+
+        /// <summary>
+        /// 接続線のプロパティ変更ハンドラ（非選択時の分割表示用）
+        /// </summary>
+        private void ConnectionSegmentPropertyChangedHandler(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (sender is not NodeConnection connection)
+                return;
+
+            switch (e.PropertyName)
+            {
+                case nameof(NodeConnection.MiddlePathGeometry):
+                    if (middlePaths.TryGetValue(connection, out var middlePath))
+                        middlePath.Data = connection.MiddlePathGeometry;
+                    break;
+                case nameof(NodeConnection.StartSegmentGeometry):
+                    if (startSegmentPaths.TryGetValue(connection, out var startPath))
+                        startPath.Data = connection.StartSegmentGeometry;
+                    break;
+                case nameof(NodeConnection.EndSegmentGeometry):
+                    if (endSegmentPaths.TryGetValue(connection, out var endPath))
+                        endPath.Data = connection.EndSegmentGeometry;
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// 選択状態が変更されたときに接続線のレイヤーを更新
+        /// </summary>
+        private void UpdateConnectionLayersForSelectionChange()
+        {
+            var viewModel = GetViewModel();
+            if (viewModel == null) return;
+
+            // 接続線を再構築
+            RebuildConnectionPaths();
         }
 
         /// <summary>
@@ -489,6 +640,9 @@ namespace RayTraceVS.WPF.Views
                 selectedNodes.Add(node);
                 viewModel.SelectedNode = node; // プロパティパネル用に設定
                 
+                // 選択状態が変更されたので接続線のレイヤーを更新
+                UpdateConnectionLayersForSelectionChange();
+                
                 isDraggingNode = true;
                 draggedNode = node;
                 
@@ -709,6 +863,34 @@ namespace RayTraceVS.WPF.Views
             HandleDeleteKey(e);
         }
         
+        /// <summary>
+        /// PreviewKeyDown - コピー＆ペーストのショートカットを処理（トンネリングイベント）
+        /// </summary>
+        private void UserControl_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            // TextBoxにフォーカスがある場合は、テキスト編集のCTRL+C/Vを優先
+            if (Keyboard.FocusedElement is TextBox)
+            {
+                return;
+            }
+            
+            // CTRL+C: コピー
+            if (e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.Control)
+            {
+                HandleCopy();
+                e.Handled = true;
+                return;
+            }
+            
+            // CTRL+V: ペースト
+            if (e.Key == Key.V && Keyboard.Modifiers == ModifierKeys.Control)
+            {
+                HandlePaste();
+                e.Handled = true;
+                return;
+            }
+        }
+        
         private void UserControl_KeyDown(object sender, KeyEventArgs e)
         {
             HandleDeleteKey(e);
@@ -723,6 +905,733 @@ namespace RayTraceVS.WPF.Views
                 e.Handled = true;
             }
         }
+        
+        #region コピー＆ペースト
+        
+        /// <summary>
+        /// クリップボードにコピーするデータの形式
+        /// </summary>
+        private const string ClipboardFormat = "RayTraceVS.NodeClipboard";
+        
+        /// <summary>
+        /// 選択されたノードをクリップボードにコピー
+        /// </summary>
+        private void HandleCopy()
+        {
+            if (selectedNodes.Count == 0) return;
+            
+            var viewModel = GetViewModel();
+            if (viewModel == null) return;
+            
+            try
+            {
+                // 選択されたノードのIDセット
+                var selectedNodeIds = new HashSet<Guid>(selectedNodes.Select(n => n.Id));
+                
+                // ノードをシリアライズ
+                var nodeDataList = selectedNodes.Select(n => SerializeNodeForClipboard(n)).ToList();
+                
+                // 選択されたノード間の接続のみをシリアライズ
+                var connectionDataList = viewModel.Connections
+                    .Where(c => c.OutputSocket?.ParentNode != null && c.InputSocket?.ParentNode != null &&
+                               selectedNodeIds.Contains(c.OutputSocket.ParentNode.Id) &&
+                               selectedNodeIds.Contains(c.InputSocket.ParentNode.Id))
+                    .Select(c => new ClipboardConnectionData
+                    {
+                        OutputNodeId = c.OutputSocket!.ParentNode!.Id,
+                        OutputSocketName = c.OutputSocket.Name,
+                        InputNodeId = c.InputSocket!.ParentNode!.Id,
+                        InputSocketName = c.InputSocket.Name
+                    })
+                    .ToList();
+                
+                var clipboardData = new ClipboardData
+                {
+                    Nodes = nodeDataList,
+                    Connections = connectionDataList
+                };
+                
+                var json = JsonConvert.SerializeObject(clipboardData, Formatting.Indented);
+                
+                // クリップボードに設定
+                var dataObject = new DataObject();
+                dataObject.SetData(ClipboardFormat, json);
+                dataObject.SetData(DataFormats.Text, json); // テキストとしてもコピー（デバッグ用）
+                Clipboard.SetDataObject(dataObject, true);
+                
+                Debug.WriteLine($"コピー完了: {selectedNodes.Count}個のノード, {connectionDataList.Count}個の接続");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"コピー失敗: {ex.Message}");
+            }
+        }
+        
+        /// <summary>
+        /// クリップボードからノードをペースト
+        /// </summary>
+        private void HandlePaste()
+        {
+            var viewModel = GetViewModel();
+            if (viewModel == null) return;
+            
+            try
+            {
+                // クリップボードからデータを取得
+                var dataObject = Clipboard.GetDataObject();
+                if (dataObject == null) return;
+                
+                string? json = null;
+                if (dataObject.GetDataPresent(ClipboardFormat))
+                {
+                    json = dataObject.GetData(ClipboardFormat) as string;
+                }
+                else if (dataObject.GetDataPresent(DataFormats.Text))
+                {
+                    // テキストとして取得を試みる
+                    json = dataObject.GetData(DataFormats.Text) as string;
+                }
+                
+                if (string.IsNullOrEmpty(json)) return;
+                
+                var clipboardData = JsonConvert.DeserializeObject<ClipboardData>(json);
+                if (clipboardData?.Nodes == null || clipboardData.Nodes.Count == 0) return;
+                
+                // マウス位置を取得（Canvas座標系）
+                var mousePos = Mouse.GetPosition(NodeCanvas);
+                
+                // コピー元のノードの位置の中心を計算
+                double minX = clipboardData.Nodes.Min(n => n.PositionX);
+                double minY = clipboardData.Nodes.Min(n => n.PositionY);
+                double maxX = clipboardData.Nodes.Max(n => n.PositionX);
+                double maxY = clipboardData.Nodes.Max(n => n.PositionY);
+                double centerX = (minX + maxX) / 2;
+                double centerY = (minY + maxY) / 2;
+                
+                // オフセット（マウス位置を中心にペースト）
+                double offsetX = mousePos.X - centerX;
+                double offsetY = mousePos.Y - centerY;
+                
+                // 旧ID -> 新ノードのマッピング
+                var idMapping = new Dictionary<Guid, Node>();
+                var newNodes = new List<Node>();
+                var newConnections = new List<NodeConnection>();
+                
+                // ノードをデシリアライズして新しいIDを割り当て
+                foreach (var nodeData in clipboardData.Nodes)
+                {
+                    var node = DeserializeNodeFromClipboard(nodeData);
+                    if (node != null)
+                    {
+                        // 新しい位置を設定
+                        node.Position = new Point(nodeData.PositionX + offsetX, nodeData.PositionY + offsetY);
+                        idMapping[nodeData.Id] = node;
+                        newNodes.Add(node);
+                    }
+                }
+                
+                // 接続を復元
+                if (clipboardData.Connections != null)
+                {
+                    foreach (var connData in clipboardData.Connections)
+                    {
+                        if (idMapping.TryGetValue(connData.OutputNodeId, out var outputNode) &&
+                            idMapping.TryGetValue(connData.InputNodeId, out var inputNode))
+                        {
+                            var outputSocket = outputNode.OutputSockets.FirstOrDefault(s => s.Name == connData.OutputSocketName);
+                            var inputSocket = inputNode.InputSockets.FirstOrDefault(s => s.Name == connData.InputSocketName);
+                            
+                            if (outputSocket != null && inputSocket != null)
+                            {
+                                newConnections.Add(new NodeConnection(outputSocket, inputSocket));
+                            }
+                        }
+                    }
+                }
+                
+                // 選択をクリア
+                ClearAllSelections(viewModel);
+                
+                // コマンドとして実行（Undo対応）
+                if (newNodes.Count > 0)
+                {
+                    var composite = new CompositeCommand($"{newNodes.Count}個のノードをペースト");
+                    
+                    foreach (var node in newNodes)
+                    {
+                        composite.Add(new AddNodeCommand(viewModel, node));
+                    }
+                    
+                    foreach (var connection in newConnections)
+                    {
+                        composite.Add(new AddConnectionCommand(viewModel, connection));
+                    }
+                    
+                    viewModel.CommandManager.Execute(composite);
+                    
+                    // ペーストしたノードを選択状態にする
+                    foreach (var node in newNodes)
+                    {
+                        node.IsSelected = true;
+                        selectedNodes.Add(node);
+                    }
+                    
+                    Debug.WriteLine($"ペースト完了: {newNodes.Count}個のノード, {newConnections.Count}個の接続");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"ペースト失敗: {ex.Message}");
+            }
+        }
+        
+        /// <summary>
+        /// ノードをクリップボード用にシリアライズ
+        /// </summary>
+        private ClipboardNodeData SerializeNodeForClipboard(Node node)
+        {
+            return new ClipboardNodeData
+            {
+                Id = node.Id,
+                Type = node.GetType().Name,
+                Title = node.Title,
+                PositionX = node.Position.X,
+                PositionY = node.Position.Y,
+                Properties = SerializeNodeProperties(node)
+            };
+        }
+        
+        /// <summary>
+        /// クリップボードデータからノードをデシリアライズ（新しいIDを割り当て）
+        /// </summary>
+        private Node? DeserializeNodeFromClipboard(ClipboardNodeData data)
+        {
+            Node? node = data.Type switch
+            {
+                nameof(SphereNode) => new SphereNode(),
+                nameof(PlaneNode) => new PlaneNode(),
+                nameof(BoxNode) => new BoxNode(),
+                nameof(FBXMeshNode) => new FBXMeshNode(),
+                nameof(CameraNode) => new CameraNode(),
+                nameof(PointLightNode) => new PointLightNode(),
+                nameof(AmbientLightNode) => new AmbientLightNode(),
+                nameof(DirectionalLightNode) => new DirectionalLightNode(),
+                nameof(MaterialBSDFNode) => new MaterialBSDFNode(),
+                nameof(ColorNode) => new ColorNode(),
+                nameof(EmissionMaterialNode) => new EmissionMaterialNode(),
+                nameof(UniversalPBRNode) => new UniversalPBRNode(),
+                nameof(SceneNode) => new SceneNode(),
+                nameof(Vector3Node) => new Vector3Node(),
+                nameof(Vector4Node) => new Vector4Node(),
+                nameof(FloatNode) => new FloatNode(),
+                nameof(AddNode) => new AddNode(),
+                nameof(SubNode) => new SubNode(),
+                nameof(MulNode) => new MulNode(),
+                nameof(DivNode) => new DivNode(),
+                nameof(TransformNode) => new TransformNode(),
+                nameof(CombineTransformNode) => new CombineTransformNode(),
+                _ => null
+            };
+
+            if (node != null)
+            {
+                // 新しいIDを自動的に生成（コンストラクタで）
+                // 位置は呼び出し元で設定
+                DeserializeNodeProperties(node, data.Properties);
+            }
+
+            return node;
+        }
+        
+        /// <summary>
+        /// ノードのプロパティをシリアライズ
+        /// </summary>
+        private Dictionary<string, object?> SerializeNodeProperties(Node node)
+        {
+            var properties = new Dictionary<string, object?>();
+
+            switch (node)
+            {
+                case SphereNode sphere:
+                    properties["Transform"] = sphere.ObjectTransform;
+                    properties["Radius"] = sphere.Radius;
+                    break;
+
+                case PlaneNode plane:
+                    properties["Transform"] = plane.ObjectTransform;
+                    properties["Normal"] = plane.Normal;
+                    break;
+
+                case BoxNode box:
+                    properties["Transform"] = box.ObjectTransform;
+                    properties["Size"] = box.Size;
+                    break;
+
+                case FBXMeshNode fbxMesh:
+                    properties["MeshName"] = fbxMesh.MeshName;
+                    properties["Transform"] = fbxMesh.ObjectTransform;
+                    break;
+
+                case CameraNode camera:
+                    properties["CameraPosition"] = camera.CameraPosition;
+                    properties["LookAt"] = camera.LookAt;
+                    properties["Up"] = camera.Up;
+                    properties["FieldOfView"] = camera.FieldOfView;
+                    properties["Near"] = camera.Near;
+                    properties["Far"] = camera.Far;
+                    properties["ApertureSize"] = camera.ApertureSize;
+                    properties["FocusDistance"] = camera.FocusDistance;
+                    break;
+
+                case PointLightNode pointLight:
+                    properties["LightPosition"] = pointLight.LightPosition;
+                    properties["Color"] = pointLight.Color;
+                    properties["Intensity"] = pointLight.Intensity;
+                    properties["Attenuation"] = pointLight.Attenuation;
+                    break;
+
+                case AmbientLightNode ambientLight:
+                    properties["Color"] = ambientLight.Color;
+                    properties["Intensity"] = ambientLight.Intensity;
+                    break;
+
+                case DirectionalLightNode directionalLight:
+                    properties["Direction"] = directionalLight.Direction;
+                    properties["Color"] = directionalLight.Color;
+                    properties["Intensity"] = directionalLight.Intensity;
+                    break;
+
+                case MaterialBSDFNode material:
+                    properties["BaseColor"] = material.BaseColor;
+                    properties["Metallic"] = material.Metallic;
+                    properties["Roughness"] = material.Roughness;
+                    properties["Transmission"] = material.Transmission;
+                    properties["IOR"] = material.IOR;
+                    properties["Emission"] = material.Emission;
+                    break;
+
+                case ColorNode color:
+                    properties["R"] = color.R;
+                    properties["G"] = color.G;
+                    properties["B"] = color.B;
+                    properties["A"] = color.A;
+                    break;
+
+                case EmissionMaterialNode emission:
+                    properties["EmissionColor"] = emission.EmissionColor;
+                    properties["Strength"] = emission.Strength;
+                    properties["BaseColor"] = emission.BaseColor;
+                    break;
+
+                case UniversalPBRNode universalPBR:
+                    properties["BaseColor"] = universalPBR.BaseColor;
+                    properties["Metallic"] = universalPBR.Metallic;
+                    properties["Roughness"] = universalPBR.Roughness;
+                    properties["Emissive"] = universalPBR.Emissive;
+                    break;
+
+                case SceneNode sceneNode:
+                    var objectSocketNames = sceneNode.InputSockets
+                        .Where(s => s.SocketType == SocketType.Object)
+                        .Select(s => s.Name)
+                        .ToList();
+                    var lightSocketNames = sceneNode.InputSockets
+                        .Where(s => s.SocketType == SocketType.Light)
+                        .Select(s => s.Name)
+                        .ToList();
+                    properties["ObjectSocketNames"] = objectSocketNames;
+                    properties["LightSocketNames"] = lightSocketNames;
+                    properties["SamplesPerPixel"] = sceneNode.SamplesPerPixel;
+                    properties["MaxBounces"] = sceneNode.MaxBounces;
+                    properties["Exposure"] = sceneNode.Exposure;
+                    properties["ToneMapOperator"] = sceneNode.ToneMapOperator;
+                    properties["DenoiserStabilization"] = sceneNode.DenoiserStabilization;
+                    properties["ShadowStrength"] = sceneNode.ShadowStrength;
+                    properties["EnableDenoiser"] = sceneNode.EnableDenoiser;
+                    properties["Gamma"] = sceneNode.Gamma;
+                    break;
+
+                case Vector3Node vector3:
+                    properties["X"] = vector3.X;
+                    properties["Y"] = vector3.Y;
+                    properties["Z"] = vector3.Z;
+                    break;
+
+                case Vector4Node vector4:
+                    properties["X"] = vector4.X;
+                    properties["Y"] = vector4.Y;
+                    properties["Z"] = vector4.Z;
+                    properties["W"] = vector4.W;
+                    break;
+
+                case FloatNode floatNode:
+                    properties["Value"] = floatNode.Value;
+                    break;
+
+                case TransformNode transformNode:
+                    properties["PositionX"] = transformNode.PositionX;
+                    properties["PositionY"] = transformNode.PositionY;
+                    properties["PositionZ"] = transformNode.PositionZ;
+                    properties["RotationX"] = transformNode.RotationX;
+                    properties["RotationY"] = transformNode.RotationY;
+                    properties["RotationZ"] = transformNode.RotationZ;
+                    properties["ScaleX"] = transformNode.ScaleX;
+                    properties["ScaleY"] = transformNode.ScaleY;
+                    properties["ScaleZ"] = transformNode.ScaleZ;
+                    break;
+
+                case CombineTransformNode:
+                    break;
+            }
+
+            return properties;
+        }
+
+        /// <summary>
+        /// ノードのプロパティをデシリアライズ
+        /// </summary>
+        private void DeserializeNodeProperties(Node node, Dictionary<string, object?>? properties)
+        {
+            if (properties == null) return;
+
+            switch (node)
+            {
+                case SphereNode sphere:
+                    if (properties.TryGetValue("Transform", out var sphereTransform))
+                        sphere.ObjectTransform = ConvertToTransform(sphereTransform);
+                    if (properties.TryGetValue("Radius", out var radius))
+                        sphere.Radius = Convert.ToSingle(radius);
+                    break;
+
+                case PlaneNode plane:
+                    if (properties.TryGetValue("Transform", out var planeTransform))
+                        plane.ObjectTransform = ConvertToTransform(planeTransform);
+                    if (properties.TryGetValue("Normal", out var normal))
+                        plane.Normal = ConvertToVector3(normal);
+                    break;
+
+                case BoxNode box:
+                    if (properties.TryGetValue("Transform", out var boxTransform))
+                        box.ObjectTransform = ConvertToTransform(boxTransform);
+                    if (properties.TryGetValue("Size", out var size))
+                        box.Size = ConvertToVector3(size);
+                    break;
+
+                case FBXMeshNode fbxMesh:
+                    if (properties.TryGetValue("MeshName", out var meshNameObj))
+                        fbxMesh.MeshName = meshNameObj?.ToString() ?? "";
+                    if (properties.TryGetValue("Transform", out var fbxTransform))
+                        fbxMesh.ObjectTransform = ConvertToTransform(fbxTransform);
+                    break;
+
+                case CameraNode camera:
+                    if (properties.TryGetValue("CameraPosition", out var camPos))
+                        camera.CameraPosition = ConvertToVector3(camPos);
+                    if (properties.TryGetValue("LookAt", out var lookAt))
+                        camera.LookAt = ConvertToVector3(lookAt);
+                    if (properties.TryGetValue("Up", out var up))
+                        camera.Up = ConvertToVector3(up);
+                    if (properties.TryGetValue("FieldOfView", out var fov))
+                        camera.FieldOfView = Convert.ToSingle(fov);
+                    if (properties.TryGetValue("Near", out var near))
+                        camera.Near = Convert.ToSingle(near);
+                    if (properties.TryGetValue("Far", out var far))
+                        camera.Far = Convert.ToSingle(far);
+                    if (properties.TryGetValue("ApertureSize", out var aperture))
+                        camera.ApertureSize = Convert.ToSingle(aperture);
+                    if (properties.TryGetValue("FocusDistance", out var focusDist))
+                        camera.FocusDistance = Convert.ToSingle(focusDist);
+                    break;
+
+                case PointLightNode pointLight:
+                    if (properties.TryGetValue("LightPosition", out var lightPos))
+                        pointLight.LightPosition = ConvertToVector3(lightPos);
+                    if (properties.TryGetValue("Color", out var pointLightColor))
+                        pointLight.Color = ConvertToVector4(pointLightColor);
+                    if (properties.TryGetValue("Intensity", out var pointIntensity))
+                        pointLight.Intensity = Convert.ToSingle(pointIntensity);
+                    if (properties.TryGetValue("Attenuation", out var attenuation))
+                        pointLight.Attenuation = Convert.ToSingle(attenuation);
+                    break;
+
+                case AmbientLightNode ambientLight:
+                    if (properties.TryGetValue("Color", out var ambientColor))
+                        ambientLight.Color = ConvertToVector4(ambientColor);
+                    if (properties.TryGetValue("Intensity", out var ambientIntensity))
+                        ambientLight.Intensity = Convert.ToSingle(ambientIntensity);
+                    break;
+
+                case DirectionalLightNode directionalLight:
+                    if (properties.TryGetValue("Direction", out var direction))
+                        directionalLight.Direction = ConvertToVector3(direction);
+                    if (properties.TryGetValue("Color", out var dirColor))
+                        directionalLight.Color = ConvertToVector4(dirColor);
+                    if (properties.TryGetValue("Intensity", out var dirIntensity))
+                        directionalLight.Intensity = Convert.ToSingle(dirIntensity);
+                    break;
+
+                case MaterialBSDFNode material:
+                    if (properties.TryGetValue("BaseColor", out var baseColor))
+                        material.BaseColor = ConvertToVector4(baseColor);
+                    if (properties.TryGetValue("Metallic", out var metallic))
+                        material.Metallic = Convert.ToSingle(metallic);
+                    if (properties.TryGetValue("Roughness", out var roughness))
+                        material.Roughness = Convert.ToSingle(roughness);
+                    if (properties.TryGetValue("Transmission", out var transmission))
+                        material.Transmission = Convert.ToSingle(transmission);
+                    if (properties.TryGetValue("IOR", out var ior))
+                        material.IOR = Convert.ToSingle(ior);
+                    if (properties.TryGetValue("Emission", out var emission))
+                        material.Emission = ConvertToVector4(emission);
+                    break;
+
+                case ColorNode color:
+                    if (properties.TryGetValue("R", out var r))
+                        color.R = Convert.ToSingle(r);
+                    if (properties.TryGetValue("G", out var g))
+                        color.G = Convert.ToSingle(g);
+                    if (properties.TryGetValue("B", out var b))
+                        color.B = Convert.ToSingle(b);
+                    if (properties.TryGetValue("A", out var a))
+                        color.A = Convert.ToSingle(a);
+                    break;
+
+                case EmissionMaterialNode emissionMat:
+                    if (properties.TryGetValue("EmissionColor", out var emissionColor))
+                        emissionMat.EmissionColor = ConvertToVector4(emissionColor);
+                    if (properties.TryGetValue("Strength", out var strength))
+                        emissionMat.Strength = Convert.ToSingle(strength);
+                    if (properties.TryGetValue("BaseColor", out var emissionBaseColor))
+                        emissionMat.BaseColor = ConvertToVector4(emissionBaseColor);
+                    break;
+
+                case UniversalPBRNode universalPBR:
+                    if (properties.TryGetValue("BaseColor", out var pbrBaseColor))
+                        universalPBR.BaseColor = ConvertToVector4(pbrBaseColor);
+                    if (properties.TryGetValue("Metallic", out var pbrMetallic))
+                        universalPBR.Metallic = Convert.ToSingle(pbrMetallic);
+                    if (properties.TryGetValue("Roughness", out var pbrRoughness))
+                        universalPBR.Roughness = Convert.ToSingle(pbrRoughness);
+                    if (properties.TryGetValue("Emissive", out var pbrEmissive))
+                        universalPBR.Emissive = ConvertToVector3(pbrEmissive);
+                    break;
+
+                case SceneNode sceneNode:
+                    if (properties.TryGetValue("ObjectSocketNames", out var objSocketNamesObj) && objSocketNamesObj is JArray objSocketArray)
+                    {
+                        var objectSocketNames = objSocketArray.ToObject<List<string>>() ?? new List<string>();
+                        var existingObjectSockets = sceneNode.InputSockets.Where(s => s.SocketType == SocketType.Object).ToList();
+                        foreach (var socket in existingObjectSockets)
+                        {
+                            sceneNode.InputSockets.Remove(socket);
+                        }
+                        foreach (var socketName in objectSocketNames)
+                        {
+                            sceneNode.AddNamedInputSocket(socketName, SocketType.Object);
+                        }
+                    }
+                    
+                    if (properties.TryGetValue("LightSocketNames", out var lightSocketNamesObj) && lightSocketNamesObj is JArray lightSocketArray)
+                    {
+                        var lightSocketNames = lightSocketArray.ToObject<List<string>>() ?? new List<string>();
+                        var existingLightSockets = sceneNode.InputSockets.Where(s => s.SocketType == SocketType.Light).ToList();
+                        foreach (var socket in existingLightSockets)
+                        {
+                            sceneNode.InputSockets.Remove(socket);
+                        }
+                        foreach (var socketName in lightSocketNames)
+                        {
+                            sceneNode.AddNamedInputSocket(socketName, SocketType.Light);
+                        }
+                    }
+                    
+                    sceneNode.RestoreSocketCounters();
+                    
+                    if (properties.TryGetValue("SamplesPerPixel", out var samplesObj))
+                        sceneNode.SamplesPerPixel = Convert.ToInt32(samplesObj);
+                    if (properties.TryGetValue("MaxBounces", out var bouncesObj))
+                        sceneNode.MaxBounces = Convert.ToInt32(bouncesObj);
+                    if (properties.TryGetValue("Exposure", out var exposureObj))
+                        sceneNode.Exposure = Convert.ToSingle(exposureObj);
+                    if (properties.TryGetValue("ToneMapOperator", out var toneMapObj))
+                        sceneNode.ToneMapOperator = Convert.ToInt32(toneMapObj);
+                    if (properties.TryGetValue("DenoiserStabilization", out var stabObj))
+                        sceneNode.DenoiserStabilization = Convert.ToSingle(stabObj);
+                    if (properties.TryGetValue("ShadowStrength", out var shadowObj))
+                        sceneNode.ShadowStrength = Convert.ToSingle(shadowObj);
+                    if (properties.TryGetValue("EnableDenoiser", out var denoiserObj))
+                        sceneNode.EnableDenoiser = Convert.ToBoolean(denoiserObj);
+                    if (properties.TryGetValue("Gamma", out var gammaObj))
+                        sceneNode.Gamma = Convert.ToSingle(gammaObj);
+                    break;
+
+                case Vector3Node vector3:
+                    if (properties.TryGetValue("X", out var x))
+                        vector3.X = Convert.ToSingle(x);
+                    if (properties.TryGetValue("Y", out var y))
+                        vector3.Y = Convert.ToSingle(y);
+                    if (properties.TryGetValue("Z", out var z))
+                        vector3.Z = Convert.ToSingle(z);
+                    break;
+
+                case Vector4Node vector4:
+                    if (properties.TryGetValue("X", out var v4x))
+                        vector4.X = Convert.ToSingle(v4x);
+                    if (properties.TryGetValue("Y", out var v4y))
+                        vector4.Y = Convert.ToSingle(v4y);
+                    if (properties.TryGetValue("Z", out var v4z))
+                        vector4.Z = Convert.ToSingle(v4z);
+                    if (properties.TryGetValue("W", out var v4w))
+                        vector4.W = Convert.ToSingle(v4w);
+                    break;
+
+                case FloatNode floatNode:
+                    if (properties.TryGetValue("Value", out var value))
+                        floatNode.Value = Convert.ToSingle(value);
+                    break;
+
+                case TransformNode transformNode:
+                    if (properties.TryGetValue("PositionX", out var posX))
+                        transformNode.PositionX = Convert.ToSingle(posX);
+                    if (properties.TryGetValue("PositionY", out var posY))
+                        transformNode.PositionY = Convert.ToSingle(posY);
+                    if (properties.TryGetValue("PositionZ", out var posZ))
+                        transformNode.PositionZ = Convert.ToSingle(posZ);
+                    if (properties.TryGetValue("RotationX", out var rotX))
+                        transformNode.RotationX = Convert.ToSingle(rotX);
+                    if (properties.TryGetValue("RotationY", out var rotY))
+                        transformNode.RotationY = Convert.ToSingle(rotY);
+                    if (properties.TryGetValue("RotationZ", out var rotZ))
+                        transformNode.RotationZ = Convert.ToSingle(rotZ);
+                    if (properties.TryGetValue("ScaleX", out var scaleX))
+                        transformNode.ScaleX = Convert.ToSingle(scaleX);
+                    if (properties.TryGetValue("ScaleY", out var scaleY))
+                        transformNode.ScaleY = Convert.ToSingle(scaleY);
+                    if (properties.TryGetValue("ScaleZ", out var scaleZ))
+                        transformNode.ScaleZ = Convert.ToSingle(scaleZ);
+                    break;
+
+                case CombineTransformNode:
+                    break;
+            }
+        }
+        
+        /// <summary>
+        /// オブジェクトをVector3に変換
+        /// </summary>
+        private System.Numerics.Vector3 ConvertToVector3(object? obj)
+        {
+            if (obj == null)
+                return System.Numerics.Vector3.Zero;
+                
+            if (obj is System.Numerics.Vector3 vec3)
+                return vec3;
+                
+            if (obj is JObject jobj)
+            {
+                return new System.Numerics.Vector3(
+                    jobj["X"]?.Value<float>() ?? 0,
+                    jobj["Y"]?.Value<float>() ?? 0,
+                    jobj["Z"]?.Value<float>() ?? 0
+                );
+            }
+            
+            return System.Numerics.Vector3.Zero;
+        }
+        
+        /// <summary>
+        /// オブジェクトをVector4に変換
+        /// </summary>
+        private System.Numerics.Vector4 ConvertToVector4(object? obj)
+        {
+            if (obj == null)
+                return System.Numerics.Vector4.One;
+                
+            if (obj is System.Numerics.Vector4 vec4)
+                return vec4;
+                
+            if (obj is JObject jobj)
+            {
+                return new System.Numerics.Vector4(
+                    jobj["X"]?.Value<float>() ?? 0,
+                    jobj["Y"]?.Value<float>() ?? 0,
+                    jobj["Z"]?.Value<float>() ?? 0,
+                    jobj["W"]?.Value<float>() ?? 1
+                );
+            }
+            
+            return System.Numerics.Vector4.One;
+        }
+        
+        /// <summary>
+        /// オブジェクトをTransformに変換
+        /// </summary>
+        private Models.Transform ConvertToTransform(object? obj)
+        {
+            if (obj == null)
+                return Models.Transform.Identity;
+
+            if (obj is Models.Transform transform)
+                return transform;
+
+            if (obj is JObject jobj)
+            {
+                var position = ConvertToVector3(jobj["Position"]);
+                var rotationEuler = jobj["Rotation"] != null 
+                    ? ConvertToVector3(jobj["Rotation"]) 
+                    : ConvertToVector3(jobj["EulerAngles"]);
+                var scale = ConvertToVector3(jobj["Scale"]);
+
+                var result = new Models.Transform
+                {
+                    Position = position,
+                    Scale = scale
+                };
+                result.EulerAngles = rotationEuler;
+                return result;
+            }
+
+            return Models.Transform.Identity;
+        }
+        
+        #endregion コピー＆ペースト
+        
+        #region クリップボード用データクラス
+        
+        /// <summary>
+        /// クリップボードに保存するデータ
+        /// </summary>
+        private class ClipboardData
+        {
+            public List<ClipboardNodeData> Nodes { get; set; } = new();
+            public List<ClipboardConnectionData> Connections { get; set; } = new();
+        }
+        
+        /// <summary>
+        /// ノードのクリップボードデータ
+        /// </summary>
+        private class ClipboardNodeData
+        {
+            public Guid Id { get; set; }
+            public string Type { get; set; } = string.Empty;
+            public string Title { get; set; } = string.Empty;
+            public double PositionX { get; set; }
+            public double PositionY { get; set; }
+            public Dictionary<string, object?>? Properties { get; set; }
+        }
+        
+        /// <summary>
+        /// 接続のクリップボードデータ
+        /// </summary>
+        private class ClipboardConnectionData
+        {
+            public Guid OutputNodeId { get; set; }
+            public string OutputSocketName { get; set; } = string.Empty;
+            public Guid InputNodeId { get; set; }
+            public string InputSocketName { get; set; } = string.Empty;
+        }
+        
+        #endregion クリップボード用データクラス
         
         /// <summary>
         /// 選択されたノードを削除（MainWindowから呼び出し用）
@@ -911,6 +1820,9 @@ namespace RayTraceVS.WPF.Views
             node.IsSelected = true;
             selectedNodes.Add(node);
             viewModel.SelectedNode = node; // プロパティパネル用に設定
+            
+            // 選択状態が変更されたので接続線のレイヤーを更新
+            UpdateConnectionLayersForSelectionChange();
             
             isDraggingNode = true;
             draggedNode = node;
@@ -1484,7 +2396,7 @@ namespace RayTraceVS.WPF.Views
         {
             if (previewLine != null)
             {
-                ConnectionLayer.Children.Remove(previewLine);
+                SelectedConnectionLayer.Children.Remove(previewLine);
             }
 
             previewLine = new Line
@@ -1502,7 +2414,7 @@ namespace RayTraceVS.WPF.Views
             previewLine.X2 = 0;
             previewLine.Y2 = 0;
 
-            ConnectionLayer.Children.Add(previewLine);
+            SelectedConnectionLayer.Children.Add(previewLine);
         }
 
         // プレビュー線を更新
@@ -1584,7 +2496,7 @@ namespace RayTraceVS.WPF.Views
         {
             if (previewLine != null)
             {
-                ConnectionLayer.Children.Remove(previewLine);
+                SelectedConnectionLayer.Children.Remove(previewLine);
                 previewLine = null;
             }
             draggedSocketElement = null;
@@ -1790,6 +2702,8 @@ namespace RayTraceVS.WPF.Views
         /// </summary>
         private void ClearAllSelections(MainViewModel viewModel)
         {
+            bool hadSelection = selectedNodes.Count > 0 || viewModel.SelectedNode != null;
+            
             foreach (var node in selectedNodes)
             {
                 node.IsSelected = false;
@@ -1802,6 +2716,12 @@ namespace RayTraceVS.WPF.Views
                 viewModel.SelectedNode.IsSelected = false;
                 viewModel.SelectedNode = null;
             }
+            
+            // 選択状態が変更された場合、接続線のレイヤーを更新
+            if (hadSelection)
+            {
+                UpdateConnectionLayersForSelectionChange();
+            }
         }
 
         /// <summary>
@@ -1811,7 +2731,7 @@ namespace RayTraceVS.WPF.Views
         {
             if (selectionRectangle != null)
             {
-                ConnectionLayer.Children.Remove(selectionRectangle);
+                SelectedConnectionLayer.Children.Remove(selectionRectangle);
             }
 
             selectionRectangle = new Rectangle
@@ -1822,7 +2742,7 @@ namespace RayTraceVS.WPF.Views
                 IsHitTestVisible = false
             };
 
-            ConnectionLayer.Children.Add(selectionRectangle);
+            SelectedConnectionLayer.Children.Add(selectionRectangle);
             Canvas.SetLeft(selectionRectangle, startPoint.X);
             Canvas.SetTop(selectionRectangle, startPoint.Y);
             selectionRectangle.Width = 0;
@@ -1854,7 +2774,7 @@ namespace RayTraceVS.WPF.Views
         {
             if (selectionRectangle != null)
             {
-                ConnectionLayer.Children.Remove(selectionRectangle);
+                SelectedConnectionLayer.Children.Remove(selectionRectangle);
                 selectionRectangle = null;
             }
         }
@@ -1919,6 +2839,12 @@ namespace RayTraceVS.WPF.Views
             {
                 // 複数選択または選択なしの場合はプロパティパネルをクリア
                 viewModel.SelectedNode = null;
+            }
+            
+            // 選択状態が変更されたので接続線のレイヤーを更新
+            if (selectedNodes.Count > 0)
+            {
+                UpdateConnectionLayersForSelectionChange();
             }
         }
 

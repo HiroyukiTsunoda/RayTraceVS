@@ -139,4 +139,67 @@ namespace RayTraceVS::Interop
         float Radius;            // Area light radius (0 = point light, hard shadows)
         float SoftShadowSamples; // Number of shadow samples (1-16)
     };
+
+    // ============================================
+    // Mesh Data (for FBX triangle meshes)
+    // ============================================
+
+    /// <summary>
+    /// Mesh instance data (WPF to Interop)
+    /// Stores FBXMeshNode evaluate results
+    /// </summary>
+    [StructLayout(LayoutKind::Sequential)]
+    public value struct MeshInstanceData
+    {
+        // Mesh name (cache lookup key)
+        // Note: MarshalAs removed - not needed for C++/CLI internal use
+        String^ MeshName;
+
+        // Transform
+        Vector3 Position;
+        Vector3 Rotation;    // Euler angles (degrees)
+        Vector3 Scale;
+
+        // Material properties (PBR)
+        Vector4 Color;
+        float Metallic;
+        float Roughness;
+        float Transmission;
+        float IOR;
+        float Specular;
+        Vector3 Emission;
+    };
+
+    /// <summary>
+    /// Mesh cache data (vertex/index buffers)
+    /// Stores data retrieved from MeshCacheService
+    /// </summary>
+    public ref class MeshCacheData
+    {
+    public:
+        /// <summary>
+        /// Mesh name
+        /// </summary>
+        property String^ MeshName;
+
+        /// <summary>
+        /// Vertex data (32 bytes/vertex: position(3) + padding(1) + normal(3) + padding(1))
+        /// </summary>
+        property array<float>^ Vertices;
+
+        /// <summary>
+        /// Index data
+        /// </summary>
+        property array<unsigned int>^ Indices;
+
+        /// <summary>
+        /// Bounding box minimum point
+        /// </summary>
+        property Vector3 BoundsMin;
+
+        /// <summary>
+        /// Bounding box maximum point
+        /// </summary>
+        property Vector3 BoundsMax;
+    };
 }

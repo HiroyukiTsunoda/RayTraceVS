@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using Newtonsoft.Json;
@@ -12,6 +13,10 @@ namespace RayTraceVS.WPF.Services
 {
     public class SceneFileService
     {
+        /// <summary>
+        /// 読み込み時に除外されたノードの情報
+        /// </summary>
+        public List<string> RemovedNodeInfos { get; private set; } = new();
         public void SaveScene(string filePath, ObservableCollection<Node> nodes, ObservableCollection<NodeConnection> connections, ViewportState? viewportState = null)
         {
             var sceneData = new SceneFileData
@@ -29,6 +34,9 @@ namespace RayTraceVS.WPF.Services
 
         public (List<Node>, List<NodeConnection>, ViewportState?) LoadScene(string filePath)
         {
+            // 除外ノード情報をクリア
+            RemovedNodeInfos.Clear();
+            
             var json = File.ReadAllText(filePath);
             var sceneData = JsonConvert.DeserializeObject<SceneFileData>(json);
 
@@ -40,6 +48,18 @@ namespace RayTraceVS.WPF.Services
                 .Where(n => n != null)
                 .Select(n => n!)
                 .ToList();
+            
+            // キャッシュにないFBXMeshNodeを除外
+            var removedFBXNodes = nodes.OfType<FBXMeshNode>()
+                .Where(n => !App.MeshCacheService.HasMesh(n.MeshName))
+                .ToList();
+            
+            foreach (var removedNode in removedFBXNodes)
+            {
+                RemovedNodeInfos.Add($"FBXMesh: {removedNode.MeshName} (キャッシュにありません)");
+                nodes.Remove(removedNode);
+                Debug.WriteLine($"FBXMeshNode '{removedNode.MeshName}' を除外しました（キャッシュにありません）");
+            }
             
             // 古いシーンファイルの互換性のため、接続データからSceneNodeに必要なソケットを準備
             PrepareSceneNodeSockets(nodes, sceneData.Connections);
@@ -106,6 +126,7 @@ namespace RayTraceVS.WPF.Services
                 nameof(SphereNode) => new SphereNode(),
                 nameof(PlaneNode) => new PlaneNode(),
                 nameof(BoxNode) => new BoxNode(),
+                nameof(FBXMeshNode) => new FBXMeshNode(),
                 nameof(CameraNode) => new CameraNode(),
                 "LightNode" => new PointLightNode(),  // 旧LightNodeはPointLightNodeとして読み込む
                 nameof(PointLightNode) => new PointLightNode(),
@@ -158,6 +179,11 @@ namespace RayTraceVS.WPF.Services
                 case BoxNode box:
                     properties["Transform"] = box.ObjectTransform;
                     properties["Size"] = box.Size;
+                    break;
+
+                case FBXMeshNode fbxMesh:
+                    properties["MeshName"] = fbxMesh.MeshName;
+                    properties["Transform"] = fbxMesh.ObjectTransform;
                     break;
 
                 case CameraNode camera:
@@ -324,6 +350,13 @@ namespace RayTraceVS.WPF.Services
                     }
                     if (properties.TryGetValue("Size", out var size))
                         box.Size = ConvertToVector3(size);
+                    break;
+
+                case FBXMeshNode fbxMesh:
+                    if (properties.TryGetValue("MeshName", out var meshNameObj))
+                        fbxMesh.MeshName = meshNameObj?.ToString() ?? "";
+                    if (properties.TryGetValue("Transform", out var fbxTransform))
+                        fbxMesh.ObjectTransform = ConvertToTransform(fbxTransform);
                     break;
 
                 case CameraNode camera:
@@ -688,6 +721,7 @@ namespace RayTraceVS.WPF.Services
     public class ExpanderStates
     {
         public bool IsObjectExpanded { get; set; } = true;
+        public bool IsFBXObjectExpanded { get; set; } = false;
         public bool IsMaterialExpanded { get; set; } = false;
         public bool IsMathExpanded { get; set; } = false;
         public bool IsCameraExpanded { get; set; } = false;

@@ -26,6 +26,8 @@ namespace RayTraceVS::Interop
             array<BoxData>^ boxes,
             CameraData camera,
             array<LightData>^ lights,
+            array<MeshInstanceData>^ meshInstances,
+            array<MeshCacheData^>^ meshCaches,
             int samplesPerPixel,
             int maxBounces,
             float exposure,

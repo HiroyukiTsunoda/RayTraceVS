@@ -55,6 +55,9 @@ namespace RayTraceVS::DXEngine
         // Shadow parameters
         float ShadowStrength;       // 0.0 = no shadow, 1.0 = normal, >1.0 = darker
         UINT FrameIndex;            // Frame counter for temporal noise variation
+        // Mesh instance count
+        UINT NumMeshInstances;      // Number of FBX mesh instances
+        UINT MeshPadding[3];        // Padding for 16-byte alignment
         // Matrices for motion vectors (column-major for HLSL)
         XMFLOAT4X4 ViewProjection;
         XMFLOAT4X4 PrevViewProjection;
@@ -157,6 +160,51 @@ namespace RayTraceVS::DXEngine
         float Padding8;         // 4  -> 128
         XMFLOAT3 Emission;      // 12
         float Padding9;         // 4  -> 144
+    };
+
+    // ============================================
+    // GPU Mesh Data Structures (for FBX triangle meshes)
+    // ============================================
+
+    // GPU mesh vertex - 32 bytes (matches cache format)
+    struct alignas(16) GPUMeshVertex
+    {
+        XMFLOAT3 Position;      // 12
+        float Padding1;         // 4  -> 16
+        XMFLOAT3 Normal;        // 12
+        float Padding2;         // 4  -> 32
+    };
+
+    // GPU mesh info - 16 bytes (offset info per mesh type)
+    struct alignas(16) GPUMeshInfo
+    {
+        UINT VertexOffset;      // 4 - offset in global vertex buffer
+        UINT IndexOffset;       // 4 - offset in global index buffer
+        UINT VertexCount;       // 4 - vertex count for this mesh type
+        UINT IndexCount;        // 4 - index count for this mesh type -> 16
+    };
+
+    // GPU mesh material - 64 bytes (per instance)
+    struct alignas(16) GPUMeshMaterial
+    {
+        XMFLOAT4 Color;         // 16 -> 16
+        float Metallic;         // 4
+        float Roughness;        // 4
+        float Transmission;     // 4
+        float IOR;              // 4  -> 32
+        float Specular;         // 4
+        XMFLOAT3 Emission;      // 12 -> 48
+        float Padding1;         // 4
+        float Padding2;         // 4
+        float Padding3;         // 4
+        float Padding4;         // 4  -> 64
+    };
+
+    // GPU mesh instance info - 8 bytes (maps TLAS instance to mesh/material)
+    struct GPUMeshInstanceInfo
+    {
+        UINT MeshTypeIndex;     // 4 - index into MeshInfos (which mesh type)
+        UINT MaterialIndex;     // 4 - index into MeshMaterials -> 8
     };
 
     // ============================================
@@ -319,6 +367,16 @@ namespace RayTraceVS::DXEngine
         bool useSoABuffers = false;
 
         // ============================================
+        // Mesh Buffers (for FBX triangle meshes)
+        // ============================================
+        
+        ComPtr<ID3D12Resource> meshVertexBuffer;      // t5 - Combined vertex data for all mesh types
+        ComPtr<ID3D12Resource> meshIndexBuffer;       // t6 - Combined index data for all mesh types
+        ComPtr<ID3D12Resource> meshMaterialBuffer;    // t7 - Material per instance
+        ComPtr<ID3D12Resource> meshInfoBuffer;        // t8 - MeshInfo per mesh type
+        ComPtr<ID3D12Resource> meshInstanceBuffer;    // t9 - MeshInstanceInfo per instance
+
+        // ============================================
         // DXR Pipeline Resources
         // ============================================
         
@@ -347,6 +405,7 @@ namespace RayTraceVS::DXEngine
         // Shader bytecode
         ComPtr<ID3DBlob> rayGenShader;
         ComPtr<ID3DBlob> closestHitShader;
+        ComPtr<ID3DBlob> closestHitTriangleShader;  // For triangle meshes
         ComPtr<ID3DBlob> missShader;
         ComPtr<ID3DBlob> intersectionShader;
         
@@ -410,6 +469,7 @@ namespace RayTraceVS::DXEngine
         UINT lastSphereCount = 0;
         UINT lastPlaneCount = 0;
         UINT lastBoxCount = 0;
+        UINT lastMeshInstanceCount = 0;
 
         // ============================================
         // Shader Cache System

@@ -47,7 +47,7 @@ RayTraceVS/
 │   ├── RayTraceVS.DXEngine/                # C++ DirectX12プロジェクト
 │   │   ├── DXContext.h/.cpp                # DX12初期化
 │   │   ├── DXRPipeline.h/.cpp              # DXRパイプライン
-│   │   ├── AccelerationStructure.h/.cpp   # BLAS/TLAS構築
+│   │   ├── AccelerationStructure.h/.cpp    # BLAS/TLAS構築
 │   │   ├── RenderTarget.h/.cpp             # レンダーターゲット管理
 │   │   ├── ShaderCache.h/.cpp              # シェーダーキャッシュ（DXC）
 │   │   ├── NativeBridge.h/.cpp             # ネイティブブリッジ

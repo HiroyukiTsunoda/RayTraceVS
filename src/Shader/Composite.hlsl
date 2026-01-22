@@ -65,10 +65,11 @@ float3 ACESFilm(float3 x)
 // Gamma correction (standard sRGB)
 float3 LinearToSRGB(float3 color)
 {
+    // Component-wise sRGB conversion (compatible with SM 5.1)
     float3 srgb;
-    srgb = color < 0.0031308 
-        ? 12.92 * color 
-        : 1.055 * pow(color, 1.0 / 2.4) - 0.055;
+    srgb.r = (color.r < 0.0031308) ? (12.92 * color.r) : (1.055 * pow(color.r, 1.0 / 2.4) - 0.055);
+    srgb.g = (color.g < 0.0031308) ? (12.92 * color.g) : (1.055 * pow(color.g, 1.0 / 2.4) - 0.055);
+    srgb.b = (color.b < 0.0031308) ? (12.92 * color.b) : (1.055 * pow(color.b, 1.0 / 2.4) - 0.055);
     return srgb;
 }
 

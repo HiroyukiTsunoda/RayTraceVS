@@ -63,6 +63,13 @@ namespace RayTraceVS.WPF.Models
         /// </summary>
         private static Vector3 QuaternionToEuler(Quaternion q)
         {
+            // ゼロQuaternion（未初期化）の場合は回転なしとして扱う
+            float lengthSq = q.X * q.X + q.Y * q.Y + q.Z * q.Z + q.W * q.W;
+            if (lengthSq < 1e-10f)
+            {
+                return Vector3.Zero;
+            }
+
             // QuaternionからYaw-Pitch-Rollを計算
             var yaw = MathF.Atan2(2.0f * (q.Y * q.W + q.X * q.Z),
                                   1.0f - 2.0f * (q.X * q.X + q.Y * q.Y));
@@ -75,6 +82,11 @@ namespace RayTraceVS.WPF.Models
             
             var roll = MathF.Atan2(2.0f * (q.X * q.Y + q.Z * q.W),
                                    1.0f - 2.0f * (q.X * q.X + q.Z * q.Z));
+
+            // NaN/Infinity チェック
+            if (float.IsNaN(pitch) || float.IsInfinity(pitch)) pitch = 0;
+            if (float.IsNaN(yaw) || float.IsInfinity(yaw)) yaw = 0;
+            if (float.IsNaN(roll) || float.IsInfinity(roll)) roll = 0;
 
             // ラジアンから度に変換
             return new Vector3(

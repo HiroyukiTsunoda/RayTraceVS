@@ -1,6 +1,7 @@
 using System;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using RayTraceVS.WPF.Commands;
 using RayTraceVS.WPF.ViewModels;
 using RayTraceVS.WPF.Models;
@@ -16,6 +17,65 @@ namespace RayTraceVS.WPF.Views
         public ComponentPaletteView()
         {
             InitializeComponent();
+            Loaded += ComponentPaletteView_Loaded;
+        }
+
+        private void ComponentPaletteView_Loaded(object sender, RoutedEventArgs e)
+        {
+            // FBXリストを初期化
+            RefreshFBXList();
+        }
+
+        /// <summary>
+        /// FBXオブジェクトリストを更新
+        /// </summary>
+        public void RefreshFBXList()
+        {
+            FBXButtonsPanel.Children.Clear();
+            
+            var meshCacheService = App.MeshCacheService;
+            if (meshCacheService == null) return;
+
+            foreach (var meshName in meshCacheService.AvailableMeshes)
+            {
+                var button = new Button
+                {
+                    Content = meshName,
+                    Tag = meshName,
+                    Margin = new Thickness(0, 2, 0, 0),
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    Background = FindResource("NodeObjectBrush") as Brush
+                };
+                button.Click += AddFBXMesh_Click;
+                FBXButtonsPanel.Children.Add(button);
+            }
+
+            // メッシュがない場合はメッセージを表示
+            if (meshCacheService.AvailableMeshes.Count == 0)
+            {
+                var textBlock = new TextBlock
+                {
+                    Text = "FBXファイルがありません\nResource/Modelに配置してください",
+                    Foreground = FindResource("TextSecondaryBrush") as Brush,
+                    FontSize = 10,
+                    TextWrapping = TextWrapping.Wrap
+                };
+                FBXButtonsPanel.Children.Add(textBlock);
+            }
+        }
+
+        private void AddFBXMesh_Click(object sender, RoutedEventArgs e)
+        {
+            var meshName = (sender as Button)?.Tag as string;
+            if (string.IsNullOrEmpty(meshName)) return;
+
+            var viewModel = GetViewModel();
+            if (viewModel != null)
+            {
+                var node = new FBXMeshNode(meshName);
+                ((Node)node).Position = GetViewportCenterPosition();
+                viewModel.AddNode(node);
+            }
         }
 
         private MainViewModel? GetViewModel()
@@ -40,6 +100,7 @@ namespace RayTraceVS.WPF.Views
             return new ExpanderStates
             {
                 IsObjectExpanded = ObjectExpander.IsExpanded,
+                IsFBXObjectExpanded = FBXObjectExpander.IsExpanded,
                 IsMaterialExpanded = MaterialExpander.IsExpanded,
                 IsMathExpanded = MathExpander.IsExpanded,
                 IsCameraExpanded = CameraExpander.IsExpanded,
@@ -56,6 +117,7 @@ namespace RayTraceVS.WPF.Views
             if (states == null) return;
             
             ObjectExpander.IsExpanded = states.IsObjectExpanded;
+            FBXObjectExpander.IsExpanded = states.IsFBXObjectExpanded;
             MaterialExpander.IsExpanded = states.IsMaterialExpanded;
             MathExpander.IsExpanded = states.IsMathExpanded;
             CameraExpander.IsExpanded = states.IsCameraExpanded;
