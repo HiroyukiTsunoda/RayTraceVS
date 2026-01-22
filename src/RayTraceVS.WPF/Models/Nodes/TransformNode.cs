@@ -37,6 +37,17 @@ namespace RayTraceVS.WPF.Models.Nodes
         [ObservableProperty]
         private float _scaleZ = 1.0f;
 
+        // プロパティ変更時にMarkDirty()を呼び出す
+        partial void OnPositionXChanged(float value) => MarkDirty();
+        partial void OnPositionYChanged(float value) => MarkDirty();
+        partial void OnPositionZChanged(float value) => MarkDirty();
+        partial void OnRotationXChanged(float value) => MarkDirty();
+        partial void OnRotationYChanged(float value) => MarkDirty();
+        partial void OnRotationZChanged(float value) => MarkDirty();
+        partial void OnScaleXChanged(float value) => MarkDirty();
+        partial void OnScaleYChanged(float value) => MarkDirty();
+        partial void OnScaleZChanged(float value) => MarkDirty();
+
         public TransformNode() : base("Transform", NodeCategory.Math)
         {
             // 入力ソケット

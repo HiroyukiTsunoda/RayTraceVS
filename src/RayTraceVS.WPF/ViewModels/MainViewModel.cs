@@ -26,6 +26,11 @@ namespace RayTraceVS.WPF.ViewModels
         /// </summary>
         public CommandManager CommandManager { get; } = new();
 
+        /// <summary>
+        /// ノード作成順序を管理するカウンター（描画順序の基準）
+        /// </summary>
+        private int _nodeCreationCounter = 0;
+
         public MainViewModel()
         {
             nodeGraph = new NodeGraph();
@@ -35,6 +40,8 @@ namespace RayTraceVS.WPF.ViewModels
 
         public void AddNode(Node node)
         {
+            // ノードの作成順序を設定（描画順序に使用）
+            node.CreationIndex = _nodeCreationCounter++;
             nodes.Add(node);
             nodeGraph.AddNode(node);
         }

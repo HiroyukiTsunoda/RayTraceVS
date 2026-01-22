@@ -20,9 +20,22 @@ namespace RayTraceVS::DXEngine
         lights.push_back(light);
     }
 
+    void Scene::AddMeshCache(const MeshCacheEntry& cache)
+    {
+        // Store by name for lookup by instances
+        meshCaches[cache.name] = cache;
+    }
+
+    void Scene::AddMeshInstance(const MeshInstance& instance)
+    {
+        meshInstances.push_back(instance);
+    }
+
     void Scene::Clear()
     {
         objects.clear();
         lights.clear();
+        meshCaches.clear();
+        meshInstances.clear();
     }
 }

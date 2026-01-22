@@ -137,6 +137,11 @@ namespace RayTraceVS::DXEngine
             { L"Common.hlsli", L"NRDEncoding.hlsli" }
         };
 
+        shaderDefinitions[L"ClosestHit_Triangle"] = {
+            L"ClosestHit_Triangle", ShaderType::DXRLibrary, L"",
+            { L"Common.hlsli", L"NRDEncoding.hlsli" }
+        };
+
         shaderDefinitions[L"Miss"] = {
             L"Miss", ShaderType::DXRLibrary, L"",
             { L"Common.hlsli" }

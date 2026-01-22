@@ -7,6 +7,7 @@
              d:DesignHeight="450" d:DesignWidth="800"
              ClipToBounds="True"
              Focusable="True"
+             PreviewKeyDown="UserControl_PreviewKeyDown"
              KeyDown="UserControl_KeyDown">
     <Grid>
         <!-- 統合キャンバス：イベント処理とトランスフォームを一元管理 -->
@@ -40,9 +41,14 @@
                 </DrawingBrush>
             </Canvas.Background>
             
-            <!-- ノード用キャンバス（下層） -->
+            <!-- 接続線の中間部分用キャンバス（最下層） -->
+            <Canvas x:Name="MiddleConnectionLayer"
+                    Panel.ZIndex="0"
+                    IsHitTestVisible="False"/>
+            
+            <!-- ノード用キャンバス -->
             <Canvas x:Name="NodeLayer"
-                    Panel.ZIndex="0">
+                    Panel.ZIndex="1">
                 <ItemsControl ItemsSource="{Binding Nodes}">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
@@ -53,6 +59,7 @@
                         <Style>
                             <Setter Property="Canvas.Left" Value="{Binding Position.X}"/>
                             <Setter Property="Canvas.Top" Value="{Binding Position.Y}"/>
+                            <Setter Property="Panel.ZIndex" Value="{Binding CreationIndex}"/>
                         </Style>
                     </ItemsControl.ItemContainerStyle>
                     <ItemsControl.ItemTemplate>
@@ -214,15 +221,26 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
             </Canvas>
+            
+            <!-- 接続線の端部分用キャンバス（ノードより上） -->
+            <Canvas x:Name="EndSegmentLayer"
+                    Panel.ZIndex="2"
+                    IsHitTestVisible="False"/>
+            
+            <!-- 選択ノードの接続線用キャンバス（最上層） -->
+            <Canvas x:Name="SelectedConnectionLayer"
+                    Panel.ZIndex="3"
+                    IsHitTestVisible="False"/>
         </Canvas>
         
-        <!-- 接続線用キャンバス（上層・Grid直下） -->
+        <!-- 後方互換性のためConnectionLayerは維持（非表示、使用しない） -->
         <Canvas x:Name="ConnectionLayer"
                 Panel.ZIndex="1"
                 Width="12800"
                 Height="7200"
                 ClipToBounds="True"
-                IsHitTestVisible="False"/>
+                IsHitTestVisible="False"
+                Visibility="Collapsed"/>
 
         <!-- ナビゲーション情報 -->
         <Border VerticalAlignment="Top" HorizontalAlignment="Right" 

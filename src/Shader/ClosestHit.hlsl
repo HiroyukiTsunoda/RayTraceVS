@@ -77,8 +77,8 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
         return;
     }
     
-    // Use scene-specified max bounces (defaults to 5 if unset)
-    uint maxBounces = (Scene.MaxBounces > 0) ? Scene.MaxBounces : 6;
+    // Use scene-specified max bounces (glass needs more for entry/internal/exit)
+    uint maxBounces = (Scene.MaxBounces > 0) ? min(Scene.MaxBounces, 8) : 8;
     if (payload.depth >= maxBounces)
     {
         // Max depth reached - return approximate color instead of black

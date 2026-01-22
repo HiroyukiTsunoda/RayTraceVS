@@ -5,6 +5,7 @@
 
 #include "AccelerationStructure.h"
 #include "DXContext.h"
+#include "DebugLog.h"
 #include "Scene/Scene.h"
 #include "Scene/Objects/Sphere.h"
 #include "Scene/Objects/Plane.h"
@@ -512,5 +513,308 @@ namespace RayTraceVS::DXEngine
         {
             throw std::runtime_error("Failed to create upload buffer");
         }
+    }
+
+    // ============================================
+    // Mesh BLAS Functions
+    // ============================================
+
+    bool AccelerationStructure::HasMeshBLAS(const std::string& meshName) const
+    {
+        return meshBLASMap.find(meshName) != meshBLASMap.end();
+    }
+
+    MeshBLASEntry* AccelerationStructure::GetMeshBLAS(const std::string& meshName)
+    {
+        auto it = meshBLASMap.find(meshName);
+        return (it != meshBLASMap.end()) ? &it->second : nullptr;
+    }
+
+    bool AccelerationStructure::BuildMeshBLAS(const std::string& meshName, const MeshCacheEntry& meshCache)
+    {
+        if (meshCache.vertices.empty() || meshCache.indices.empty())
+        {
+            OutputDebugStringA("[BuildMeshBLAS] ERROR: Empty vertices or indices\n");
+            return false;
+        }
+
+        auto device = dxContext->GetDevice();
+        auto commandList = dxContext->GetCommandList();
+        
+        if (!device || !commandList)
+        {
+            OutputDebugStringA("[BuildMeshBLAS] ERROR: device or commandList is null\n");
+            return false;
+        }
+
+        MeshBLASEntry entry;
+        entry.vertexCount = static_cast<UINT>(meshCache.vertices.size() / 8);  // 8 floats per vertex
+        entry.indexCount = static_cast<UINT>(meshCache.indices.size());
+
+        // Create vertex buffer (upload heap for simplicity)
+        UINT64 vertexBufferSize = meshCache.vertices.size() * sizeof(float);
+        {
+            CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_UPLOAD);
+            CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(vertexBufferSize);
+            device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &desc,
+                D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&entry.vertexBuffer));
+            
+            void* mapped = nullptr;
+            entry.vertexBuffer->Map(0, nullptr, &mapped);
+            memcpy(mapped, meshCache.vertices.data(), vertexBufferSize);
+            entry.vertexBuffer->Unmap(0, nullptr);
+        }
+
+        // Create index buffer (upload heap for simplicity)
+        UINT64 indexBufferSize = meshCache.indices.size() * sizeof(uint32_t);
+        {
+            CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_UPLOAD);
+            CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(indexBufferSize);
+            device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &desc,
+                D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&entry.indexBuffer));
+            
+            void* mapped = nullptr;
+            entry.indexBuffer->Map(0, nullptr, &mapped);
+            memcpy(mapped, meshCache.indices.data(), indexBufferSize);
+            entry.indexBuffer->Unmap(0, nullptr);
+        }
+
+        // Build geometry descriptor for triangle BLAS
+        D3D12_RAYTRACING_GEOMETRY_DESC geometryDesc = {};
+        geometryDesc.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
+        geometryDesc.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
+        geometryDesc.Triangles.VertexBuffer.StartAddress = entry.vertexBuffer->GetGPUVirtualAddress();
+        geometryDesc.Triangles.VertexBuffer.StrideInBytes = 32;  // 8 floats * 4 bytes = 32 bytes per vertex
+        geometryDesc.Triangles.VertexCount = entry.vertexCount;
+        geometryDesc.Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;  // Position is first 3 floats
+        geometryDesc.Triangles.IndexBuffer = entry.indexBuffer->GetGPUVirtualAddress();
+        geometryDesc.Triangles.IndexCount = entry.indexCount;
+        geometryDesc.Triangles.IndexFormat = DXGI_FORMAT_R32_UINT;
+
+        // Get prebuild info
+        D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS inputs = {};
+        inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
+        inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
+        inputs.NumDescs = 1;
+        inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
+        inputs.pGeometryDescs = &geometryDesc;
+
+        D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO prebuildInfo = {};
+        device->GetRaytracingAccelerationStructurePrebuildInfo(&inputs, &prebuildInfo);
+
+        // Create BLAS buffer
+        CreateBuffer(prebuildInfo.ResultDataMaxSizeInBytes,
+                    D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+                    D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
+                    &entry.blas);
+
+        // Create scratch buffer (stored in entry so it persists until GPU finishes building)
+        CreateBuffer(prebuildInfo.ScratchDataSizeInBytes,
+                    D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+                    D3D12_RESOURCE_STATE_COMMON,
+                    &entry.scratchBuffer);
+
+        // Build BLAS
+        D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC buildDesc = {};
+        buildDesc.Inputs = inputs;
+        buildDesc.DestAccelerationStructureData = entry.blas->GetGPUVirtualAddress();
+        buildDesc.ScratchAccelerationStructureData = entry.scratchBuffer->GetGPUVirtualAddress();
+
+        commandList->BuildRaytracingAccelerationStructure(&buildDesc, 0, nullptr);
+
+        // UAV barrier
+        D3D12_RESOURCE_BARRIER barrier = {};
+        barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+        barrier.UAV.pResource = entry.blas.Get();
+        commandList->ResourceBarrier(1, &barrier);
+
+        // Store in map
+        meshBLASMap[meshName] = std::move(entry);
+
+        return true;
+    }
+
+    bool AccelerationStructure::BuildCombinedTLAS(Scene* scene)
+    {
+        if (!scene) return false;
+
+        auto device = dxContext->GetDevice();
+        auto commandList = dxContext->GetCommandList();
+
+        // Count total instances (procedural + mesh)
+        UINT proceduralInstanceCount = (bottomLevelAS != nullptr) ? 1 : 0;
+        const auto& meshInstances = scene->GetMeshInstances();
+        UINT meshInstanceCount = static_cast<UINT>(meshInstances.size());
+        UINT totalInstanceCount = proceduralInstanceCount + meshInstanceCount;
+
+        if (totalInstanceCount == 0)
+        {
+            // No instances to render
+            topLevelAS.Reset();
+            return true;
+        }
+
+        // Build instance descriptors
+        std::vector<D3D12_RAYTRACING_INSTANCE_DESC> instanceDescs;
+        instanceDescs.reserve(totalInstanceCount);
+
+        // Add procedural instance (if exists)
+        if (bottomLevelAS != nullptr)
+        {
+            D3D12_RAYTRACING_INSTANCE_DESC proceduralInst = {};
+            // Identity transform
+            proceduralInst.Transform[0][0] = 1.0f;
+            proceduralInst.Transform[1][1] = 1.0f;
+            proceduralInst.Transform[2][2] = 1.0f;
+            proceduralInst.InstanceID = 0;  // Not used for procedural
+            proceduralInst.InstanceMask = 0xFF;
+            proceduralInst.InstanceContributionToHitGroupIndex = 0;  // Hit groups 0-2 (procedural)
+            proceduralInst.Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
+            proceduralInst.AccelerationStructure = bottomLevelAS->GetGPUVirtualAddress();
+            instanceDescs.push_back(proceduralInst);
+        }
+
+        // Add mesh instances
+        UINT meshInstanceIndex = 0;
+        char logBuf[512];
+        sprintf_s(logBuf, "[BuildCombinedTLAS] Processing %zu mesh instances", meshInstances.size());
+        LOG_INFO(logBuf);
+        
+        for (const auto& meshInst : meshInstances)
+        {
+            sprintf_s(logBuf, "[BuildCombinedTLAS] Instance '%s': pos=(%.2f,%.2f,%.2f), rot=(%.2f,%.2f,%.2f), scale=(%.2f,%.2f,%.2f)",
+                meshInst.meshName.c_str(),
+                meshInst.transform.position.x, meshInst.transform.position.y, meshInst.transform.position.z,
+                meshInst.transform.rotation.x, meshInst.transform.rotation.y, meshInst.transform.rotation.z,
+                meshInst.transform.scale.x, meshInst.transform.scale.y, meshInst.transform.scale.z);
+            LOG_INFO(logBuf);
+            
+            auto* blasEntry = GetMeshBLAS(meshInst.meshName);
+            if (!blasEntry || !blasEntry->blas)
+            {
+                // Try to build BLAS if not exists
+                auto cacheIt = scene->GetMeshCaches().find(meshInst.meshName);
+                if (cacheIt != scene->GetMeshCaches().end())
+                {
+                    BuildMeshBLAS(meshInst.meshName, cacheIt->second);
+                    blasEntry = GetMeshBLAS(meshInst.meshName);
+                }
+                else
+                {
+                    char buf[256];
+                    sprintf_s(buf, "[BuildCombinedTLAS] ERROR: No cache found for '%s'\n", meshInst.meshName.c_str());
+                    OutputDebugStringA(buf);
+                }
+            }
+            
+            if (!blasEntry || !blasEntry->blas)
+            {
+                OutputDebugStringA("[BuildCombinedTLAS] WARNING: Skipping instance - no BLAS available\n");
+                continue;  // Skip if BLAS still not available
+            }
+
+            D3D12_RAYTRACING_INSTANCE_DESC meshInstDesc = {};
+            
+            // Build transform matrix from position, rotation, scale
+            XMMATRIX translation = XMMatrixTranslation(
+                meshInst.transform.position.x,
+                meshInst.transform.position.y,
+                meshInst.transform.position.z);
+            XMMATRIX rotation = XMMatrixRotationRollPitchYaw(
+                XMConvertToRadians(meshInst.transform.rotation.x),
+                XMConvertToRadians(meshInst.transform.rotation.y),
+                XMConvertToRadians(meshInst.transform.rotation.z));
+            XMMATRIX scale = XMMatrixScaling(
+                meshInst.transform.scale.x,
+                meshInst.transform.scale.y,
+                meshInst.transform.scale.z);
+            
+            XMMATRIX worldMatrix = scale * rotation * translation;
+            
+            // Copy to 3x4 row-major format
+            // DXR expects column-major style: Transform[row][col] where col=3 is translation
+            // DirectXMath stores translation in row 3 (m[3][0..2]), so we need to transpose
+            XMFLOAT4X4 worldFloat;
+            XMStoreFloat4x4(&worldFloat, XMMatrixTranspose(worldMatrix));
+            for (int row = 0; row < 3; row++)
+            {
+                meshInstDesc.Transform[row][0] = worldFloat.m[row][0];
+                meshInstDesc.Transform[row][1] = worldFloat.m[row][1];
+                meshInstDesc.Transform[row][2] = worldFloat.m[row][2];
+                meshInstDesc.Transform[row][3] = worldFloat.m[row][3];
+            }
+            
+            meshInstDesc.InstanceID = meshInstanceIndex++;  // Used in shader to lookup material
+            meshInstDesc.InstanceMask = 0xFF;
+            meshInstDesc.InstanceContributionToHitGroupIndex = 3;  // Hit groups 3-5 (triangle)
+            meshInstDesc.Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
+            meshInstDesc.AccelerationStructure = blasEntry->blas->GetGPUVirtualAddress();
+            instanceDescs.push_back(meshInstDesc);
+        }
+
+        if (instanceDescs.empty())
+        {
+            topLevelAS.Reset();
+            return true;
+        }
+
+        // Create instance buffer
+        UINT64 instanceBufferSize = instanceDescs.size() * sizeof(D3D12_RAYTRACING_INSTANCE_DESC);
+        ComPtr<ID3D12Resource> newInstanceBuffer;
+        {
+            CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_UPLOAD);
+            CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(instanceBufferSize);
+            device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &desc,
+                D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&newInstanceBuffer));
+            
+            void* mapped = nullptr;
+            newInstanceBuffer->Map(0, nullptr, &mapped);
+            memcpy(mapped, instanceDescs.data(), instanceBufferSize);
+            newInstanceBuffer->Unmap(0, nullptr);
+        }
+
+        // Build TLAS
+        D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS inputs = {};
+        inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
+        inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
+        inputs.NumDescs = static_cast<UINT>(instanceDescs.size());
+        inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
+        inputs.InstanceDescs = newInstanceBuffer->GetGPUVirtualAddress();
+
+        D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO prebuildInfo = {};
+        device->GetRaytracingAccelerationStructurePrebuildInfo(&inputs, &prebuildInfo);
+
+        // Create TLAS buffer
+        ComPtr<ID3D12Resource> newTopLevelAS;
+        CreateBuffer(prebuildInfo.ResultDataMaxSizeInBytes,
+                    D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+                    D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
+                    &newTopLevelAS);
+
+        // Create scratch buffer (use member variable so it persists until GPU finishes)
+        CreateBuffer(prebuildInfo.ScratchDataSizeInBytes,
+                    D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+                    D3D12_RESOURCE_STATE_COMMON,
+                    &tlasScratchBuffer);
+
+        // Build TLAS
+        D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC buildDesc = {};
+        buildDesc.Inputs = inputs;
+        buildDesc.DestAccelerationStructureData = newTopLevelAS->GetGPUVirtualAddress();
+        buildDesc.ScratchAccelerationStructureData = tlasScratchBuffer->GetGPUVirtualAddress();
+
+        commandList->BuildRaytracingAccelerationStructure(&buildDesc, 0, nullptr);
+
+        // UAV barrier
+        D3D12_RESOURCE_BARRIER barrier = {};
+        barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+        barrier.UAV.pResource = newTopLevelAS.Get();
+        commandList->ResourceBarrier(1, &barrier);
+
+        // Update member variables
+        topLevelAS = std::move(newTopLevelAS);
+        instanceBuffer = std::move(newInstanceBuffer);
+
+        return true;
     }
 }

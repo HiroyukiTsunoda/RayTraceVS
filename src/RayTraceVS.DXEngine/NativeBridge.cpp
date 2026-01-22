@@ -171,6 +171,52 @@ namespace RayTraceVS::Interop::Bridge
         scene->AddLight(nativeLight);
     }
 
+    void AddMeshCache(RayTraceVS::DXEngine::Scene* scene, const MeshCacheDataNative& meshCache)
+    {
+        RayTraceVS::DXEngine::MeshCacheEntry entry;
+        entry.name = meshCache.name ? meshCache.name : "";
+        
+        // Copy vertex data (8 floats per vertex)
+        if (meshCache.vertices && meshCache.vertexCount > 0)
+        {
+            size_t floatCount = meshCache.vertexCount * 8;  // 8 floats per vertex
+            entry.vertices.resize(floatCount);
+            memcpy(entry.vertices.data(), meshCache.vertices, floatCount * sizeof(float));
+        }
+        
+        // Copy index data
+        if (meshCache.indices && meshCache.indexCount > 0)
+        {
+            entry.indices.resize(meshCache.indexCount);
+            memcpy(entry.indices.data(), meshCache.indices, meshCache.indexCount * sizeof(uint32_t));
+        }
+        
+        entry.boundsMin = ToXMFLOAT3(meshCache.boundsMin);
+        entry.boundsMax = ToXMFLOAT3(meshCache.boundsMax);
+        
+        scene->AddMeshCache(entry);
+    }
+
+    void AddMeshInstance(RayTraceVS::DXEngine::Scene* scene, const MeshInstanceDataNative& meshInstance)
+    {
+        RayTraceVS::DXEngine::MeshInstance instance;
+        instance.meshName = meshInstance.meshName ? meshInstance.meshName : "";
+        instance.transform.position = ToXMFLOAT3(meshInstance.position);
+        instance.transform.rotation = ToXMFLOAT3(meshInstance.rotation);
+        instance.transform.scale = ToXMFLOAT3(meshInstance.scale);
+        
+        // Copy material
+        instance.material.color = ToXMFLOAT4(meshInstance.material.color);
+        instance.material.metallic = meshInstance.material.metallic;
+        instance.material.roughness = meshInstance.material.roughness;
+        instance.material.transmission = meshInstance.material.transmission;
+        instance.material.ior = meshInstance.material.ior;
+        instance.material.specular = meshInstance.material.specular;
+        instance.material.emission = ToXMFLOAT3(meshInstance.material.emission);
+        
+        scene->AddMeshInstance(instance);
+    }
+
     // RenderTarget functions
     RayTraceVS::DXEngine::RenderTarget* CreateRenderTarget(RayTraceVS::DXEngine::DXContext* context)
     {
@@ -189,24 +235,23 @@ namespace RayTraceVS::Interop::Bridge
 
     void RenderTestPattern(RayTraceVS::DXEngine::DXRPipeline* pipeline, RayTraceVS::DXEngine::RenderTarget* target, RayTraceVS::DXEngine::Scene* scene)
     {
-        OutputDebugStringA("Bridge::Render called\n");
         if (!pipeline)
         {
-            OutputDebugStringA("Bridge::Render: Null pipeline\n");
+            OutputDebugStringA("[Bridge::RenderTestPattern] ERROR: Null pipeline\n");
             return;
         }
         if (!target)
         {
-            OutputDebugStringA("Bridge::Render: Null target\n");
+            OutputDebugStringA("[Bridge::RenderTestPattern] ERROR: Null target\n");
             return;
         }
         if (!scene)
         {
-            OutputDebugStringA("Bridge::Render: Null scene\n");
+            OutputDebugStringA("[Bridge::RenderTestPattern] ERROR: Null scene\n");
             return;
         }
+        
         pipeline->Render(target, scene);
-        OutputDebugStringA("Bridge::Render returned\n");
     }
 
     bool CopyRenderTargetToReadback(RayTraceVS::DXEngine::RenderTarget* target, RayTraceVS::DXEngine::DXContext* context)

@@ -29,6 +29,8 @@ namespace RayTraceVS.WPF.Services
             BoxData[] boxes,
             CameraData camera,
             LightData[] lights,
+            MeshInstanceData[]? meshInstances = null,
+            MeshCacheData[]? meshCaches = null,
             int samplesPerPixel = 1,
             int maxBounces = 6,
             float exposure = 1.0f,
@@ -43,9 +45,12 @@ namespace RayTraceVS.WPF.Services
 
             try
             {
-                engineWrapper.UpdateScene(spheres, planes, boxes, camera, lights, samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization, shadowStrength, enableDenoiser, gamma);
+                engineWrapper.UpdateScene(spheres, planes, boxes, camera, lights, 
+                    meshInstances ?? Array.Empty<MeshInstanceData>(), 
+                    meshCaches ?? Array.Empty<MeshCacheData>(),
+                    samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization, shadowStrength, enableDenoiser, gamma);
             }
-            catch
+            catch (Exception)
             {
                 // Silently handle errors
             }
@@ -60,7 +65,7 @@ namespace RayTraceVS.WPF.Services
             {
                 engineWrapper.Render();
             }
-            catch
+            catch (Exception)
             {
                 // Silently handle errors
             }

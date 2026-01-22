@@ -72,4 +72,3 @@ artifacts/
 *.pdb
 *.cache
 *.log
-debug_log.txt

@@ -29,6 +29,15 @@
                 </StackPanel>
             </Expander>
 
+            <!-- FBXオブジェクトカテゴリ -->
+            <Expander x:Name="FBXObjectExpander" Header="◆ FBXオブジェクト" Margin="0,5"
+                      Foreground="{StaticResource TextBrush}"
+                      Background="{StaticResource PanelBrush}">
+                <StackPanel x:Name="FBXButtonsPanel" Margin="10,5">
+                    <!-- 動的にボタンが追加される -->
+                </StackPanel>
+            </Expander>
+
             <!-- マテリアルカテゴリ -->
             <Expander x:Name="MaterialExpander" Header="◆ マテリアル" Margin="0,5"
                       Foreground="{StaticResource TextBrush}"
@@ -37,7 +46,7 @@
                     <Button Content="Universal PBR" Click="AddUniversalPBR_Click" 
                             Margin="0,2" HorizontalAlignment="Stretch"
                             Background="{StaticResource NodeMaterialBrush}"/>
-                    <Button Content="Material BSDF" Click="AddMaterialBSDF_Click" 
+                    <Button Content="BSDF" Click="AddMaterialBSDF_Click" 
                             Margin="0,2" HorizontalAlignment="Stretch"
                             Background="{StaticResource NodeMaterialBrush}"/>
                     <Button Content="Emission" Click="AddEmission_Click" 

@@ -5,8 +5,8 @@
       "Id": "a1b2c3d4-e5f6-7890-abcd-111111111111",
       "Type": "SphereNode",
       "Title": "Sphere",
-      "PositionX": 1680.831707317074,
-      "PositionY": 994.4656319290461,
+      "PositionX": 2037.9204906564964,
+      "PositionY": 528.6008164376335,
       "Properties": {
         "Transform": {
           "Position": {
@@ -39,8 +39,8 @@
       "Id": "a1b2c3d4-e5f6-7890-abcd-222222222222",
       "Type": "PlaneNode",
       "Title": "Plane",
-      "PositionX": 1627.0292207792215,
-      "PositionY": 1267.7915584415584,
+      "PositionX": 2068.6894326900733,
+      "PositionY": 1001.9267429501458,
       "Properties": {
         "Transform": {
           "Position": {
@@ -77,8 +77,8 @@
       "Id": "a1b2c3d4-e5f6-7890-abcd-333333333333",
       "Type": "CameraNode",
       "Title": "Camera",
-      "PositionX": 1690.771428571429,
-      "PositionY": 1775.6844155844155,
+      "PositionX": 2093.80248447205,
+      "PositionY": 2333.1005646527387,
       "Properties": {
         "CameraPosition": {
           "X": 0.0,
@@ -106,15 +106,16 @@
       "Id": "a1b2c3d4-e5f6-7890-abcd-555555555555",
       "Type": "SceneNode",
       "Title": "Scene",
-      "PositionX": 2099.6733854818185,
-      "PositionY": 1353.0012546775258,
+      "PositionX": 2705.320444305348,
+      "PositionY": 1766.6483135010565,
       "Properties": {
         "ObjectSocketNames": [
           "Object1",
           "Object2",
           "Object3",
           "Object5",
-          "Object6"
+          "Object6",
+          "Object8"
         ],
         "LightSocketNames": [
           "Light1",
@@ -123,7 +124,7 @@
           "Light5"
         ],
         "SamplesPerPixel": 16,
-        "MaxBounces": 6,
+        "MaxBounces": 12,
         "Exposure": 1.0,
         "ToneMapOperator": 2,
         "DenoiserStabilization": 1.0,
@@ -136,8 +137,8 @@
       "Id": "d38ae94a-cab2-47e9-b086-7e48c9b4bdf0",
       "Type": "BoxNode",
       "Title": "Box",
-      "PositionX": 1685.8267068462194,
-      "PositionY": 1548.0349656276485,
+      "PositionX": 2129.5738752788097,
+      "PositionY": 1562.9154917511426,
       "Properties": {
         "Transform": {
           "Position": {
@@ -174,8 +175,8 @@
       "Id": "14aac4c6-22d9-485f-9dd7-56c0ff789dab",
       "Type": "FloatNode",
       "Title": "Float",
-      "PositionX": 1443.3230174081243,
-      "PositionY": 1140.375656258635,
+      "PositionX": 1742.1260864618328,
+      "PositionY": 683.6536979100796,
       "Properties": {
         "Value": 0.8
       }
@@ -184,8 +185,8 @@
       "Id": "67341e98-e5c7-4a90-bc8d-b5d68087067b",
       "Type": "Vector3Node",
       "Title": "Vector3",
-      "PositionX": 1429.0077922077928,
-      "PositionY": 1247.151948051948,
+      "PositionX": 1884.3822898329297,
+      "PositionY": 981.2871325605354,
       "Properties": {
         "X": 0.0,
         "Y": 1.0,
@@ -196,8 +197,8 @@
       "Id": "04bb1d07-858b-4cb1-99e5-f5096ea531f3",
       "Type": "Vector3Node",
       "Title": "Vector3",
-      "PositionX": 833.0446336682186,
-      "PositionY": 759.3111737319285,
+      "PositionX": 815.2762741504985,
+      "PositionY": 214.58921538337313,
       "Properties": {
         "X": -2.0,
         "Y": 1.0,
@@ -208,8 +209,8 @@
       "Id": "88a575fd-7dbd-4b69-ba56-3a1136f85a79",
       "Type": "Vector3Node",
       "Title": "Vector3",
-      "PositionX": 1015.6172874295513,
-      "PositionY": 766.6783386424895,
+      "PositionX": 1008.1346421975454,
+      "PositionY": 213.956380293934,
       "Properties": {
         "X": 0.0,
         "Y": 0.0,
@@ -220,8 +221,8 @@
       "Id": "f7758ec2-9fb3-468b-a8d5-15d531f770fb",
       "Type": "Vector3Node",
       "Title": "Vector3",
-      "PositionX": 1200.8042024013723,
-      "PositionY": 776.4435922567995,
+      "PositionX": 1200.1787000265094,
+      "PositionY": 212.58485579274247,
       "Properties": {
         "X": 1.0,
         "Y": 1.0,
@@ -232,8 +233,8 @@
       "Id": "ddcac1f9-fce2-4c28-9d49-c572d6299fbf",
       "Type": "Vector3Node",
       "Title": "Vector3",
-      "PositionX": 1142.9123376623374,
-      "PositionY": 1772.2207792207796,
+      "PositionX": 1599.657679277244,
+      "PositionY": 2333.0654997176753,
       "Properties": {
         "X": 0.0,
         "Y": 2.5,
@@ -244,8 +245,8 @@
       "Id": "5a931f43-1796-447d-9a2d-8933bc0b2270",
       "Type": "Vector3Node",
       "Title": "Vector3",
-      "PositionX": 1352.548701298701,
-      "PositionY": 1781.1844155844158,
+      "PositionX": 1792.1511857707505,
+      "PositionY": 2330.600564652739,
       "Properties": {
         "X": 0.0,
         "Y": 1.0,
@@ -256,8 +257,8 @@
       "Id": "78d28b21-f0b2-4ea1-9e04-2ab534a0befb",
       "Type": "AmbientLightNode",
       "Title": "Ambient Light",
-      "PositionX": 1695.2214285714283,
-      "PositionY": 1891.5844155844159,
+      "PositionX": 2089.1096273291923,
+      "PositionY": 2563.2862789384535,
       "Properties": {
         "Color": {
           "X": 0.2,
@@ -272,8 +273,8 @@
       "Id": "e69bef01-fd7e-4a02-bac3-b5e20f100046",
       "Type": "ColorNode",
       "Title": "Color",
-      "PositionX": 1135.8396103896102,
-      "PositionY": 1910.5844155844154,
+      "PositionX": 1513.7278091473736,
+      "PositionY": 2533.143421795596,
       "Properties": {
         "R": 1.0,
         "G": 1.0,
@@ -285,8 +286,8 @@
       "Id": "b9a3a70f-53c2-4d06-92a3-418f7b5c02ee",
       "Type": "FloatNode",
       "Title": "Float",
-      "PositionX": 1341.948701298701,
-      "PositionY": 1937.1116883116886,
+      "PositionX": 1706.122614342179,
+      "PositionY": 2561.956408808584,
       "Properties": {
         "Value": 0.3
       }
@@ -295,8 +296,8 @@
       "Id": "1574bc15-76ea-4253-bde5-8f62befa63a3",
       "Type": "DirectionalLightNode",
       "Title": "Directional Light",
-      "PositionX": 1697.2396103896103,
-      "PositionY": 2014.1480519480524,
+      "PositionX": 2092.270666290231,
+      "PositionY": 2781.8499153020907,
       "Properties": {
         "Direction": {
           "X": 0.0,
@@ -316,8 +317,8 @@
       "Id": "019c5637-c8fb-4d31-af07-e060a4a890ab",
       "Type": "Vector3Node",
       "Title": "Vector3",
-      "PositionX": 989.0941558441557,
-      "PositionY": 2084.675324675325,
+      "PositionX": 1331.553783173348,
+      "PositionY": 2810.0914737436487,
       "Properties": {
         "X": 0.5,
         "Y": -1.0,
@@ -328,8 +329,8 @@
       "Id": "1ebe775d-3c0f-48d1-9f19-8f6bd00dc4ae",
       "Type": "ColorNode",
       "Title": "Color",
-      "PositionX": 1159.366883116883,
-      "PositionY": 2068.675324675325,
+      "PositionX": 1521.2550818746467,
+      "PositionY": 2803.234330886505,
       "Properties": {
         "R": 1.0,
         "G": 1.0,
@@ -341,8 +342,8 @@
       "Id": "b15ace43-cf5d-4957-984e-67853460ca73",
       "Type": "FloatNode",
       "Title": "Float",
-      "PositionX": 1335.7305194805194,
-      "PositionY": 2125.311688311688,
+      "PositionX": 1763.9044325239975,
+      "PositionY": 2743.2992659514402,
       "Properties": {
         "Value": 0.8
       }
@@ -351,8 +352,8 @@
       "Id": "f9f127ed-a2d0-4b4c-8f48-a3ca8f3e72c5",
       "Type": "PointLightNode",
       "Title": "Point Light",
-      "PositionX": 1691.6396103896102,
-      "PositionY": 2211.402597402598,
+      "PositionX": 2082.099237718802,
+      "PositionY": 3052.2473178994933,
       "Properties": {
         "LightPosition": {
           "X": 5.0,
@@ -373,8 +374,8 @@
       "Id": "37629256-e022-4f1f-b4fa-abb0e0fad395",
       "Type": "Vector3Node",
       "Title": "Vector3",
-      "PositionX": 995.8214285714284,
-      "PositionY": 2244.12987012987,
+      "PositionX": 1370.2810559006205,
+      "PositionY": 3074.688876341051,
       "Properties": {
         "X": 0.0,
         "Y": 4.0,
@@ -385,8 +386,8 @@
       "Id": "cf6f7e54-26c8-4df3-ae15-6d1d542511c3",
       "Type": "ColorNode",
       "Title": "Color",
-      "PositionX": 1183.185064935065,
-      "PositionY": 2229.12987012987,
+      "PositionX": 1549.644692264257,
+      "PositionY": 3060.831733483908,
       "Properties": {
         "R": 1.0,
         "G": 1.0,
@@ -398,8 +399,8 @@
       "Id": "78619238-0369-46fa-962f-201aa85ce407",
       "Type": "FloatNode",
       "Title": "Float",
-      "PositionX": 1365.433401963889,
-      "PositionY": 2247.1542603737726,
+      "PositionX": 1757.0358864359384,
+      "PositionY": 3061.713266584953,
       "Properties": {
         "Value": 18.0
       }
@@ -408,8 +409,8 @@
       "Id": "03e0f18a-42af-44e0-a501-cab050a90770",
       "Type": "TransformNode",
       "Title": "Transform",
-      "PositionX": 1393.8512006861065,
-      "PositionY": 793.2522666013231,
+      "PositionX": 1428.6542697398152,
+      "PositionY": 221.10173682419622,
       "Properties": {
         "PositionX": 0.0,
         "PositionY": 0.0,
@@ -426,8 +427,8 @@
       "Id": "3f4ab28e-b9d8-4a18-b43d-4ead910b56ee",
       "Type": "TransformNode",
       "Title": "Transform",
-      "PositionX": 1453.3564935064928,
-      "PositionY": 1413.228571428571,
+      "PositionX": 1755.2720245662802,
+      "PositionY": 1388.6038775177058,
       "Properties": {
         "PositionX": 0.0,
         "PositionY": 0.0,
@@ -444,8 +445,8 @@
       "Id": "13168e80-9ec2-4fa9-b650-2770158530b0",
       "Type": "Vector3Node",
       "Title": "Vector3",
-      "PositionX": 862.8961801070686,
-      "PositionY": 1412.9042001171201,
+      "PositionX": 1166.2706777322057,
+      "PositionY": 1403.0393846257077,
       "Properties": {
         "X": 2.0,
         "Y": 1.0,
@@ -456,8 +457,8 @@
       "Id": "e67834c9-dab5-4b3e-986e-4d13b469fa7d",
       "Type": "ColorNode",
       "Title": "Color",
-      "PositionX": 1061.0519480519476,
-      "PositionY": 1396.5194805194808,
+      "PositionX": 1359.855017105657,
+      "PositionY": 1526.0832364566395,
       "Properties": {
         "R": 0.1,
         "G": 0.1,
@@ -469,8 +470,8 @@
       "Id": "799373d1-57fe-4f8b-bb38-44f16eb36a30",
       "Type": "FloatNode",
       "Title": "Float",
-      "PositionX": 771.5727492846137,
-      "PositionY": 1584.106229363856,
+      "PositionX": 1164.0901040526076,
+      "PositionY": 1576.527128158158,
       "Properties": {
         "Value": 0.0
       }
@@ -479,8 +480,8 @@
       "Id": "ec71a17d-7eff-44cc-8d38-bbca6f7583ae",
       "Type": "FloatNode",
       "Title": "Float",
-      "PositionX": 760.6285274047984,
-      "PositionY": 1685.3771076381245,
+      "PositionX": 1168.0030250299355,
+      "PositionY": 1692.6551492895685,
       "Properties": {
         "Value": 1.5
       }
@@ -489,8 +490,8 @@
       "Id": "9d7a6aa1-2ddb-4b27-91ce-81283d93a479",
       "Type": "FloatNode",
       "Title": "Float",
-      "PositionX": 948.6738278670482,
-      "PositionY": 1670.18789346247,
+      "PositionX": 956.0483254921853,
+      "PositionY": 1684.3230779710575,
       "Properties": {
         "Value": 0.5
       }
@@ -499,8 +500,8 @@
       "Id": "59bc74c6-6e1d-4505-a999-aca4327a50bd",
       "Type": "Vector3Node",
       "Title": "Vector3",
-      "PositionX": 1457.8284447260055,
-      "PositionY": 1612.0449794108333,
+      "PositionX": 1752.9097186786942,
+      "PositionY": 1693.3813082069223,
       "Properties": {
         "X": 1.0,
         "Y": 1.0,
@@ -511,8 +512,8 @@
       "Id": "d441dacb-9d47-4f5f-995b-13ade781818f",
       "Type": "FloatNode",
       "Title": "Float",
-      "PositionX": 1503.0441558441557,
-      "PositionY": 2016.6207792207795,
+      "PositionX": 1765.503783173348,
+      "PositionY": 2835.751214003389,
       "Properties": {
         "Value": 0.1
       }
@@ -521,8 +522,8 @@
       "Id": "b8217bc9-78a1-453e-ba43-fc9536a390ec",
       "Type": "FloatNode",
       "Title": "Float",
-      "PositionX": 1496.2805194805194,
-      "PositionY": 2123.7298701298705,
+      "PositionX": 1765.5972896668538,
+      "PositionY": 2929.1460191981946,
       "Properties": {
         "Value": 10.0
       }
@@ -531,8 +532,8 @@
       "Id": "67b22995-e570-4ef4-a093-340f999d2d78",
       "Type": "ColorNode",
       "Title": "Color",
-      "PositionX": 940.8715375351271,
-      "PositionY": 904.8969380679537,
+      "PositionX": 1061.388892303121,
+      "PositionY": 424.1749797193984,
       "Properties": {
         "R": 1.0,
         "G": 1.0,
@@ -544,8 +545,8 @@
       "Id": "a09b2d9a-0420-448b-a97b-d500e4048f8c",
       "Type": "FloatNode",
       "Title": "Float",
-      "PositionX": 1180.815116236633,
-      "PositionY": 926.0940841575125,
+      "PositionX": 1230.4753281474846,
+      "PositionY": 422.5149829518143,
       "Properties": {
         "Value": 1.0
       }
@@ -554,8 +555,8 @@
       "Id": "e293398f-837c-4b60-af7d-5cedc8ef55b7",
       "Type": "FloatNode",
       "Title": "Float",
-      "PositionX": 1127.9686872741877,
-      "PositionY": 1027.603189664611,
+      "PositionX": 1256.486042042182,
+      "PositionY": 559.4526598874841,
       "Properties": {
         "Value": 0.5
       }
@@ -564,8 +565,8 @@
       "Id": "61dd6547-4fc4-4a4b-bf19-5d6b95b8a60d",
       "Type": "UniversalPBRNode",
       "Title": "Universal PBR",
-      "PositionX": 1421.9991710417237,
-      "PositionY": 988.636639955789,
+      "PositionX": 1684.2308115240037,
+      "PositionY": 495.343253035805,
       "Properties": {
         "BaseColor": {
           "X": 0.8,
@@ -586,8 +587,8 @@
       "Id": "1421c25d-c665-46e5-a66c-95e3cf7871ad",
       "Type": "MaterialBSDFNode",
       "Title": "Material BSDF",
-      "PositionX": 1278.399338569657,
-      "PositionY": 1549.4704423315418,
+      "PositionX": 1751.7487271687592,
+      "PositionY": 1517.9642894541107,
       "Properties": {
         "BaseColor": {
           "X": 0.8,
@@ -611,8 +612,8 @@
       "Id": "aa2d2120-63f5-4cc0-baf5-1b93655bb36f",
       "Type": "FloatNode",
       "Title": "Float",
-      "PositionX": 940.8628659476111,
-      "PositionY": 1557.098613251155,
+      "PositionX": 959.6659350013194,
+      "PositionY": 1551.805226331171,
       "Properties": {
         "Value": 0.0
       }
@@ -621,8 +622,8 @@
       "Id": "80ea806e-3772-42a1-95f4-6a4f7072336e",
       "Type": "EmissionMaterialNode",
       "Title": "Emission",
-      "PositionX": 1090.1956679967661,
-      "PositionY": 1187.2840015015915,
+      "PositionX": 1096.4273084790461,
+      "PositionY": 689.419186010179,
       "Properties": {
         "EmissionColor": {
           "X": 1.0,
@@ -643,8 +644,8 @@
       "Id": "7d902fba-2ecc-4cb0-9fb6-aff5e7826a78",
       "Type": "ColorNode",
       "Title": "Color",
-      "PositionX": 692.1110260325381,
-      "PositionY": 1080.9186614355574,
+      "PositionX": 741.7712379433897,
+      "PositionY": 546.4824173727161,
       "Properties": {
         "R": 1.0,
         "G": 0.0,
@@ -656,8 +657,8 @@
       "Id": "3a780ae8-0e74-4a94-871e-a25e481a35d1",
       "Type": "FloatNode",
       "Title": "Float",
-      "PositionX": 886.2297558990824,
-      "PositionY": 1183.8698809477519,
+      "PositionX": 874.1756820956482,
+      "PositionY": 686.0050654563391,
       "Properties": {
         "Value": 1.0
       }
@@ -666,8 +667,8 @@
       "Id": "21678317-dbfe-422f-96f0-0d1c009d8ca2",
       "Type": "ColorNode",
       "Title": "Color",
-      "PositionX": 678.4184351443655,
-      "PositionY": 1240.9264847213371,
+      "PositionX": 718.9357899123597,
+      "PositionY": 736.2045263727817,
       "Properties": {
         "R": 0.0,
         "G": 0.0,
@@ -679,8 +680,8 @@
       "Id": "7773fd00-312b-47e0-8f37-a2eceedbbc8b",
       "Type": "SphereNode",
       "Title": "Sphere",
-      "PositionX": 2228.022662767881,
-      "PositionY": 1107.8918515552016,
+      "PositionX": 2158.9748001445705,
+      "PositionY": 1217.579831094845,
       "Properties": {
         "Transform": {
           "Position": {
@@ -713,8 +714,8 @@
       "Id": "fb058017-47f7-4056-a76f-e8ca00f721dd",
       "Type": "TransformNode",
       "Title": "Transform",
-      "PositionX": 2173.0191784473236,
-      "PositionY": 912.543419499453,
+      "PositionX": 1394.1079617867463,
+      "PositionY": 1166.6786040080403,
       "Properties": {
         "PositionX": 0.0,
         "PositionY": 0.0,
@@ -731,8 +732,8 @@
       "Id": "88f13b5f-8ac6-4933-b727-80435ac08b31",
       "Type": "Vector3Node",
       "Title": "Vector3",
-      "PositionX": 2011.8972272278115,
-      "PositionY": 779.1949874437034,
+      "PositionX": 934.70029628152,
+      "PositionY": 1125.9016005237195,
       "Properties": {
         "X": 0.0,
         "Y": 2.0,
@@ -743,8 +744,8 @@
       "Id": "4c81c8ac-f4cf-49b8-b45d-7a0106a0bfc2",
       "Type": "FloatNode",
       "Title": "Float",
-      "PositionX": 2061.611512942097,
-      "PositionY": 1095.3831407538082,
+      "PositionX": 1947.8431534243762,
+      "PositionY": 1285.5183252623958,
       "Properties": {
         "Value": 0.7
       }
@@ -753,8 +754,8 @@
       "Id": "1617550e-1ef3-4181-827f-4a2fa22edc0d",
       "Type": "MaterialBSDFNode",
       "Title": "Material BSDF",
-      "PositionX": 1900.227218645803,
-      "PositionY": 972.4536430472715,
+      "PositionX": 1722.4588591280826,
+      "PositionY": 1172.8745418415733,
       "Properties": {
         "BaseColor": {
           "X": 0.8,
@@ -778,8 +779,8 @@
       "Id": "c737d6e6-2e5d-4cb6-a844-f5eafa31c1ac",
       "Type": "ColorNode",
       "Title": "Color",
-      "PositionX": 1724.7881942555593,
-      "PositionY": 762.5268137789787,
+      "PositionX": 1128.7341204521254,
+      "PositionY": 1018.9477125732801,
       "Properties": {
         "R": 1.0,
         "G": 0.2,
@@ -791,10 +792,176 @@
       "Id": "f03f5360-ed34-4fe9-b831-7f741965d0de",
       "Type": "FloatNode",
       "Title": "Float",
-      "PositionX": 1696.9878691828571,
-      "PositionY": 1153.1984022291063,
+      "PositionX": 1385.5052239508511,
+      "PositionY": 1301.0478724519792,
       "Properties": {
         "Value": 1.1
+      }
+    },
+    {
+      "Id": "e95067f7-f296-46db-9088-6adaf7893999",
+      "Type": "MaterialBSDFNode",
+      "Title": "Material BSDF",
+      "PositionX": 1803.4087550224667,
+      "PositionY": 2125.8237551484426,
+      "Properties": {
+        "BaseColor": {
+          "X": 0.8,
+          "Y": 0.8,
+          "Z": 0.8,
+          "W": 1.0
+        },
+        "Metallic": 0.0,
+        "Roughness": 0.5,
+        "Transmission": 0.0,
+        "IOR": 1.5,
+        "Emission": {
+          "X": 0.0,
+          "Y": 0.0,
+          "Z": 0.0,
+          "W": 0.0
+        }
+      }
+    },
+    {
+      "Id": "252760db-13ab-40f1-a848-c4003b7f1745",
+      "Type": "TransformNode",
+      "Title": "Transform",
+      "PositionX": 1810.7765361774823,
+      "PositionY": 1870.8480712578653,
+      "Properties": {
+        "PositionX": 0.0,
+        "PositionY": 0.0,
+        "PositionZ": 0.0,
+        "RotationX": 0.0,
+        "RotationY": 0.0,
+        "RotationZ": 0.0,
+        "ScaleX": 1.0,
+        "ScaleY": 1.0,
+        "ScaleZ": 1.0
+      }
+    },
+    {
+      "Id": "77d951bb-ee9d-44d8-86d6-841a7c401a25",
+      "Type": "Vector3Node",
+      "Title": "Vector3",
+      "PositionX": 1200.495536005434,
+      "PositionY": 1868.7225914787089,
+      "Properties": {
+        "X": 0.5,
+        "Y": 0.0,
+        "Z": -1.5
+      }
+    },
+    {
+      "Id": "3ca972fb-4fb9-4c6b-b74f-ebaa64299795",
+      "Type": "Vector3Node",
+      "Title": "Vector3",
+      "PositionX": 1393.3539040524809,
+      "PositionY": 1868.0897563892697,
+      "Properties": {
+        "X": 90.0,
+        "Y": 0.0,
+        "Z": 0.0
+      }
+    },
+    {
+      "Id": "21004c99-1570-46a1-a443-9865a50e1740",
+      "Type": "Vector3Node",
+      "Title": "Vector3",
+      "PositionX": 1585.3979618814449,
+      "PositionY": 1866.7182318880782,
+      "Properties": {
+        "X": 0.3,
+        "Y": 0.3,
+        "Z": 0.3
+      }
+    },
+    {
+      "Id": "f60ca07d-401e-400f-b432-00ddee077b62",
+      "Type": "ColorNode",
+      "Title": "Color",
+      "PositionX": 1586.5026731831144,
+      "PositionY": 2027.8483933593966,
+      "Properties": {
+        "R": 1.0,
+        "G": 1.0,
+        "B": 1.0,
+        "A": 1.0
+      }
+    },
+    {
+      "Id": "16a441f7-e65e-43aa-aade-0ca2677e21b8",
+      "Type": "FloatNode",
+      "Title": "Float",
+      "PositionX": 1367.1589438222973,
+      "PositionY": 2133.5096859924206,
+      "Properties": {
+        "Value": 0.0
+      }
+    },
+    {
+      "Id": "c651a3a2-59a4-46cd-9252-36fe3efd4601",
+      "Type": "FloatNode",
+      "Title": "Float",
+      "PositionX": 1371.0718647996252,
+      "PositionY": 2249.637707123831,
+      "Properties": {
+        "Value": 0.0
+      }
+    },
+    {
+      "Id": "43653f01-a07e-4982-805e-d157dcf63d9f",
+      "Type": "FloatNode",
+      "Title": "Float",
+      "PositionX": 1159.117165261875,
+      "PositionY": 2241.3056358053204,
+      "Properties": {
+        "Value": 0.5
+      }
+    },
+    {
+      "Id": "977fcc29-8a39-486a-8017-6854c911ba8e",
+      "Type": "FloatNode",
+      "Title": "Float",
+      "PositionX": 1161.0326471114345,
+      "PositionY": 2117.2984224633065,
+      "Properties": {
+        "Value": 0.0
+      }
+    },
+    {
+      "Id": "dd915a63-04be-4e65-ae5a-efe250a86e3e",
+      "Type": "FBXMeshNode",
+      "Title": "WineGlass2",
+      "PositionX": 2083.8800465840063,
+      "PositionY": 2106.9628815960764,
+      "Properties": {
+        "MeshName": "WineGlass2",
+        "Transform": {
+          "Position": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "Rotation": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0,
+            "W": 1.0,
+            "IsIdentity": true
+          },
+          "Scale": {
+            "X": 1.0,
+            "Y": 1.0,
+            "Z": 1.0
+          },
+          "EulerAngles": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          }
+        }
       }
     }
   ],
@@ -1140,16 +1307,83 @@
       "OutputSocketName": "Vector",
       "InputNodeId": "d38ae94a-cab2-47e9-b086-7e48c9b4bdf0",
       "InputSocketName": "Size"
+    },
+    {
+      "OutputNodeId": "f60ca07d-401e-400f-b432-00ddee077b62",
+      "OutputSocketName": "Color",
+      "InputNodeId": "e95067f7-f296-46db-9088-6adaf7893999",
+      "InputSocketName": "Base Color"
+    },
+    {
+      "OutputNodeId": "977fcc29-8a39-486a-8017-6854c911ba8e",
+      "OutputSocketName": "Value",
+      "InputNodeId": "e95067f7-f296-46db-9088-6adaf7893999",
+      "InputSocketName": "Metallic"
+    },
+    {
+      "OutputNodeId": "16a441f7-e65e-43aa-aade-0ca2677e21b8",
+      "OutputSocketName": "Value",
+      "InputNodeId": "e95067f7-f296-46db-9088-6adaf7893999",
+      "InputSocketName": "Roughness"
+    },
+    {
+      "OutputNodeId": "43653f01-a07e-4982-805e-d157dcf63d9f",
+      "OutputSocketName": "Value",
+      "InputNodeId": "e95067f7-f296-46db-9088-6adaf7893999",
+      "InputSocketName": "Transmission"
+    },
+    {
+      "OutputNodeId": "c651a3a2-59a4-46cd-9252-36fe3efd4601",
+      "OutputSocketName": "Value",
+      "InputNodeId": "e95067f7-f296-46db-9088-6adaf7893999",
+      "InputSocketName": "IOR"
+    },
+    {
+      "OutputNodeId": "77d951bb-ee9d-44d8-86d6-841a7c401a25",
+      "OutputSocketName": "Vector",
+      "InputNodeId": "252760db-13ab-40f1-a848-c4003b7f1745",
+      "InputSocketName": "Position"
+    },
+    {
+      "OutputNodeId": "3ca972fb-4fb9-4c6b-b74f-ebaa64299795",
+      "OutputSocketName": "Vector",
+      "InputNodeId": "252760db-13ab-40f1-a848-c4003b7f1745",
+      "InputSocketName": "Rotation"
+    },
+    {
+      "OutputNodeId": "21004c99-1570-46a1-a443-9865a50e1740",
+      "OutputSocketName": "Vector",
+      "InputNodeId": "252760db-13ab-40f1-a848-c4003b7f1745",
+      "InputSocketName": "Scale"
+    },
+    {
+      "OutputNodeId": "252760db-13ab-40f1-a848-c4003b7f1745",
+      "OutputSocketName": "Transform",
+      "InputNodeId": "dd915a63-04be-4e65-ae5a-efe250a86e3e",
+      "InputSocketName": "Transform"
+    },
+    {
+      "OutputNodeId": "e95067f7-f296-46db-9088-6adaf7893999",
+      "OutputSocketName": "Material",
+      "InputNodeId": "dd915a63-04be-4e65-ae5a-efe250a86e3e",
+      "InputSocketName": "Material"
+    },
+    {
+      "OutputNodeId": "dd915a63-04be-4e65-ae5a-efe250a86e3e",
+      "OutputSocketName": "Object",
+      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
+      "InputSocketName": "Object6"
     }
   ],
   "Viewport": {
-    "PanX": -401.19205620395167,
-    "PanY": -591.5594450230906,
-    "Zoom": 0.8200000000000001,
+    "PanX": -1054.0378162226093,
+    "PanY": -1075.1235800786312,
+    "Zoom": 0.9400000000000001,
     "IsLeftPanelVisible": true,
     "IsRightPanelVisible": true,
     "ExpanderStates": {
       "IsObjectExpanded": true,
+      "IsFBXObjectExpanded": true,
       "IsMaterialExpanded": true,
       "IsMathExpanded": true,
       "IsCameraExpanded": true,

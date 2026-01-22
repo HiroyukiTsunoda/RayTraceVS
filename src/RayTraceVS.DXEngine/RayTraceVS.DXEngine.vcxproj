@@ -175,6 +175,13 @@
       <AdditionalIncludeDirectories>$(ShaderSourceDir)</AdditionalIncludeDirectories>
       <AdditionalDependencies>$(ShaderSourceDir)Common.hlsli;$(ShaderSourceDir)NRDEncoding.hlsli</AdditionalDependencies>
     </FxCompile>
+    <FxCompile Include="$(ShaderSourceDir)ClosestHit_Triangle.hlsl">
+      <ShaderType>Library</ShaderType>
+      <ShaderModel>6.3</ShaderModel>
+      <ObjectFileOutput>$(ShaderCacheDir)%(Filename).cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(ShaderSourceDir)</AdditionalIncludeDirectories>
+      <AdditionalDependencies>$(ShaderSourceDir)Common.hlsli;$(ShaderSourceDir)NRDEncoding.hlsli</AdditionalDependencies>
+    </FxCompile>
     <FxCompile Include="$(ShaderSourceDir)Miss.hlsl">
       <ShaderType>Library</ShaderType>
       <ShaderModel>6.3</ShaderModel>

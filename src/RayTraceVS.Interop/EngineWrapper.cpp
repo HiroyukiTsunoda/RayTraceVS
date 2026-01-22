@@ -2,6 +2,28 @@
 #include "EngineWrapper.h"
 #include "Marshalling.h"
 #include "NativeBridge.h"
+#include <cstdio>
+#include <cstdarg>
+
+// Declare OutputDebugStringA without including windows.h (avoids C++/CLI conflicts)
+extern "C" __declspec(dllimport) void __stdcall OutputDebugStringA(const char* lpOutputString);
+
+// Error log only
+static void LogError(const char* msg)
+{
+    OutputDebugStringA(msg);
+}
+
+// Debug log with printf-style formatting
+static void LogDebug(const char* format, ...)
+{
+    char buffer[1024];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end(args);
+    OutputDebugStringA(buffer);
+}
 
 namespace RayTraceVS::Interop
 {
@@ -85,6 +107,8 @@ namespace RayTraceVS::Interop
         array<BoxData>^ boxes,
         CameraData camera,
         array<LightData>^ lights,
+        array<MeshInstanceData>^ meshInstances,
+        array<MeshCacheData^>^ meshCaches,
         int samplesPerPixel,
         int maxBounces,
         float exposure,
@@ -146,42 +170,144 @@ namespace RayTraceVS::Interop
                 Bridge::AddLight(nativeScene, nativeLight);
             }
         }
+
+        // Add mesh caches (shared geometry)
+        if (meshCaches != nullptr)
+        {
+            for each (MeshCacheData^ cache in meshCaches)
+            {
+                if (cache == nullptr || cache->MeshName == nullptr)
+                    continue;
+                    
+                Bridge::MeshCacheDataNative nativeCache;
+                std::string meshNameStr = Marshalling::ToNativeString(cache->MeshName);
+                nativeCache.name = meshNameStr.c_str();
+                
+                // Pin managed arrays to get native pointers
+                pin_ptr<float> pinnedVertices = nullptr;
+                pin_ptr<unsigned int> pinnedIndices = nullptr;
+                
+                if (cache->Vertices != nullptr && cache->Vertices->Length > 0)
+                {
+                    pinnedVertices = &cache->Vertices[0];
+                    nativeCache.vertices = pinnedVertices;
+                    nativeCache.vertexCount = cache->Vertices->Length / 8;  // 8 floats per vertex
+                }
+                else
+                {
+                    LogError("[EngineWrapper] ERROR: Mesh cache has no vertices\n");
+                    nativeCache.vertices = nullptr;
+                    nativeCache.vertexCount = 0;
+                }
+                
+                if (cache->Indices != nullptr && cache->Indices->Length > 0)
+                {
+                    pinnedIndices = &cache->Indices[0];
+                    nativeCache.indices = pinnedIndices;
+                    nativeCache.indexCount = cache->Indices->Length;
+                }
+                else
+                {
+                    LogError("[EngineWrapper] ERROR: Mesh cache has no indices\n");
+                    nativeCache.indices = nullptr;
+                    nativeCache.indexCount = 0;
+                }
+                
+                nativeCache.boundsMin = { cache->BoundsMin.X, cache->BoundsMin.Y, cache->BoundsMin.Z };
+                nativeCache.boundsMax = { cache->BoundsMax.X, cache->BoundsMax.Y, cache->BoundsMax.Z };
+                
+                Bridge::AddMeshCache(nativeScene, nativeCache);
+            }
+        }
+
+        // Add mesh instances
+        LogDebug("[EngineWrapper::UpdateScene] Adding mesh instances...\n");
+        if (meshInstances != nullptr)
+        {
+            LogDebug("[EngineWrapper::UpdateScene] meshInstances count: %d\n", meshInstances->Length);
+            for (int i = 0; i < meshInstances->Length; i++)
+            {
+                MeshInstanceData instance = meshInstances[i];
+                LogDebug("[EngineWrapper::UpdateScene] Processing instance %d\n", i);
+                if (instance.MeshName == nullptr)
+                {
+                    LogDebug("[EngineWrapper::UpdateScene] MeshName is null, skipping\n");
+                    continue;
+                }
+                
+                LogDebug("[EngineWrapper::UpdateScene] MeshName is valid, converting...\n");
+                Bridge::MeshInstanceDataNative nativeInstance;
+                std::string meshNameStr = Marshalling::ToNativeString(instance.MeshName);
+                LogDebug("[EngineWrapper::UpdateScene] meshNameStr: %s\n", meshNameStr.c_str());
+                nativeInstance.meshName = meshNameStr.c_str();
+                
+                nativeInstance.position = { instance.Position.X, instance.Position.Y, instance.Position.Z };
+                nativeInstance.rotation = { instance.Rotation.X, instance.Rotation.Y, instance.Rotation.Z };
+                nativeInstance.scale = { instance.Scale.X, instance.Scale.Y, instance.Scale.Z };
+                nativeInstance.material.color = { instance.Color.X, instance.Color.Y, instance.Color.Z, instance.Color.W };
+                nativeInstance.material.metallic = instance.Metallic;
+                nativeInstance.material.roughness = instance.Roughness;
+                nativeInstance.material.transmission = instance.Transmission;
+                nativeInstance.material.ior = instance.IOR;
+                nativeInstance.material.specular = instance.Specular;
+                nativeInstance.material.emission = { instance.Emission.X, instance.Emission.Y, instance.Emission.Z };
+                
+                LogDebug("[EngineWrapper::UpdateScene] Calling Bridge::AddMeshInstance...\n");
+                Bridge::AddMeshInstance(nativeScene, nativeInstance);
+                LogDebug("[EngineWrapper::UpdateScene] Bridge::AddMeshInstance completed\n");
+            }
+        }
+        LogDebug("[EngineWrapper::UpdateScene] All mesh instances added\n");
     }
 
     void EngineWrapper::Render()
     {
+        LogDebug("[EngineWrapper::Render] Starting...\n");
         if (!isInitialized || !nativePipeline || !nativeRenderTarget || !nativeContext)
+        {
+            LogError("[EngineWrapper::Render] ERROR: Not initialized or null pointers\n");
             return;
+        }
 
         try
         {
+            // Wait for previous GPU work to complete before resetting command allocator
+            LogDebug("[EngineWrapper::Render] WaitForGPU (before reset)...\n");
+            Bridge::WaitForGPU(nativeContext);
+            
             // Reset command list
+            LogDebug("[EngineWrapper::Render] ResetCommandList...\n");
             Bridge::ResetCommandList(nativeContext);
             
-            // Render test pattern
+            // Render
+            LogDebug("[EngineWrapper::Render] RenderTestPattern...\n");
             Bridge::RenderTestPattern(nativePipeline, nativeRenderTarget, nativeScene);
-            
-            // TODO: Actual ray tracing rendering
-            // Bridge::DispatchRays(nativePipeline, renderWidth, renderHeight);
+            LogDebug("[EngineWrapper::Render] RenderTestPattern completed\n");
             
             // Execute command list
+            LogDebug("[EngineWrapper::Render] ExecuteCommandList...\n");
             Bridge::ExecuteCommandList(nativeContext);
             
             // Wait for GPU completion
+            LogDebug("[EngineWrapper::Render] WaitForGPU...\n");
             Bridge::WaitForGPU(nativeContext);
             
             // Copy to readback buffer
+            LogDebug("[EngineWrapper::Render] CopyRenderTargetToReadback...\n");
             Bridge::ResetCommandList(nativeContext);
             Bridge::CopyRenderTargetToReadback(nativeRenderTarget, nativeContext);
             Bridge::ExecuteCommandList(nativeContext);
             Bridge::WaitForGPU(nativeContext);
+            LogDebug("[EngineWrapper::Render] Completed\n");
         }
         catch (System::Exception^)
         {
+            LogError("[EngineWrapper::Render] ERROR: Managed exception\n");
             throw;
         }
         catch (...)
         {
+            LogError("[EngineWrapper::Render] ERROR: Native exception\n");
             throw gcnew System::Exception("Native rendering error");
         }
     }

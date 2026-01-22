@@ -10,6 +10,8 @@ using InteropPlaneData = RayTraceVS.Interop.PlaneData;
 using InteropBoxData = RayTraceVS.Interop.BoxData;
 using InteropCameraData = RayTraceVS.Interop.CameraData;
 using InteropLightData = RayTraceVS.Interop.LightData;
+using InteropMeshInstanceData = RayTraceVS.Interop.MeshInstanceData;
+using InteropMeshCacheData = RayTraceVS.Interop.MeshCacheData;
 using InteropVector3 = RayTraceVS.Interop.Vector3;
 using InteropVector4 = RayTraceVS.Interop.Vector4;
 using InteropLightType = RayTraceVS.Interop.LightType;
@@ -22,17 +24,20 @@ using LightData = RayTraceVS.WPF.Models.Data.LightData;
 using LightType = RayTraceVS.WPF.Models.Data.LightType;
 using SceneData = RayTraceVS.WPF.Models.Data.SceneData;
 using MaterialData = RayTraceVS.WPF.Models.Data.MaterialData;
+using MeshObjectData = RayTraceVS.WPF.Models.Data.MeshObjectData;
 
 namespace RayTraceVS.WPF.Services
 {
     public class SceneEvaluator
     {
-        public (InteropSphereData[], InteropPlaneData[], InteropBoxData[], InteropCameraData, InteropLightData[], int SamplesPerPixel, int MaxBounces, float Exposure, int ToneMapOperator, float DenoiserStabilization, float ShadowStrength, bool EnableDenoiser, float Gamma) EvaluateScene(NodeGraph nodeGraph)
+        public (InteropSphereData[], InteropPlaneData[], InteropBoxData[], InteropCameraData, InteropLightData[], InteropMeshInstanceData[], InteropMeshCacheData[], int SamplesPerPixel, int MaxBounces, float Exposure, int ToneMapOperator, float DenoiserStabilization, float ShadowStrength, bool EnableDenoiser, float Gamma) EvaluateScene(NodeGraph nodeGraph)
         {
             var spheres = new List<InteropSphereData>();
             var planes = new List<InteropPlaneData>();
             var boxes = new List<InteropBoxData>();
             var lights = new List<InteropLightData>();
+            var meshInstances = new List<InteropMeshInstanceData>();
+            var meshCaches = new Dictionary<string, InteropMeshCacheData>();
             int samplesPerPixel = 1;
             int maxBounces = 6;
             float exposure = 1.0f;
@@ -86,6 +91,25 @@ namespace RayTraceVS.WPF.Services
                         {
                             boxes.Add(ConvertBoxData(bd));
                         }
+                        else if (obj is MeshObjectData md && !string.IsNullOrEmpty(md.MeshName))
+                        {
+                            // キャッシュが存在する場合のみインスタンスを追加
+                            // キャッシュがない場合はスキップ（AccessViolation防止）
+                            if (!meshCaches.ContainsKey(md.MeshName))
+                            {
+                                var cache = CreateMeshCacheData(md.MeshName);
+                                if (cache != null)
+                                {
+                                    meshCaches[md.MeshName] = cache;
+                                }
+                                else
+                                {
+                                    // キャッシュが存在しない場合はこのメッシュインスタンスをスキップ
+                                    continue;
+                                }
+                            }
+                            meshInstances.Add(ConvertMeshInstanceData(md));
+                        }
                     }
                     
                     // SceneNodeに接続されたライトのみを追加
@@ -108,8 +132,6 @@ namespace RayTraceVS.WPF.Services
             else
             {
                 // SceneNodeがない場合：すべてのオブジェクトノードから直接取得（フォールバック）
-                System.Diagnostics.Debug.WriteLine("[SceneEvaluator] SceneNodeなし：フォールバックモード");
-                
                 // 接続がある場合はグラフ評価を利用（入力値が正しく伝播される）
                 Dictionary<Guid, object?>? results = null;
                 if (connections.Any())
@@ -246,7 +268,7 @@ namespace RayTraceVS.WPF.Services
                 }
             }
 
-            return (spheres.ToArray(), planes.ToArray(), boxes.ToArray(), camera, lights.ToArray(), samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization, shadowStrength, enableDenoiser, gamma);
+            return (spheres.ToArray(), planes.ToArray(), boxes.ToArray(), camera, lights.ToArray(), meshInstances.ToArray(), meshCaches.Values.ToArray(), samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization, shadowStrength, enableDenoiser, gamma);
         }
 
         private InteropSphereData ConvertSphereData(SphereData data)
@@ -366,6 +388,58 @@ namespace RayTraceVS.WPF.Services
                 Radius = data.Radius,
                 SoftShadowSamples = data.SoftShadowSamples
             };
+        }
+
+        private InteropMeshInstanceData ConvertMeshInstanceData(MeshObjectData data)
+        {
+            var material = data.Material;
+            var transform = data.Transform;
+
+            // EulerAnglesプロパティを使用してオイラー角（度数法）を取得
+            // 注意: Transform.RotationはQuaternion型なので、直接X,Y,Zを使用してはいけない
+            var eulerAngles = transform.EulerAngles;
+            
+            // Scaleが0の場合はデフォルト(1,1,1)を使用（未初期化対策）
+            var scale = transform.Scale;
+            if (scale.X == 0 && scale.Y == 0 && scale.Z == 0)
+            {
+                scale = System.Numerics.Vector3.One;
+            }
+
+            return new InteropMeshInstanceData
+            {
+                MeshName = data.MeshName,
+                Position = new InteropVector3(transform.Position.X, transform.Position.Y, transform.Position.Z),
+                Rotation = new InteropVector3(eulerAngles.X, eulerAngles.Y, eulerAngles.Z),
+                Scale = new InteropVector3(scale.X, scale.Y, scale.Z),
+                Color = new InteropVector4(material.BaseColor.X, material.BaseColor.Y, material.BaseColor.Z, material.BaseColor.W),
+                Metallic = material.Metallic,
+                Roughness = material.Roughness,
+                Transmission = material.Transmission,
+                IOR = material.IOR,
+                Specular = material.Specular,
+                Emission = new InteropVector3(material.Emission.X, material.Emission.Y, material.Emission.Z)
+            };
+        }
+
+        private InteropMeshCacheData? CreateMeshCacheData(string meshName)
+        {
+            var meshCacheService = App.MeshCacheService;
+            if (meshCacheService == null) return null;
+
+            var cachedMesh = meshCacheService.GetMesh(meshName);
+            if (cachedMesh == null) return null;
+
+            var cacheData = new InteropMeshCacheData
+            {
+                MeshName = meshName,
+                Vertices = cachedMesh.Vertices,
+                Indices = cachedMesh.Indices,
+                BoundsMin = new InteropVector3(cachedMesh.BoundsMin.X, cachedMesh.BoundsMin.Y, cachedMesh.BoundsMin.Z),
+                BoundsMax = new InteropVector3(cachedMesh.BoundsMax.X, cachedMesh.BoundsMax.Y, cachedMesh.BoundsMax.Z)
+            };
+
+            return cacheData;
         }
     }
 }
