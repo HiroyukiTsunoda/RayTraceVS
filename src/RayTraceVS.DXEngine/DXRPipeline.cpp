@@ -1445,9 +1445,10 @@ namespace RayTraceVS::DXEngine
         //   SIGMA: float shadowPenumbra (4) + float shadowDistance (4) + float padding2 (4) = 12 bytes
         //   Thickness query: 3 * uint (12) + uint hitObjectType (4) = 16 bytes
         //   Colored shadow: float3 shadowColorAccum (12) + float shadowTransmissionAccum (4) = 16 bytes
-        //   Hit object info: uint hitObjectIndex (4) + padding (4) = 8 bytes
-        //   Total: 156 bytes (align to 8 -> 160)
-        UINT payloadSize = 160;
+        //   Hit object info: uint hitObjectIndex (4) = 4 bytes
+        //   Loop-based: float4 x 3 (loopRayOrigin, loopRayDirection, loopThroughput) = 48 bytes
+        //   Total: 156 + 48 = 204, align to 8 -> 208
+        UINT payloadSize = 208;
         // ProceduralAttributes: float3 normal (12) + uint objectType (4) + uint objectIndex (4) = 20 bytes
         UINT attribSize = 12 + 4 + 4;   // 20 bytes
         shaderConfig->Config(payloadSize, attribSize);
@@ -1458,7 +1459,7 @@ namespace RayTraceVS::DXEngine
         
         // Pipeline config
         auto pipelineConfig = stateObjectDesc.CreateSubobject<CD3DX12_RAYTRACING_PIPELINE_CONFIG_SUBOBJECT>();
-        pipelineConfig->Config(8);  // Max recursion depth (reduced for compatibility)
+        pipelineConfig->Config(8);  // Max recursion depth
         
         // Create state object
         HRESULT hr = device->CreateStateObject(stateObjectDesc, IID_PPV_ARGS(&stateObject));
@@ -2150,7 +2151,7 @@ namespace RayTraceVS::DXEngine
         
         // Pipeline config
         auto pipelineConfig = stateObjectDesc.CreateSubobject<CD3DX12_RAYTRACING_PIPELINE_CONFIG_SUBOBJECT>();
-        pipelineConfig->Config(8);  // Reduced for compatibility
+        pipelineConfig->Config(8);  // Max recursion depth
         
         // Create state object
         HRESULT hr = device->CreateStateObject(stateObjectDesc, IID_PPV_ARGS(&photonStateObject));

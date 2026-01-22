@@ -124,7 +124,7 @@
           "Light5"
         ],
         "SamplesPerPixel": 16,
-        "MaxBounces": 12,
+        "MaxBounces": 6,
         "Exposure": 1.0,
         "ToneMapOperator": 2,
         "DenoiserStabilization": 1.0,
@@ -470,8 +470,8 @@
       "Id": "799373d1-57fe-4f8b-bb38-44f16eb36a30",
       "Type": "FloatNode",
       "Title": "Float",
-      "PositionX": 1164.0901040526076,
-      "PositionY": 1576.527128158158,
+      "PositionX": 1157.2815934143093,
+      "PositionY": 1562.9101068815621,
       "Properties": {
         "Value": 0.0
       }
@@ -483,15 +483,15 @@
       "PositionX": 1168.0030250299355,
       "PositionY": 1692.6551492895685,
       "Properties": {
-        "Value": 1.5
+        "Value": 1.1
       }
     },
     {
       "Id": "9d7a6aa1-2ddb-4b27-91ce-81283d93a479",
       "Type": "FloatNode",
       "Title": "Float",
-      "PositionX": 956.0483254921853,
-      "PositionY": 1684.3230779710575,
+      "PositionX": 952.6440701730364,
+      "PositionY": 1675.812439673185,
       "Properties": {
         "Value": 0.5
       }
@@ -558,7 +558,7 @@
       "PositionX": 1256.486042042182,
       "PositionY": 559.4526598874841,
       "Properties": {
-        "Value": 0.5
+        "Value": 0.0
       }
     },
     {
@@ -907,7 +907,7 @@
       "PositionX": 1371.0718647996252,
       "PositionY": 2249.637707123831,
       "Properties": {
-        "Value": 0.0
+        "Value": 1.5
       }
     },
     {
@@ -1195,12 +1195,6 @@
       "InputSocketName": "Transmission"
     },
     {
-      "OutputNodeId": "1421c25d-c665-46e5-a66c-95e3cf7871ad",
-      "OutputSocketName": "Material",
-      "InputNodeId": "d38ae94a-cab2-47e9-b086-7e48c9b4bdf0",
-      "InputSocketName": "Material"
-    },
-    {
       "OutputNodeId": "aa2d2120-63f5-4cc0-baf5-1b93655bb36f",
       "OutputSocketName": "Value",
       "InputNodeId": "1421c25d-c665-46e5-a66c-95e3cf7871ad",
@@ -1223,12 +1217,6 @@
       "OutputSocketName": "Color",
       "InputNodeId": "80ea806e-3772-42a1-95f4-6a4f7072336e",
       "InputSocketName": "Base Color"
-    },
-    {
-      "OutputNodeId": "61dd6547-4fc4-4a4b-bf19-5d6b95b8a60d",
-      "OutputSocketName": "Material",
-      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-111111111111",
-      "InputSocketName": "Material"
     },
     {
       "OutputNodeId": "7773fd00-312b-47e0-8f37-a2eceedbbc8b",
@@ -1363,22 +1351,34 @@
       "InputSocketName": "Transform"
     },
     {
+      "OutputNodeId": "dd915a63-04be-4e65-ae5a-efe250a86e3e",
+      "OutputSocketName": "Object",
+      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
+      "InputSocketName": "Object6"
+    },
+    {
+      "OutputNodeId": "61dd6547-4fc4-4a4b-bf19-5d6b95b8a60d",
+      "OutputSocketName": "Material",
+      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-111111111111",
+      "InputSocketName": "Material"
+    },
+    {
       "OutputNodeId": "e95067f7-f296-46db-9088-6adaf7893999",
       "OutputSocketName": "Material",
       "InputNodeId": "dd915a63-04be-4e65-ae5a-efe250a86e3e",
       "InputSocketName": "Material"
     },
     {
-      "OutputNodeId": "dd915a63-04be-4e65-ae5a-efe250a86e3e",
-      "OutputSocketName": "Object",
-      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
-      "InputSocketName": "Object6"
+      "OutputNodeId": "1421c25d-c665-46e5-a66c-95e3cf7871ad",
+      "OutputSocketName": "Material",
+      "InputNodeId": "d38ae94a-cab2-47e9-b086-7e48c9b4bdf0",
+      "InputSocketName": "Material"
     }
   ],
   "Viewport": {
-    "PanX": -1054.0378162226093,
-    "PanY": -1075.1235800786312,
-    "Zoom": 0.9400000000000001,
+    "PanX": -390.6748442383091,
+    "PanY": -460.3827034785685,
+    "Zoom": 0.7000000000000001,
     "IsLeftPanelVisible": true,
     "IsRightPanelVisible": true,
     "ExpanderStates": {
