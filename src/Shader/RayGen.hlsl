@@ -78,9 +78,6 @@ void RayGen()
     float minShadowDistance = NRD_FP16_MAX;
     int occludedSampleCount = 0;
     
-    // Get max bounces from scene settings
-    uint maxBounces = (Scene.MaxBounces > 0) ? min(Scene.MaxBounces, 32) : 8;
-    
     for (uint s = 0; s < sampleCount; s++)
     {
         // ピクセル内のランダムオフセット（アンチエイリアシング）
@@ -115,15 +112,15 @@ void RayGen()
         }
         
         // ============================================
-        // Loop-based ray tracing (no recursion in ClosestHit)
+        // Loop-based ray tracing
         // ============================================
-        float3 throughput = float3(1, 1, 1);  // Accumulated color attenuation
-        float3 sampleColor = float3(0, 0, 0); // Final color for this sample
+        uint maxBounces = (Scene.MaxBounces > 0) ? min(Scene.MaxBounces, 32) : 8;
+        float3 throughput = float3(1, 1, 1);
+        float3 sampleColor = float3(0, 0, 0);
         float rayTMin = 0.001;
-        
-        // Store primary ray NRD data
         bool primaryHitRecorded = false;
         
+        bool loopTerminated = false;
         for (uint bounce = 0; bounce < maxBounces; bounce++)
         {
             // レイディスクリプタ
@@ -136,10 +133,9 @@ void RayGen()
             // ペイロード初期化
             RayPayload payload;
             payload.color = float3(0, 0, 0);
-            payload.depth = bounce;  // Use bounce count as depth
+            payload.depth = bounce;
             payload.hit = 0;
             payload.padding = 0.0;
-            // Initialize NRD fields
             payload.diffuseRadiance = float3(0, 0, 0);
             payload.specularRadiance = float3(0, 0, 0);
             payload.hitDistance = 10000.0;
@@ -157,31 +153,25 @@ void RayGen()
             payload.thicknessQuery = 0;
             payload.shadowColorAccum = float3(1, 1, 1);
             payload.shadowTransmissionAccum = 1.0;
-            // Initialize loop-based fields
-            payload.nextRayOrigin = float3(0, 0, 0);
-            payload.nextRayDirection = float3(0, 0, 0);
-            payload.throughput = float3(1, 1, 1);
-            payload.continueTrace = 0.0;
-            payload.nextRayTMin = 0.001;
-            payload.throughputPad = 0.0;
+            payload.loopRayOrigin = float4(0, 0, 0, 0);
+            payload.loopRayDirection = float4(0, 0, 0, 0.001);
+            payload.loopThroughput = float4(1, 1, 1, 0);
             
             // レイトレーシング実行
             TraceRay(
-                SceneBVH,                           // アクセラレーション構造
-                RAY_FLAG_NONE,                      // レイフラグ
-                0xFF,                               // インスタンスマスク
-                0,                                  // RayContributionToHitGroupIndex
-                0,                                  // MultiplierForGeometryContributionToHitGroupIndex
-                0,                                  // MissShaderIndex
-                ray,                                // レイ
-                payload                             // ペイロード
+                SceneBVH,
+                RAY_FLAG_NONE,
+                0xFF,
+                0, 0, 0,
+                ray,
+                payload
             );
             
             // Accumulate color with throughput
             sampleColor += throughput * payload.color;
             
-            // Record primary ray NRD data (first bounce only, first hit)
-            if (bounce == 0 && payload.hit && !primaryHitRecorded)
+            // Record NRD data from first bounce only
+            if (bounce == 0 && !primaryHitRecorded)
             {
                 accumulatedDiffuse += payload.diffuseRadiance;
                 accumulatedSpecular += payload.specularRadiance;
@@ -195,7 +185,7 @@ void RayGen()
                 }
                 
                 // Record first hit data for NRD
-                if (!anyHit)
+                if (payload.hit && !anyHit)
                 {
                     primaryNormal = payload.worldNormal;
                     primaryRoughness = payload.roughness;
@@ -203,53 +193,38 @@ void RayGen()
                     primaryViewZ = payload.viewZ;
                     primaryMetallic = payload.metallic;
                     primaryAlbedo = payload.albedo;
-                    
-                    // SIGMA: Store raw shadow from PRIMARY sample only (no averaging!)
                     primaryShadowVisibility = payload.shadowVisibility;
                     primaryShadowPenumbra = payload.shadowPenumbra;
                     primaryShadowDistance = payload.shadowDistance;
-                    
                     anyHit = true;
                 }
                 primaryHitRecorded = true;
             }
             
             // Check if we should continue tracing
-            if (payload.continueTrace < 0.5)
+            if (payload.loopRayOrigin.w < 0.5)
             {
                 // Miss or terminal hit - add sky color if miss
                 if (!payload.hit)
                 {
                     sampleColor += throughput * GetSkyColor(rayDir);
                 }
+                loopTerminated = true;
                 break;
             }
             
-            // Update throughput for next bounce
-            throughput *= payload.throughput;
-            
-            // Russian roulette for path termination (after a few bounces)
-            if (bounce > 3)
-            {
-                float maxThroughput = max(throughput.r, max(throughput.g, throughput.b));
-                if (maxThroughput < 0.1)
-                {
-                    // Use pixel-based random for Russian roulette
-                    uint rrSeed = launchIndex.x * 1973 + launchIndex.y * 9277 + s * 26699 + bounce * 12345;
-                    float rrRand = Hash(rrSeed);
-                    if (rrRand > maxThroughput * 10.0)
-                    {
-                        break;  // Terminate path
-                    }
-                    // Boost throughput to maintain unbiased result
-                    throughput /= maxThroughput * 10.0;
-                }
-            }
-            
-            // Setup next ray from payload
-            rayOrigin = payload.nextRayOrigin;
-            rayDir = payload.nextRayDirection;
-            rayTMin = payload.nextRayTMin;
+            // Update for next bounce
+            throughput *= payload.loopThroughput.xyz;
+            rayOrigin = payload.loopRayOrigin.xyz;
+            rayDir = payload.loopRayDirection.xyz;
+            rayTMin = payload.loopRayDirection.w;
+        }
+        
+        // If loop ended due to maxBounces (not break), add sky color as fallback
+        // This handles cases where glass keeps bouncing until limit
+        if (!loopTerminated && dot(throughput, float3(1, 1, 1)) > 0.01)
+        {
+            sampleColor += throughput * GetSkyColor(rayDir);
         }
         
         accumulatedColor += sampleColor;
@@ -263,9 +238,12 @@ void RayGen()
     // Output NRD G-Buffer data for SIGMA workflow
     // diffuseRadiance = lighting WITHOUT shadow (albedo handling depends on material shader)
     // Shadow will be applied from SIGMA denoiser in Composite.hlsl
-    float3 diffuseForNRD = accumulatedDiffuse * invSampleCount;
+    // Step B (minimal): keep Composite inputs consistent
+    // diffuse + specular should reconstruct accumulatedColor
+    float3 diffuseForNRD = (accumulatedColor - accumulatedSpecular) * invSampleCount;
+    float3 specularForNRD = accumulatedSpecular * invSampleCount;
     GBuffer_DiffuseRadianceHitDist[launchIndex] = float4(diffuseForNRD, accumulatedHitDist * invSampleCount);
-    GBuffer_SpecularRadianceHitDist[launchIndex] = float4(accumulatedSpecular * invSampleCount, accumulatedHitDist * invSampleCount);
+    GBuffer_SpecularRadianceHitDist[launchIndex] = float4(specularForNRD, accumulatedHitDist * invSampleCount);
     
     // For primary normal/roughness/albedo, use hit data if available, else defaults
     float3 worldNormal = anyHit ? primaryNormal : float3(0, 1, 0);
