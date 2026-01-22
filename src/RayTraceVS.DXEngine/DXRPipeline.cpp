@@ -397,6 +397,13 @@ namespace RayTraceVS::DXEngine
         mappedConstantData->TanHalfFov = tanf(camera.GetFieldOfView() * 0.5f * 3.14159265f / 180.0f);
         mappedConstantData->SamplesPerPixel = scene->GetSamplesPerPixel();
         mappedConstantData->MaxBounces = scene->GetMaxBounces();
+
+        int requestedTraceDepth = scene->GetTraceRecursionDepth();
+        if (requestedTraceDepth < 1)
+            requestedTraceDepth = 1;
+        if (requestedTraceDepth > 8)
+            requestedTraceDepth = 8;
+        maxTraceRecursionDepth = static_cast<UINT>(requestedTraceDepth);
         
         // DoF parameters
         mappedConstantData->ApertureSize = camera.GetApertureSize();
@@ -843,6 +850,18 @@ namespace RayTraceVS::DXEngine
 
         // Update scene data
         UpdateSceneData(scene, width, height);
+
+        if (maxTraceRecursionDepth != currentTraceRecursionDepth)
+        {
+            LOG_INFO("Trace recursion depth changed, rebuilding DXR pipeline");
+            dxrPipelineReady = CreateDXRPipeline();
+            if (!dxrPipelineReady)
+            {
+                LOG_ERROR("Failed to rebuild DXR pipeline for new recursion depth");
+                RenderWithComputeShader(renderTarget, scene);
+                return;
+            }
+        }
 
         // Create descriptors
         CD3DX12_CPU_DESCRIPTOR_HANDLE cpuHandle(computeSrvUavHeap->GetCPUDescriptorHandleForHeapStart());
@@ -1459,7 +1478,7 @@ namespace RayTraceVS::DXEngine
         
         // Pipeline config
         auto pipelineConfig = stateObjectDesc.CreateSubobject<CD3DX12_RAYTRACING_PIPELINE_CONFIG_SUBOBJECT>();
-        pipelineConfig->Config(8);  // Max recursion depth
+        pipelineConfig->Config(maxTraceRecursionDepth);  // Max recursion depth
         
         // Create state object
         HRESULT hr = device->CreateStateObject(stateObjectDesc, IID_PPV_ARGS(&stateObject));
@@ -1476,6 +1495,7 @@ namespace RayTraceVS::DXEngine
             return false;
         }
         
+        currentTraceRecursionDepth = maxTraceRecursionDepth;
         return true;
     }
 
@@ -2151,7 +2171,7 @@ namespace RayTraceVS::DXEngine
         
         // Pipeline config
         auto pipelineConfig = stateObjectDesc.CreateSubobject<CD3DX12_RAYTRACING_PIPELINE_CONFIG_SUBOBJECT>();
-        pipelineConfig->Config(8);  // Max recursion depth
+        pipelineConfig->Config(maxTraceRecursionDepth);  // Max recursion depth
         
         // Create state object
         HRESULT hr = device->CreateStateObject(stateObjectDesc, IID_PPV_ARGS(&photonStateObject));
@@ -2170,6 +2190,7 @@ namespace RayTraceVS::DXEngine
             return false;
         }
         
+        currentTraceRecursionDepth = maxTraceRecursionDepth;
         LOG_INFO("CreatePhotonStateObject completed");
         return true;
     }

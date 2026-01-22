@@ -483,15 +483,15 @@
       "PositionX": 1168.0030250299355,
       "PositionY": 1692.6551492895685,
       "Properties": {
-        "Value": 1.1
+        "Value": 1.5
       }
     },
     {
       "Id": "9d7a6aa1-2ddb-4b27-91ce-81283d93a479",
       "Type": "FloatNode",
       "Title": "Float",
-      "PositionX": 952.6440701730364,
-      "PositionY": 1675.812439673185,
+      "PositionX": 959.4733384657195,
+      "PositionY": 1670.9343908926974,
       "Properties": {
         "Value": 0.5
       }
@@ -907,7 +907,7 @@
       "PositionX": 1371.0718647996252,
       "PositionY": 2249.637707123831,
       "Properties": {
-        "Value": 1.5
+        "Value": 1.0
       }
     },
     {
@@ -1376,9 +1376,9 @@
     }
   ],
   "Viewport": {
-    "PanX": -390.6748442383091,
-    "PanY": -460.3827034785685,
-    "Zoom": 0.7000000000000001,
+    "PanX": -495.0991032505905,
+    "PanY": -119.66659550346598,
+    "Zoom": 0.8200000000000001,
     "IsLeftPanelVisible": true,
     "IsRightPanelVisible": true,
     "ExpanderStates": {
