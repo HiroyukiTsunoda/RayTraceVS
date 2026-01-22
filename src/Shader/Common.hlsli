@@ -75,6 +75,16 @@ struct RayPayload
     float shadowTransmissionAccum; // Accumulated transmission (visibility)
     
     uint hitObjectIndex;        // Index of hit object (output)
+    
+    // ============================================
+    // Loop-based ray tracing fields
+    // ============================================
+    float3 nextRayOrigin;       // Next ray origin for loop continuation
+    float continueTrace;        // 1.0 = continue tracing, 0.0 = terminate
+    float3 nextRayDirection;    // Next ray direction for loop continuation
+    float nextRayTMin;          // TMin for next ray (to skip self-intersection)
+    float3 throughput;          // Accumulated color throughput (attenuation)
+    float throughputPad;        // Padding for alignment
 };
 
 // シャドウレイ用ペイロード

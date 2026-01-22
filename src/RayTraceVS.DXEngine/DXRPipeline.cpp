@@ -1457,8 +1457,10 @@ namespace RayTraceVS::DXEngine
         globalRS->SetRootSignature(globalRootSignature.Get());
         
         // Pipeline config
+        // Loop-based ray tracing: recursion depth = 1 (no recursive TraceRay in shaders)
+        // All bounces are handled in the RayGen loop, eliminating stack overflow risk
         auto pipelineConfig = stateObjectDesc.CreateSubobject<CD3DX12_RAYTRACING_PIPELINE_CONFIG_SUBOBJECT>();
-        pipelineConfig->Config(8);  // Max recursion depth (reduced for compatibility)
+        pipelineConfig->Config(1);  // Minimal recursion - loop handles bounces
         
         // Create state object
         HRESULT hr = device->CreateStateObject(stateObjectDesc, IID_PPV_ARGS(&stateObject));
@@ -2149,8 +2151,9 @@ namespace RayTraceVS::DXEngine
         globalRS->SetRootSignature(globalRootSignature.Get());
         
         // Pipeline config
+        // Photon tracing also uses minimal recursion
         auto pipelineConfig = stateObjectDesc.CreateSubobject<CD3DX12_RAYTRACING_PIPELINE_CONFIG_SUBOBJECT>();
-        pipelineConfig->Config(8);  // Reduced for compatibility
+        pipelineConfig->Config(1);  // Minimal recursion - loop handles bounces
         
         // Create state object
         HRESULT hr = device->CreateStateObject(stateObjectDesc, IID_PPV_ARGS(&photonStateObject));
