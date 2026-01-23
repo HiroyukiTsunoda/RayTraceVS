@@ -4,6 +4,7 @@
 #include "NativeBridge.h"
 #include <cstdio>
 #include <cstdarg>
+#include <cmath>
 
 // Declare OutputDebugStringA without including windows.h (avoids C++/CLI conflicts)
 extern "C" __declspec(dllimport) void __stdcall OutputDebugStringA(const char* lpOutputString);
@@ -23,6 +24,41 @@ static void LogDebug(const char* format, ...)
     vsnprintf(buffer, sizeof(buffer), format, args);
     va_end(args);
     OutputDebugStringA(buffer);
+}
+
+static bool IsFiniteFloat(float value)
+{
+    return std::isfinite(value);
+}
+
+static float ClampFinite(float value, float minVal, float maxVal, float fallback, const char* label, const char* objectType, int index)
+{
+    if (!std::isfinite(value))
+    {
+        LogDebug("[EngineWrapper::UpdateScene] %s[%d] %s invalid (NaN/Inf): %.6f\n", objectType, index, label, value);
+        return fallback;
+    }
+    if (value < minVal)
+    {
+        LogDebug("[EngineWrapper::UpdateScene] %s[%d] %s below min: %.6f\n", objectType, index, label, value);
+        return minVal;
+    }
+    if (value > maxVal)
+    {
+        LogDebug("[EngineWrapper::UpdateScene] %s[%d] %s above max: %.6f\n", objectType, index, label, value);
+        return maxVal;
+    }
+    return value;
+}
+
+static float SanitizeFinite(float value, float fallback, const char* label, const char* objectType, int index)
+{
+    if (!std::isfinite(value))
+    {
+        LogDebug("[EngineWrapper::UpdateScene] %s[%d] %s invalid (NaN/Inf): %.6f\n", objectType, index, label, value);
+        return fallback;
+    }
+    return value;
 }
 
 namespace RayTraceVS::Interop
@@ -111,6 +147,7 @@ namespace RayTraceVS::Interop
         array<MeshCacheData^>^ meshCaches,
         int samplesPerPixel,
         int maxBounces,
+        int traceRecursionDepth,
         float exposure,
         int toneMapOperator,
         float denoiserStabilization,
@@ -129,36 +166,136 @@ namespace RayTraceVS::Interop
         Bridge::SetCamera(nativeScene, nativeCamera);
 
         // Set render settings
-        Bridge::SetRenderSettings(nativeScene, samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization, shadowStrength, enableDenoiser, gamma);
+        Bridge::SetRenderSettings(nativeScene, samplesPerPixel, maxBounces, traceRecursionDepth, exposure, toneMapOperator, denoiserStabilization, shadowStrength, enableDenoiser, gamma);
 
         // Add spheres
         if (spheres != nullptr)
         {
+            LogDebug("[EngineWrapper::UpdateScene] spheres count: %d\n", spheres->Length);
+            int sphereIndex = 0;
             for each (SphereData sphere in spheres)
             {
-                auto nativeSphere = Marshalling::ToNativeSphere(sphere);
+                SphereData safeSphere = sphere;
+                safeSphere.Position.X = ClampFinite(safeSphere.Position.X, -10000.0f, 10000.0f, 0.0f, "Position.X", "Sphere", sphereIndex);
+                safeSphere.Position.Y = ClampFinite(safeSphere.Position.Y, -10000.0f, 10000.0f, 0.0f, "Position.Y", "Sphere", sphereIndex);
+                safeSphere.Position.Z = ClampFinite(safeSphere.Position.Z, -10000.0f, 10000.0f, 0.0f, "Position.Z", "Sphere", sphereIndex);
+                safeSphere.Color.X = ClampFinite(safeSphere.Color.X, 0.0f, 1.0f, 0.8f, "BaseColor.X", "Sphere", sphereIndex);
+                safeSphere.Color.Y = ClampFinite(safeSphere.Color.Y, 0.0f, 1.0f, 0.8f, "BaseColor.Y", "Sphere", sphereIndex);
+                safeSphere.Color.Z = ClampFinite(safeSphere.Color.Z, 0.0f, 1.0f, 0.8f, "BaseColor.Z", "Sphere", sphereIndex);
+                safeSphere.Color.W = ClampFinite(safeSphere.Color.W, 0.0f, 1.0f, 1.0f, "BaseColor.W", "Sphere", sphereIndex);
+                
+                safeSphere.Metallic = ClampFinite(safeSphere.Metallic, 0.0f, 1.0f, 0.0f, "Metallic", "Sphere", sphereIndex);
+                safeSphere.Roughness = ClampFinite(safeSphere.Roughness, 0.0f, 1.0f, 0.5f, "Roughness", "Sphere", sphereIndex);
+                safeSphere.Transmission = ClampFinite(safeSphere.Transmission, 0.0f, 1.0f, 0.0f, "Transmission", "Sphere", sphereIndex);
+                safeSphere.IOR = ClampFinite(safeSphere.IOR, 1.0f, 4.0f, 1.5f, "IOR", "Sphere", sphereIndex);
+                safeSphere.Specular = ClampFinite(safeSphere.Specular, 0.0f, 1.0f, 0.5f, "Specular", "Sphere", sphereIndex);
+                
+                safeSphere.Emission.X = SanitizeFinite(safeSphere.Emission.X, 0.0f, "Emission.X", "Sphere", sphereIndex);
+                safeSphere.Emission.Y = SanitizeFinite(safeSphere.Emission.Y, 0.0f, "Emission.Y", "Sphere", sphereIndex);
+                safeSphere.Emission.Z = SanitizeFinite(safeSphere.Emission.Z, 0.0f, "Emission.Z", "Sphere", sphereIndex);
+                
+                if (!IsFiniteFloat(safeSphere.Radius) || safeSphere.Radius <= 0.0f)
+                {
+                    LogDebug("[EngineWrapper::UpdateScene] Sphere[%d] Radius invalid: %.6f\n", sphereIndex, safeSphere.Radius);
+                    safeSphere.Radius = 0.01f;
+                }
+                
+                if (safeSphere.Transmission >= 0.6f)
+                {
+                    LogDebug("[EngineWrapper::UpdateScene] Sphere Transmission high: %.6f\n", safeSphere.Transmission);
+                }
+                
+                LogDebug(
+                    "[EngineWrapper::UpdateScene] Sphere[%d] Pos(%.3f, %.3f, %.3f) R=%.3f "
+                    "Base(%.3f, %.3f, %.3f, %.3f) M=%.3f Rgh=%.3f T=%.3f IOR=%.3f Sp=%.3f Em(%.3f, %.3f, %.3f)\n",
+                    sphereIndex,
+                    safeSphere.Position.X, safeSphere.Position.Y, safeSphere.Position.Z,
+                    safeSphere.Radius,
+                    safeSphere.Color.X, safeSphere.Color.Y, safeSphere.Color.Z, safeSphere.Color.W,
+                    safeSphere.Metallic, safeSphere.Roughness, safeSphere.Transmission, safeSphere.IOR, safeSphere.Specular,
+                    safeSphere.Emission.X, safeSphere.Emission.Y, safeSphere.Emission.Z);
+                auto nativeSphere = Marshalling::ToNativeSphere(safeSphere);
                 Bridge::AddSphere(nativeScene, nativeSphere);
+                sphereIndex++;
             }
+        }
+        else
+        {
+            LogDebug("[EngineWrapper::UpdateScene] spheres is null\n");
         }
 
         // Add planes
         if (planes != nullptr)
         {
+            LogDebug("[EngineWrapper::UpdateScene] planes count: %d\n", planes->Length);
+            int planeIndex = 0;
             for each (PlaneData plane in planes)
             {
-                auto nativePlane = Marshalling::ToNativePlane(plane);
+                PlaneData safePlane = plane;
+                safePlane.Color.X = ClampFinite(safePlane.Color.X, 0.0f, 1.0f, 0.8f, "BaseColor.X", "Plane", planeIndex);
+                safePlane.Color.Y = ClampFinite(safePlane.Color.Y, 0.0f, 1.0f, 0.8f, "BaseColor.Y", "Plane", planeIndex);
+                safePlane.Color.Z = ClampFinite(safePlane.Color.Z, 0.0f, 1.0f, 0.8f, "BaseColor.Z", "Plane", planeIndex);
+                safePlane.Color.W = ClampFinite(safePlane.Color.W, 0.0f, 1.0f, 1.0f, "BaseColor.W", "Plane", planeIndex);
+                
+                safePlane.Metallic = ClampFinite(safePlane.Metallic, 0.0f, 1.0f, 0.0f, "Metallic", "Plane", planeIndex);
+                safePlane.Roughness = ClampFinite(safePlane.Roughness, 0.0f, 1.0f, 0.5f, "Roughness", "Plane", planeIndex);
+                safePlane.Transmission = ClampFinite(safePlane.Transmission, 0.0f, 1.0f, 0.0f, "Transmission", "Plane", planeIndex);
+                safePlane.IOR = ClampFinite(safePlane.IOR, 1.0f, 4.0f, 1.5f, "IOR", "Plane", planeIndex);
+                safePlane.Specular = ClampFinite(safePlane.Specular, 0.0f, 1.0f, 0.5f, "Specular", "Plane", planeIndex);
+                
+                safePlane.Emission.X = SanitizeFinite(safePlane.Emission.X, 0.0f, "Emission.X", "Plane", planeIndex);
+                safePlane.Emission.Y = SanitizeFinite(safePlane.Emission.Y, 0.0f, "Emission.Y", "Plane", planeIndex);
+                safePlane.Emission.Z = SanitizeFinite(safePlane.Emission.Z, 0.0f, "Emission.Z", "Plane", planeIndex);
+                
+                if (safePlane.Transmission >= 0.6f)
+                {
+                    LogDebug("[EngineWrapper::UpdateScene] Plane Transmission high: %.6f\n", safePlane.Transmission);
+                }
+                auto nativePlane = Marshalling::ToNativePlane(safePlane);
                 Bridge::AddPlane(nativeScene, nativePlane);
+                planeIndex++;
             }
+        }
+        else
+        {
+            LogDebug("[EngineWrapper::UpdateScene] planes is null\n");
         }
 
         // Add boxes
         if (boxes != nullptr)
         {
+            LogDebug("[EngineWrapper::UpdateScene] boxes count: %d\n", boxes->Length);
+            int boxIndex = 0;
             for each (BoxData box in boxes)
             {
-                auto nativeBox = Marshalling::ToNativeBox(box);
+                BoxData safeBox = box;
+                safeBox.Color.X = ClampFinite(safeBox.Color.X, 0.0f, 1.0f, 0.8f, "BaseColor.X", "Box", boxIndex);
+                safeBox.Color.Y = ClampFinite(safeBox.Color.Y, 0.0f, 1.0f, 0.8f, "BaseColor.Y", "Box", boxIndex);
+                safeBox.Color.Z = ClampFinite(safeBox.Color.Z, 0.0f, 1.0f, 0.8f, "BaseColor.Z", "Box", boxIndex);
+                safeBox.Color.W = ClampFinite(safeBox.Color.W, 0.0f, 1.0f, 1.0f, "BaseColor.W", "Box", boxIndex);
+                
+                safeBox.Metallic = ClampFinite(safeBox.Metallic, 0.0f, 1.0f, 0.0f, "Metallic", "Box", boxIndex);
+                safeBox.Roughness = ClampFinite(safeBox.Roughness, 0.0f, 1.0f, 0.5f, "Roughness", "Box", boxIndex);
+                safeBox.Transmission = ClampFinite(safeBox.Transmission, 0.0f, 1.0f, 0.0f, "Transmission", "Box", boxIndex);
+                safeBox.IOR = ClampFinite(safeBox.IOR, 1.0f, 4.0f, 1.5f, "IOR", "Box", boxIndex);
+                safeBox.Specular = ClampFinite(safeBox.Specular, 0.0f, 1.0f, 0.5f, "Specular", "Box", boxIndex);
+                
+                safeBox.Emission.X = SanitizeFinite(safeBox.Emission.X, 0.0f, "Emission.X", "Box", boxIndex);
+                safeBox.Emission.Y = SanitizeFinite(safeBox.Emission.Y, 0.0f, "Emission.Y", "Box", boxIndex);
+                safeBox.Emission.Z = SanitizeFinite(safeBox.Emission.Z, 0.0f, "Emission.Z", "Box", boxIndex);
+                
+                if (safeBox.Transmission >= 0.6f)
+                {
+                    LogDebug("[EngineWrapper::UpdateScene] Box Transmission high: %.6f\n", safeBox.Transmission);
+                }
+                auto nativeBox = Marshalling::ToNativeBox(safeBox);
                 Bridge::AddBox(nativeScene, nativeBox);
+                boxIndex++;
             }
+        }
+        else
+        {
+            LogDebug("[EngineWrapper::UpdateScene] boxes is null\n");
         }
 
         // Add lights
@@ -244,13 +381,27 @@ namespace RayTraceVS::Interop
                 nativeInstance.position = { instance.Position.X, instance.Position.Y, instance.Position.Z };
                 nativeInstance.rotation = { instance.Rotation.X, instance.Rotation.Y, instance.Rotation.Z };
                 nativeInstance.scale = { instance.Scale.X, instance.Scale.Y, instance.Scale.Z };
-                nativeInstance.material.color = { instance.Color.X, instance.Color.Y, instance.Color.Z, instance.Color.W };
-                nativeInstance.material.metallic = instance.Metallic;
-                nativeInstance.material.roughness = instance.Roughness;
-                nativeInstance.material.transmission = instance.Transmission;
-                nativeInstance.material.ior = instance.IOR;
-                nativeInstance.material.specular = instance.Specular;
-                nativeInstance.material.emission = { instance.Emission.X, instance.Emission.Y, instance.Emission.Z };
+                nativeInstance.material.color = {
+                    ClampFinite(instance.Color.X, 0.0f, 1.0f, 0.8f, "BaseColor.X", "MeshInstance", i),
+                    ClampFinite(instance.Color.Y, 0.0f, 1.0f, 0.8f, "BaseColor.Y", "MeshInstance", i),
+                    ClampFinite(instance.Color.Z, 0.0f, 1.0f, 0.8f, "BaseColor.Z", "MeshInstance", i),
+                    ClampFinite(instance.Color.W, 0.0f, 1.0f, 1.0f, "BaseColor.W", "MeshInstance", i)
+                };
+                nativeInstance.material.metallic = ClampFinite(instance.Metallic, 0.0f, 1.0f, 0.0f, "Metallic", "MeshInstance", i);
+                nativeInstance.material.roughness = ClampFinite(instance.Roughness, 0.0f, 1.0f, 0.5f, "Roughness", "MeshInstance", i);
+                nativeInstance.material.transmission = ClampFinite(instance.Transmission, 0.0f, 1.0f, 0.0f, "Transmission", "MeshInstance", i);
+                nativeInstance.material.ior = ClampFinite(instance.IOR, 1.0f, 4.0f, 1.5f, "IOR", "MeshInstance", i);
+                nativeInstance.material.specular = ClampFinite(instance.Specular, 0.0f, 1.0f, 0.5f, "Specular", "MeshInstance", i);
+                nativeInstance.material.emission = {
+                    SanitizeFinite(instance.Emission.X, 0.0f, "Emission.X", "MeshInstance", i),
+                    SanitizeFinite(instance.Emission.Y, 0.0f, "Emission.Y", "MeshInstance", i),
+                    SanitizeFinite(instance.Emission.Z, 0.0f, "Emission.Z", "MeshInstance", i)
+                };
+                
+                if (nativeInstance.material.transmission >= 0.6f)
+                {
+                    LogDebug("[EngineWrapper::UpdateScene] MeshInstance Transmission high: %.6f\n", nativeInstance.material.transmission);
+                }
                 
                 LogDebug("[EngineWrapper::UpdateScene] Calling Bridge::AddMeshInstance...\n");
                 Bridge::AddMeshInstance(nativeScene, nativeInstance);

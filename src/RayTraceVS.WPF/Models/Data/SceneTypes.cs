@@ -13,6 +13,7 @@ namespace RayTraceVS.WPF.Models.Data
         public List<LightData> Lights;
         public int SamplesPerPixel;
         public int MaxBounces;
+        public int TraceRecursionDepth;
         public float Exposure;
         public int ToneMapOperator;
         public float DenoiserStabilization;

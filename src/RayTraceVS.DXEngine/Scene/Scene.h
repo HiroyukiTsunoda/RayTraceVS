@@ -63,10 +63,11 @@ namespace RayTraceVS::DXEngine
         Camera& GetCamera() { return camera; }
         const Camera& GetCamera() const { return camera; }
 
-        void SetRenderSettings(int samples, int bounces, float exp = 1.0f, int tone = 2, float stab = 1.0f, float shadow = 1.0f, bool denoiser = true, float gam = 2.2f)
+        void SetRenderSettings(int samples, int bounces, int traceRecursion, float exp = 1.0f, int tone = 2, float stab = 1.0f, float shadow = 1.0f, bool denoiser = true, float gam = 2.2f)
         {
             samplesPerPixel = samples;
             maxBounces = bounces;
+            traceRecursionDepth = traceRecursion;
             exposure = exp;
             toneMapOperator = tone;
             denoiserStabilization = stab;
@@ -76,6 +77,7 @@ namespace RayTraceVS::DXEngine
         }
         int GetSamplesPerPixel() const { return samplesPerPixel; }
         int GetMaxBounces() const { return maxBounces; }
+        int GetTraceRecursionDepth() const { return traceRecursionDepth; }
         float GetExposure() const { return exposure; }
         int GetToneMapOperator() const { return toneMapOperator; }
         float GetDenoiserStabilization() const { return denoiserStabilization; }
@@ -110,6 +112,7 @@ namespace RayTraceVS::DXEngine
         
         int samplesPerPixel = 1;
         int maxBounces = 6;
+        int traceRecursionDepth = 2;
         float exposure = 1.0f;
         int toneMapOperator = 2;
         float denoiserStabilization = 1.0f;

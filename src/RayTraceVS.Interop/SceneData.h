@@ -114,6 +114,7 @@ namespace RayTraceVS::Interop
     {
         int SamplesPerPixel;
         int MaxBounces;
+        int TraceRecursionDepth;
         float Exposure;
         int ToneMapOperator;
         float DenoiserStabilization;

@@ -135,6 +135,9 @@ namespace RayTraceVS.WPF.ViewModels
                     sceneNode.RemoveSocket(socket.Name);
                 }
             }
+
+            // 連番を詰める
+            sceneNode.RenumberSceneSockets();
         }
     }
 }

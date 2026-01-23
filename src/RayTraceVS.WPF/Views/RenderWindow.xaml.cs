@@ -24,6 +24,7 @@ namespace RayTraceVS.WPF.Views
         MeshCacheData[] MeshCaches,
         int SamplesPerPixel,
         int MaxBounces,
+        int TraceRecursionDepth,
         float Exposure,
         int ToneMapOperator,
         float DenoiserStabilization,
@@ -37,6 +38,7 @@ namespace RayTraceVS.WPF.Views
         private NodeGraph? nodeGraph;
         private SceneEvaluator? sceneEvaluator;
         private WriteableBitmap? renderBitmap;
+        private byte[]? cachedSkyBuffer;
         
         private bool isRendering = false;
         
@@ -86,7 +88,7 @@ namespace RayTraceVS.WPF.Views
                 evaluated.Item1, evaluated.Item2, evaluated.Item3,
                 evaluated.Item4, evaluated.Item5,
                 evaluated.Item6, evaluated.Item7,  // MeshInstances, MeshCaches
-                evaluated.SamplesPerPixel, evaluated.MaxBounces,
+                evaluated.SamplesPerPixel, evaluated.MaxBounces, evaluated.TraceRecursionDepth,
                 evaluated.Exposure, evaluated.ToneMapOperator,
                 evaluated.DenoiserStabilization, evaluated.ShadowStrength,
                 evaluated.EnableDenoiser, evaluated.Gamma);
@@ -226,7 +228,7 @@ namespace RayTraceVS.WPF.Views
                 evaluated.Item1, evaluated.Item2, evaluated.Item3,
                 evaluated.Item4, evaluated.Item5,
                 evaluated.Item6, evaluated.Item7,  // MeshInstances, MeshCaches
-                evaluated.SamplesPerPixel, evaluated.MaxBounces,
+                evaluated.SamplesPerPixel, evaluated.MaxBounces, evaluated.TraceRecursionDepth,
                 evaluated.Exposure, evaluated.ToneMapOperator,
                 evaluated.DenoiserStabilization, evaluated.ShadowStrength,
                 evaluated.EnableDenoiser, evaluated.Gamma);
@@ -275,10 +277,20 @@ namespace RayTraceVS.WPF.Views
                                 sceneParams.Spheres, sceneParams.Planes, sceneParams.Boxes,
                                 sceneParams.Camera, sceneParams.Lights,
                                 sceneParams.MeshInstances, sceneParams.MeshCaches,
-                                sceneParams.SamplesPerPixel, sceneParams.MaxBounces,
+                                sceneParams.SamplesPerPixel, sceneParams.MaxBounces, sceneParams.TraceRecursionDepth,
                                 sceneParams.Exposure, sceneParams.ToneMapOperator,
                                 sceneParams.DenoiserStabilization, sceneParams.ShadowStrength,
                                 sceneParams.EnableDenoiser, sceneParams.Gamma);
+                            
+                            // 空シーンはGPUを使わずスカイ色で即時更新
+                            bool emptyScene = (sceneParams.Spheres.Length == 0 &&
+                                               sceneParams.Planes.Length == 0 &&
+                                               sceneParams.Boxes.Length == 0 &&
+                                               sceneParams.MeshInstances.Length == 0);
+                            if (emptyScene)
+                            {
+                                return GetCachedSkyBuffer();
+                            }
                             
                             renderService.Render();
                         }
@@ -328,6 +340,33 @@ namespace RayTraceVS.WPF.Views
                     }
                 }
             }
+        }
+
+        private byte[] GetCachedSkyBuffer()
+        {
+            if (cachedSkyBuffer != null)
+            {
+                return cachedSkyBuffer;
+            }
+
+            int dataSize = RenderWidth * RenderHeight * 4;
+            cachedSkyBuffer = new byte[dataSize];
+
+            // RGBA (same as compute clear): 0.5, 0.7, 1.0, 1.0
+            byte r = (byte)(0.5f * 255);
+            byte g = (byte)(0.7f * 255);
+            byte b = (byte)(1.0f * 255);
+            byte a = 255;
+
+            for (int i = 0; i < dataSize; i += 4)
+            {
+                cachedSkyBuffer[i + 0] = r;
+                cachedSkyBuffer[i + 1] = g;
+                cachedSkyBuffer[i + 2] = b;
+                cachedSkyBuffer[i + 3] = a;
+            }
+
+            return cachedSkyBuffer;
         }
 
         /// <summary>

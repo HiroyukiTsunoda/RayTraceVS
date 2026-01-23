@@ -22,4 +22,5 @@ void Miss(inout RayPayload payload)
     
     // Loop-based: terminate ray trace loop
     payload.loopRayOrigin.w = 0.0;
+    payload.loopThroughput.xyz = float3(0, 0, 0);
 }

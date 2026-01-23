@@ -8,6 +8,21 @@
 
 namespace RayTraceVS::DXEngine
 {
+    namespace
+    {
+        D3D12_RESOURCE_BARRIER MakeTransition(ID3D12Resource* resource,
+            D3D12_RESOURCE_STATES beforeState,
+            D3D12_RESOURCE_STATES afterState)
+        {
+            D3D12_RESOURCE_BARRIER barrier = {};
+            barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            barrier.Transition.pResource = resource;
+            barrier.Transition.StateBefore = beforeState;
+            barrier.Transition.StateAfter = afterState;
+            barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+            return barrier;
+        }
+    }
     NRDDenoiser::NRDDenoiser(DXContext* context)
         : m_dxContext(context)
     {
@@ -158,6 +173,7 @@ namespace RayTraceVS::DXEngine
             }
 
             resource->SetName(name);
+            m_resourceStates[resource.Get()] = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
             return true;
         };
 
@@ -277,6 +293,7 @@ namespace RayTraceVS::DXEngine
                 return false;
 
             resource->SetName(name);
+            m_resourceStates[resource.Get()] = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
             return true;
         };
 
@@ -372,6 +389,7 @@ namespace RayTraceVS::DXEngine
                 OutputDebugStringW(L"NRD: Failed to create permanent pool texture\n");
                 return false;
             }
+            m_resourceStates[m_nrdTextures[i].Get()] = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
         }
 
         for (uint32_t i = 0; i < instanceDesc.transientPoolSize; i++)
@@ -413,6 +431,7 @@ namespace RayTraceVS::DXEngine
                 OutputDebugStringW(L"NRD: Failed to create transient pool texture\n");
                 return false;
             }
+            m_resourceStates[m_nrdTextures[idx].Get()] = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
         }
 
         // Create NRD descriptor heap for dispatch resources
@@ -948,18 +967,20 @@ namespace RayTraceVS::DXEngine
             // Bind resources following NRD's resourceRanges order to preserve descriptor layout
             const nrd::PipelineDesc& pipelineDesc = instanceDesc.pipelines[dispatch.pipelineIndex];
             
-            UINT srvCount = 0;
-            UINT uavCount = 0;
+            UINT expectedSrvCount = 0;
+            UINT expectedUavCount = 0;
             
             // Count SRVs and UAVs based on resource ranges
             for (uint32_t r = 0; r < pipelineDesc.resourceRangesNum; r++)
             {
                 const nrd::ResourceRangeDesc& range = pipelineDesc.resourceRanges[r];
                 if (range.descriptorType == nrd::DescriptorType::TEXTURE)
-                    srvCount += range.descriptorsNum;
+                    expectedSrvCount += range.descriptorsNum;
                 else if (range.descriptorType == nrd::DescriptorType::STORAGE_TEXTURE)
-                    uavCount += range.descriptorsNum;
+                    expectedUavCount += range.descriptorsNum;
             }
+            (void)expectedSrvCount;
+            (void)expectedUavCount;
 
             // Create descriptors for this dispatch
             UINT maxSRVs = instanceDesc.descriptorPoolDesc.perSetTexturesMaxNum;
@@ -972,6 +993,8 @@ namespace RayTraceVS::DXEngine
             uavCpuHandle.Offset(descriptorOffset + maxSRVs, m_descriptorSize);
 
             UINT resourceIdx = 0;
+            UINT createdSrvCount = 0;
+            UINT createdUavCount = 0;
             for (uint32_t r = 0; r < pipelineDesc.resourceRangesNum; r++)
             {
                 const nrd::ResourceRangeDesc& range = pipelineDesc.resourceRanges[r];
@@ -1010,6 +1033,25 @@ namespace RayTraceVS::DXEngine
                         continue;
                     }
 
+                    // Ensure resource state matches descriptor type for this dispatch
+                    D3D12_RESOURCE_STATES desiredState = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+                    if (range.descriptorType == nrd::DescriptorType::STORAGE_TEXTURE)
+                    {
+                        desiredState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+                    }
+
+                    auto stateIt = m_resourceStates.find(d3dResource);
+                    D3D12_RESOURCE_STATES currentState = (stateIt != m_resourceStates.end())
+                        ? stateIt->second
+                        : D3D12_RESOURCE_STATE_COMMON;
+
+                    if (currentState != desiredState)
+                    {
+                        D3D12_RESOURCE_BARRIER barrier = MakeTransition(d3dResource, currentState, desiredState);
+                        cmdList->ResourceBarrier(1, &barrier);
+                        m_resourceStates[d3dResource] = desiredState;
+                    }
+
                     if (range.descriptorType == nrd::DescriptorType::TEXTURE)
                     {
                         // Create SRV in the SRV block
@@ -1021,7 +1063,7 @@ namespace RayTraceVS::DXEngine
                         
                         m_dxContext->GetDevice()->CreateShaderResourceView(d3dResource, &srvDesc, srvCpuHandle);
                         srvCpuHandle.Offset(m_descriptorSize);
-                        srvCount++;
+                        createdSrvCount++;
                     }
                     else
                     {
@@ -1033,8 +1075,38 @@ namespace RayTraceVS::DXEngine
                         
                         m_dxContext->GetDevice()->CreateUnorderedAccessView(d3dResource, nullptr, &uavDesc, uavCpuHandle);
                         uavCpuHandle.Offset(m_descriptorSize);
-                        uavCount++;
+                        createdUavCount++;
                     }
+                }
+            }
+
+            // Fill remaining slots with null descriptors to satisfy static table requirements
+            if (createdSrvCount < maxSRVs)
+            {
+                D3D12_SHADER_RESOURCE_VIEW_DESC nullSrvDesc = {};
+                nullSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+                nullSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+                nullSrvDesc.Texture2D.MipLevels = 1;
+                nullSrvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+
+                for (; createdSrvCount < maxSRVs; ++createdSrvCount)
+                {
+                    m_dxContext->GetDevice()->CreateShaderResourceView(nullptr, &nullSrvDesc, srvCpuHandle);
+                    srvCpuHandle.Offset(m_descriptorSize);
+                }
+            }
+
+            if (createdUavCount < maxUAVs)
+            {
+                D3D12_UNORDERED_ACCESS_VIEW_DESC nullUavDesc = {};
+                nullUavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+                nullUavDesc.Texture2D.MipSlice = 0;
+                nullUavDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+
+                for (; createdUavCount < maxUAVs; ++createdUavCount)
+                {
+                    m_dxContext->GetDevice()->CreateUnorderedAccessView(nullptr, nullptr, &nullUavDesc, uavCpuHandle);
+                    uavCpuHandle.Offset(m_descriptorSize);
                 }
             }
 
@@ -1044,14 +1116,18 @@ namespace RayTraceVS::DXEngine
             CD3DX12_GPU_DESCRIPTOR_HANDLE uavGpuHandle(m_nrdDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
             uavGpuHandle.Offset(descriptorOffset + maxSRVs, m_descriptorSize);
             
-            UINT rootParamIndex = 1;  // 0 is CBV
-            if (srvCount > 0)
+            // Root parameter indices are based on descriptor table existence, not usage counts.
+            // 0 = CBV, 1 = SRV table (if maxSRVs > 0), 2 = UAV table (if maxUAVs > 0)
+            const bool hasSrvTable = (maxSRVs > 0);
+            const bool hasUavTable = (maxUAVs > 0);
+
+            if (hasSrvTable)
             {
-                cmdList->SetComputeRootDescriptorTable(rootParamIndex++, srvGpuHandle);
+                cmdList->SetComputeRootDescriptorTable(1, srvGpuHandle);
             }
-            if (uavCount > 0)
+            if (hasUavTable)
             {
-                cmdList->SetComputeRootDescriptorTable(rootParamIndex, uavGpuHandle);
+                cmdList->SetComputeRootDescriptorTable(hasSrvTable ? 2 : 1, uavGpuHandle);
             }
 
             // Dispatch
@@ -1068,6 +1144,27 @@ namespace RayTraceVS::DXEngine
         sprintf_s(buf, "NRD: Dispatched %d, Skipped %d (PSO count=%zu)", 
             dispatchedCount, skippedCount, m_pipelineStates.size());
         LOG_DEBUG(buf);
+
+        // Ensure NRD outputs and Albedo are in SRV state for composite
+        auto ToSrv = [&](ID3D12Resource* res)
+        {
+            if (!res)
+                return;
+            auto stateIt = m_resourceStates.find(res);
+            D3D12_RESOURCE_STATES currentState = (stateIt != m_resourceStates.end())
+                ? stateIt->second
+                : D3D12_RESOURCE_STATE_COMMON;
+            if (currentState == D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
+                return;
+            D3D12_RESOURCE_BARRIER barrier = MakeTransition(res, currentState, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+            cmdList->ResourceBarrier(1, &barrier);
+            m_resourceStates[res] = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+        };
+
+        ToSrv(m_output.DiffuseRadiance.Get());
+        ToSrv(m_output.SpecularRadiance.Get());
+        ToSrv(m_output.DenoisedShadow.Get());
+        ToSrv(m_gBuffer.Albedo.Get());
         return;
 #endif
 
@@ -1177,6 +1274,30 @@ namespace RayTraceVS::DXEngine
         return handle;
     }
 
+    void NRDDenoiser::NotifyResourceState(ID3D12Resource* resource, D3D12_RESOURCE_STATES state)
+    {
+        if (!resource)
+            return;
+        m_resourceStates[resource] = state;
+    }
+
+    void NRDDenoiser::EnsureResourceState(ID3D12GraphicsCommandList* cmdList,
+                                          ID3D12Resource* resource,
+                                          D3D12_RESOURCE_STATES desiredState)
+    {
+        if (!cmdList || !resource)
+            return;
+        auto stateIt = m_resourceStates.find(resource);
+        D3D12_RESOURCE_STATES currentState = (stateIt != m_resourceStates.end())
+            ? stateIt->second
+            : D3D12_RESOURCE_STATE_COMMON;
+        if (currentState == desiredState)
+            return;
+        D3D12_RESOURCE_BARRIER barrier = MakeTransition(resource, currentState, desiredState);
+        cmdList->ResourceBarrier(1, &barrier);
+        m_resourceStates[resource] = desiredState;
+    }
+
     D3D12_GPU_DESCRIPTOR_HANDLE NRDDenoiser::GetNormalRoughnessUAV() const
     {
         CD3DX12_GPU_DESCRIPTOR_HANDLE handle(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart());
@@ -1264,6 +1385,7 @@ namespace RayTraceVS::DXEngine
         m_output.SpecularRadiance.Reset();
         m_output.DenoisedShadow.Reset();
 
+        m_resourceStates.clear();
         m_initialized = false;
     }
 }

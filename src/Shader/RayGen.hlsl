@@ -30,6 +30,19 @@ float2 RandomOnDisk(uint2 pixel, uint sampleIndex)
     return float2(r * cos(theta), r * sin(theta));
 }
 
+// ------------------------------------------------------------
+// NaN/Inf guard helpers (keep local to RayGen)
+// ------------------------------------------------------------
+bool HasNonFinite3(float3 v)
+{
+    return any(!isfinite(v));
+}
+
+bool HasNonFinite4(float4 v)
+{
+    return any(!isfinite(v));
+}
+
 [shader("raygeneration")]
 void RayGen()
 {
@@ -166,6 +179,20 @@ void RayGen()
                 ray,
                 payload
             );
+
+            // NaN/Inf guard: if any critical payload field is invalid,
+            // terminate the loop and fall back to sky for this ray.
+            bool invalidPayload =
+                HasNonFinite3(payload.color) ||
+                HasNonFinite4(payload.loopRayOrigin) ||
+                HasNonFinite4(payload.loopRayDirection) ||
+                HasNonFinite4(payload.loopThroughput);
+            if (invalidPayload)
+            {
+                sampleColor += throughput * GetSkyColor(rayDir);
+                loopTerminated = true;
+                break;
+            }
             
             // Accumulate color with throughput
             sampleColor += throughput * payload.color;

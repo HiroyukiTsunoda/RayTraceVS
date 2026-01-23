@@ -258,6 +258,7 @@ namespace RayTraceVS.WPF.Services
                     properties["LightSocketNames"] = lightSocketNames;
                     properties["SamplesPerPixel"] = sceneNode.SamplesPerPixel;
                     properties["MaxBounces"] = sceneNode.MaxBounces;
+                    properties["TraceRecursionDepth"] = sceneNode.TraceRecursionDepth;
                     properties["Exposure"] = sceneNode.Exposure;
                     properties["ToneMapOperator"] = sceneNode.ToneMapOperator;
                     properties["DenoiserStabilization"] = sceneNode.DenoiserStabilization;
@@ -503,6 +504,8 @@ namespace RayTraceVS.WPF.Services
                         sceneNode.SamplesPerPixel = Convert.ToInt32(samplesObj);
                     if (properties.TryGetValue("MaxBounces", out var bouncesObj))
                         sceneNode.MaxBounces = Convert.ToInt32(bouncesObj);
+                    if (properties.TryGetValue("TraceRecursionDepth", out var depthObj))
+                        sceneNode.TraceRecursionDepth = Convert.ToInt32(depthObj);
                     if (properties.TryGetValue("Exposure", out var exposureObj))
                         sceneNode.Exposure = Convert.ToSingle(exposureObj);
                     if (properties.TryGetValue("ToneMapOperator", out var toneMapObj))

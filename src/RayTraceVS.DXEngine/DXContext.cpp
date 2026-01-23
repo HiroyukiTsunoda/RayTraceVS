@@ -1,5 +1,6 @@
 #include "DXContext.h"
 #include <d3d12.h>
+#include <d3d12sdklayers.h>
 #include <dxgi1_6.h>
 #include <stdexcept>
 #include <stdio.h>
@@ -28,6 +29,24 @@ namespace RayTraceVS::DXEngine
             if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController))))
             {
                 debugController->EnableDebugLayer();
+
+                // Enable GPU-based validation for deeper debug output
+                ComPtr<ID3D12Debug1> debugController1;
+                if (SUCCEEDED(debugController.As(&debugController1)))
+                {
+                    debugController1->SetEnableGPUBasedValidation(TRUE);
+                    debugController1->SetEnableSynchronizedCommandQueueValidation(TRUE);
+                    OutputDebugStringA("D3D12 debug layer: GPU-based validation enabled\n");
+                }
+            }
+
+            ComPtr<ID3D12DeviceRemovedExtendedDataSettings> dredSettings;
+            if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&dredSettings))))
+            {
+                dredSettings->SetAutoBreadcrumbsEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);
+                dredSettings->SetPageFaultEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);
+                dredSettings->SetWatsonDumpEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);
+                OutputDebugStringA("DRED enabled\n");
             }
 #endif
 
@@ -56,6 +75,17 @@ namespace RayTraceVS::DXEngine
             {
                 throw std::runtime_error("Failed to create D3D12 device");
             }
+
+#if defined(_DEBUG)
+            // Break on severe validation issues to surface exact failing API call
+            ComPtr<ID3D12InfoQueue> infoQueue;
+            if (SUCCEEDED(device.As(&infoQueue)))
+            {
+                infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, TRUE);
+                infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, TRUE);
+                OutputDebugStringA("D3D12 InfoQueue: break on error/corruption enabled\n");
+            }
+#endif
 
             // Check DXR support (fallback to compute shader if not supported)
             CheckDXRSupport();
@@ -132,6 +162,7 @@ namespace RayTraceVS::DXEngine
         {
             throw std::runtime_error("Failed to create command queue");
         }
+        commandQueue->SetName(L"MainCommandQueue");
     }
 
     void DXContext::CreateCommandAllocatorAndList()
@@ -140,13 +171,16 @@ namespace RayTraceVS::DXEngine
         {
             throw std::runtime_error("Failed to create command allocator");
         }
+        commandAllocator->SetName(L"MainCommandAllocator");
 
         if (FAILED(device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, commandAllocator.Get(), nullptr, IID_PPV_ARGS(&commandList))))
         {
             throw std::runtime_error("Failed to create command list");
         }
+        commandList->SetName(L"MainCommandList");
 
         commandList->Close();
+        commandListOpen = false;
     }
 
     void DXContext::CreateSwapChain(HWND hwnd, int width, int height)
@@ -267,7 +301,13 @@ namespace RayTraceVS::DXEngine
         {
             if (!commandAllocator || !commandList)
                 return;
-            
+
+            if (commandListOpen)
+            {
+                commandList->Close();
+                commandListOpen = false;
+            }
+
             HRESULT hr = commandAllocator->Reset();
             if (FAILED(hr))
                 throw std::runtime_error("Failed to reset command allocator");
@@ -275,10 +315,17 @@ namespace RayTraceVS::DXEngine
             hr = commandList->Reset(commandAllocator.Get(), nullptr);
             if (FAILED(hr))
                 throw std::runtime_error("Failed to reset command list");
+
+            commandListOpen = true;
         }
         catch (const std::exception&)
         {
             throw;
         }
+    }
+
+    void DXContext::MarkCommandListClosed()
+    {
+        commandListOpen = false;
     }
 }
