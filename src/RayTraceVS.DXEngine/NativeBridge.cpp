@@ -120,9 +120,9 @@ namespace RayTraceVS::Interop::Bridge
         scene->SetCamera(nativeCamera);
     }
 
-    void SetRenderSettings(RayTraceVS::DXEngine::Scene* scene, int samplesPerPixel, int maxBounces, float exposure, int toneMapOperator, float denoiserStabilization, float shadowStrength, bool enableDenoiser, float gamma)
+    void SetRenderSettings(RayTraceVS::DXEngine::Scene* scene, int samplesPerPixel, int maxBounces, int traceRecursionDepth, float exposure, int toneMapOperator, float denoiserStabilization, float shadowStrength, bool enableDenoiser, float gamma)
     {
-        scene->SetRenderSettings(samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization, shadowStrength, enableDenoiser, gamma);
+        scene->SetRenderSettings(samplesPerPixel, maxBounces, traceRecursionDepth, exposure, toneMapOperator, denoiserStabilization, shadowStrength, enableDenoiser, gamma);
     }
 
     void AddSphere(RayTraceVS::DXEngine::Scene* scene, const SphereDataNative& sphere)
@@ -308,10 +308,9 @@ namespace RayTraceVS::Interop::Bridge
                 return true;
             }
 
-            // Check if all zeros
+            // Check if all zeros (scan full buffer with early exit)
             bool allZero = true;
-            size_t checkSize = pixels.size() < 1000 ? pixels.size() : 1000;
-            for (size_t k = 0; k < checkSize; ++k)
+            for (size_t k = 0; k < pixels.size(); ++k)
             {
                 if (pixels[k] != 0)
                 {
@@ -381,6 +380,8 @@ namespace RayTraceVS::Interop::Bridge
                 OutputDebugStringA(buffer);
                 return;
             }
+
+            context->MarkCommandListClosed();
             
             ID3D12CommandList* commandLists[] = { commandList };
             commandQueue->ExecuteCommandLists(1, commandLists);

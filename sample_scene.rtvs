@@ -106,25 +106,26 @@
       "Id": "a1b2c3d4-e5f6-7890-abcd-555555555555",
       "Type": "SceneNode",
       "Title": "Scene",
-      "PositionX": 2705.320444305348,
-      "PositionY": 1766.6483135010565,
+      "PositionX": 2672.4987275041735,
+      "PositionY": 1587.030244116296,
       "Properties": {
         "ObjectSocketNames": [
           "Object1",
           "Object2",
           "Object3",
+          "Object4",
           "Object5",
-          "Object6",
-          "Object8"
+          "Object6"
         ],
         "LightSocketNames": [
           "Light1",
           "Light2",
-          "Light4",
-          "Light5"
+          "Light3",
+          "Light4"
         ],
-        "SamplesPerPixel": 16,
-        "MaxBounces": 6,
+        "SamplesPerPixel": 1,
+        "MaxBounces": 1,
+        "TraceRecursionDepth": 2,
         "Exposure": 1.0,
         "ToneMapOperator": 2,
         "DenoiserStabilization": 1.0,
@@ -460,8 +461,8 @@
       "PositionX": 1359.855017105657,
       "PositionY": 1526.0832364566395,
       "Properties": {
-        "R": 0.1,
-        "G": 0.1,
+        "R": 1.0,
+        "G": 1.0,
         "B": 1.0,
         "A": 1.0
       }
@@ -470,8 +471,8 @@
       "Id": "799373d1-57fe-4f8b-bb38-44f16eb36a30",
       "Type": "FloatNode",
       "Title": "Float",
-      "PositionX": 1157.2815934143093,
-      "PositionY": 1562.9101068815621,
+      "PositionX": 1160.6858487334582,
+      "PositionY": 1561.207979221988,
       "Properties": {
         "Value": 0.0
       }
@@ -480,8 +481,8 @@
       "Id": "ec71a17d-7eff-44cc-8d38-bbca6f7583ae",
       "Type": "FloatNode",
       "Title": "Float",
-      "PositionX": 1168.0030250299355,
-      "PositionY": 1692.6551492895685,
+      "PositionX": 1162.0455782214249,
+      "PositionY": 1683.293447161909,
       "Properties": {
         "Value": 1.5
       }
@@ -490,10 +491,10 @@
       "Id": "9d7a6aa1-2ddb-4b27-91ce-81283d93a479",
       "Type": "FloatNode",
       "Title": "Float",
-      "PositionX": 959.4733384657195,
-      "PositionY": 1670.9343908926974,
+      "PositionX": 955.2180193167833,
+      "PositionY": 1675.1897100416334,
       "Properties": {
-        "Value": 0.5
+        "Value": 0.0
       }
     },
     {
@@ -615,7 +616,7 @@
       "PositionX": 959.6659350013194,
       "PositionY": 1551.805226331171,
       "Properties": {
-        "Value": 0.0
+        "Value": 1.0
       }
     },
     {
@@ -848,7 +849,7 @@
       "PositionX": 1200.495536005434,
       "PositionY": 1868.7225914787089,
       "Properties": {
-        "X": 0.5,
+        "X": 0.0,
         "Y": 0.0,
         "Z": -1.5
       }
@@ -917,7 +918,7 @@
       "PositionX": 1159.117165261875,
       "PositionY": 2241.3056358053204,
       "Properties": {
-        "Value": 0.5
+        "Value": 0.0
       }
     },
     {
@@ -967,18 +968,6 @@
   ],
   "Connections": [
     {
-      "OutputNodeId": "a1b2c3d4-e5f6-7890-abcd-111111111111",
-      "OutputSocketName": "Object",
-      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
-      "InputSocketName": "Object1"
-    },
-    {
-      "OutputNodeId": "a1b2c3d4-e5f6-7890-abcd-333333333333",
-      "OutputSocketName": "Camera",
-      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
-      "InputSocketName": "Camera"
-    },
-    {
       "OutputNodeId": "14aac4c6-22d9-485f-9dd7-56c0ff789dab",
       "OutputSocketName": "Value",
       "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-111111111111",
@@ -1003,12 +992,6 @@
       "InputSocketName": "Look At"
     },
     {
-      "OutputNodeId": "78d28b21-f0b2-4ea1-9e04-2ab534a0befb",
-      "OutputSocketName": "Light",
-      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
-      "InputSocketName": "Light1"
-    },
-    {
       "OutputNodeId": "e69bef01-fd7e-4a02-bac3-b5e20f100046",
       "OutputSocketName": "Color",
       "InputNodeId": "78d28b21-f0b2-4ea1-9e04-2ab534a0befb",
@@ -1019,12 +1002,6 @@
       "OutputSocketName": "Value",
       "InputNodeId": "78d28b21-f0b2-4ea1-9e04-2ab534a0befb",
       "InputSocketName": "Intensity"
-    },
-    {
-      "OutputNodeId": "1574bc15-76ea-4253-bde5-8f62befa63a3",
-      "OutputSocketName": "Light",
-      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
-      "InputSocketName": "Light2"
     },
     {
       "OutputNodeId": "019c5637-c8fb-4d31-af07-e060a4a890ab",
@@ -1043,12 +1020,6 @@
       "OutputSocketName": "Value",
       "InputNodeId": "1574bc15-76ea-4253-bde5-8f62befa63a3",
       "InputSocketName": "Intensity"
-    },
-    {
-      "OutputNodeId": "f9f127ed-a2d0-4b4c-8f48-a3ca8f3e72c5",
-      "OutputSocketName": "Light",
-      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
-      "InputSocketName": "Light4"
     },
     {
       "OutputNodeId": "37629256-e022-4f1f-b4fa-abb0e0fad395",
@@ -1091,18 +1062,6 @@
       "OutputSocketName": "Transform",
       "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-111111111111",
       "InputSocketName": "Transform"
-    },
-    {
-      "OutputNodeId": "a1b2c3d4-e5f6-7890-abcd-222222222222",
-      "OutputSocketName": "Object",
-      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
-      "InputSocketName": "Object2"
-    },
-    {
-      "OutputNodeId": "d38ae94a-cab2-47e9-b086-7e48c9b4bdf0",
-      "OutputSocketName": "Object",
-      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
-      "InputSocketName": "Object3"
     },
     {
       "OutputNodeId": "3f4ab28e-b9d8-4a18-b43d-4ead910b56ee",
@@ -1219,12 +1178,6 @@
       "InputSocketName": "Base Color"
     },
     {
-      "OutputNodeId": "7773fd00-312b-47e0-8f37-a2eceedbbc8b",
-      "OutputSocketName": "Object",
-      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
-      "InputSocketName": "Object5"
-    },
-    {
       "OutputNodeId": "fb058017-47f7-4056-a76f-e8ca00f721dd",
       "OutputSocketName": "Transform",
       "InputNodeId": "7773fd00-312b-47e0-8f37-a2eceedbbc8b",
@@ -1253,12 +1206,6 @@
       "OutputSocketName": "Value",
       "InputNodeId": "7773fd00-312b-47e0-8f37-a2eceedbbc8b",
       "InputSocketName": "Radius"
-    },
-    {
-      "OutputNodeId": "1617550e-1ef3-4181-827f-4a2fa22edc0d",
-      "OutputSocketName": "Material",
-      "InputNodeId": "7773fd00-312b-47e0-8f37-a2eceedbbc8b",
-      "InputSocketName": "Material"
     },
     {
       "OutputNodeId": "c737d6e6-2e5d-4cb6-a844-f5eafa31c1ac",
@@ -1351,12 +1298,6 @@
       "InputSocketName": "Transform"
     },
     {
-      "OutputNodeId": "dd915a63-04be-4e65-ae5a-efe250a86e3e",
-      "OutputSocketName": "Object",
-      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
-      "InputSocketName": "Object6"
-    },
-    {
       "OutputNodeId": "61dd6547-4fc4-4a4b-bf19-5d6b95b8a60d",
       "OutputSocketName": "Material",
       "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-111111111111",
@@ -1373,12 +1314,72 @@
       "OutputSocketName": "Material",
       "InputNodeId": "d38ae94a-cab2-47e9-b086-7e48c9b4bdf0",
       "InputSocketName": "Material"
+    },
+    {
+      "OutputNodeId": "a1b2c3d4-e5f6-7890-abcd-333333333333",
+      "OutputSocketName": "Camera",
+      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
+      "InputSocketName": "Camera"
+    },
+    {
+      "OutputNodeId": "1617550e-1ef3-4181-827f-4a2fa22edc0d",
+      "OutputSocketName": "Material",
+      "InputNodeId": "7773fd00-312b-47e0-8f37-a2eceedbbc8b",
+      "InputSocketName": "Material"
+    },
+    {
+      "OutputNodeId": "a1b2c3d4-e5f6-7890-abcd-222222222222",
+      "OutputSocketName": "Object",
+      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
+      "InputSocketName": "Object1"
+    },
+    {
+      "OutputNodeId": "78d28b21-f0b2-4ea1-9e04-2ab534a0befb",
+      "OutputSocketName": "Light",
+      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
+      "InputSocketName": "Light1"
+    },
+    {
+      "OutputNodeId": "a1b2c3d4-e5f6-7890-abcd-111111111111",
+      "OutputSocketName": "Object",
+      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
+      "InputSocketName": "Object2"
+    },
+    {
+      "OutputNodeId": "7773fd00-312b-47e0-8f37-a2eceedbbc8b",
+      "OutputSocketName": "Object",
+      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
+      "InputSocketName": "Object3"
+    },
+    {
+      "OutputNodeId": "d38ae94a-cab2-47e9-b086-7e48c9b4bdf0",
+      "OutputSocketName": "Object",
+      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
+      "InputSocketName": "Object4"
+    },
+    {
+      "OutputNodeId": "dd915a63-04be-4e65-ae5a-efe250a86e3e",
+      "OutputSocketName": "Object",
+      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
+      "InputSocketName": "Object5"
+    },
+    {
+      "OutputNodeId": "1574bc15-76ea-4253-bde5-8f62befa63a3",
+      "OutputSocketName": "Light",
+      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
+      "InputSocketName": "Light2"
+    },
+    {
+      "OutputNodeId": "f9f127ed-a2d0-4b4c-8f48-a3ca8f3e72c5",
+      "OutputSocketName": "Light",
+      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
+      "InputSocketName": "Light3"
     }
   ],
   "Viewport": {
-    "PanX": -495.0991032505905,
-    "PanY": -119.66659550346598,
-    "Zoom": 0.8200000000000001,
+    "PanX": -142.5408450474281,
+    "PanY": -143.66267198804962,
+    "Zoom": 0.4600000000000001,
     "IsLeftPanelVisible": true,
     "IsRightPanelVisible": true,
     "ExpanderStates": {

@@ -96,6 +96,12 @@ namespace RayTraceVS::DXEngine
         // Perform denoising
         void Denoise(ID3D12GraphicsCommandList* cmdList, const DenoiserFrameSettings& settings);
 
+        // Track external resource state changes
+        void NotifyResourceState(ID3D12Resource* resource, D3D12_RESOURCE_STATES state);
+        void EnsureResourceState(ID3D12GraphicsCommandList* cmdList,
+                                 ID3D12Resource* resource,
+                                 D3D12_RESOURCE_STATES desiredState);
+
         // Check if denoiser is ready
         bool IsReady() const { return m_initialized; }
         
@@ -153,6 +159,9 @@ namespace RayTraceVS::DXEngine
         
         // Sampler heap
         ComPtr<ID3D12DescriptorHeap> m_samplerHeap;
+
+        // Resource state tracking for NRD inputs/outputs
+        std::unordered_map<ID3D12Resource*, D3D12_RESOURCE_STATES> m_resourceStates;
         
         // Helper functions
         bool CreateNRDResources();

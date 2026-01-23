@@ -464,6 +464,10 @@ namespace RayTraceVS::DXEngine
         // Cached scene pointer for acceleration structure rebuild
         Scene* lastScene = nullptr;
         bool needsAccelerationStructureRebuild = true;
+
+        // Trace recursion depth (DXR pipeline config)
+        UINT maxTraceRecursionDepth = 2;
+        UINT currentTraceRecursionDepth = 2;
         
         // Cached object counts for detecting scene changes
         UINT lastSphereCount = 0;
@@ -494,6 +498,8 @@ namespace RayTraceVS::DXEngine
         ComPtr<ID3D12PipelineState> compositePipelineState;
         ComPtr<ID3D12RootSignature> compositeRootSignature;
         ComPtr<ID3D12DescriptorHeap> compositeDescriptorHeap;
+        ComPtr<ID3D12DescriptorHeap> compositeUavCpuHeap;
+        ComPtr<ID3D12DescriptorHeap> computeUavCpuHeap;
         
         // ============================================
         // Custom Shadow Denoiser (replaces SIGMA)

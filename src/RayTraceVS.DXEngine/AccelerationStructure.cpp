@@ -16,6 +16,14 @@
 
 namespace RayTraceVS::DXEngine
 {
+    static void SetCommandListName(ID3D12GraphicsCommandList* commandList, const wchar_t* name)
+    {
+        if (commandList && name)
+        {
+            commandList->SetName(name);
+        }
+    }
+
     AccelerationStructure::AccelerationStructure(DXContext* context)
         : dxContext(context)
     {
@@ -103,6 +111,8 @@ namespace RayTraceVS::DXEngine
 
         auto device = dxContext->GetDevice();
         auto commandList = dxContext->GetCommandList();
+        SetCommandListName(commandList, L"CmdList_BuildMeshBLAS");
+        SetCommandListName(commandList, L"CmdList_BuildProceduralBLAS");
 
         // Collect objects and calculate AABBs
         const auto& objects = scene->GetObjects();
@@ -188,7 +198,16 @@ namespace RayTraceVS::DXEngine
         }
 
         if (aabbs.empty())
-            return false;
+        {
+            // No procedural objects: treat as a valid empty BLAS state
+            aabbBuffer.Reset();
+            aabbUploadBuffer.Reset();
+            bottomLevelAS.Reset();
+            scratchBuffer.Reset();
+            instanceInfo.clear();
+            totalObjectCount = 0;
+            return true;
+        }
 
         totalObjectCount = static_cast<UINT>(aabbs.size());
 
@@ -287,6 +306,8 @@ namespace RayTraceVS::DXEngine
 
         auto device = dxContext->GetDevice();
         auto commandList = dxContext->GetCommandList();
+        SetCommandListName(commandList, L"CmdList_BuildCombinedTLAS");
+        SetCommandListName(commandList, L"CmdList_BuildProceduralTLAS");
 
         // Create single instance pointing to BLAS
         D3D12_RAYTRACING_INSTANCE_DESC instanceDesc = {};
@@ -365,6 +386,9 @@ namespace RayTraceVS::DXEngine
 
     void AccelerationStructure::BuildBLAS(const std::vector<GeometryData>& geometries)
     {
+        auto commandList = dxContext->GetCommandList();
+        SetCommandListName(commandList, L"CmdList_BuildBLAS");
+
         // Build BLAS
         D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS inputs = {};
         inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
@@ -419,17 +443,20 @@ namespace RayTraceVS::DXEngine
         buildDesc.ScratchAccelerationStructureData = scratchBuffer->GetGPUVirtualAddress();
 
         // Record to command list
-        dxContext->GetCommandList()->BuildRaytracingAccelerationStructure(&buildDesc, 0, nullptr);
+        commandList->BuildRaytracingAccelerationStructure(&buildDesc, 0, nullptr);
 
         // UAV barrier
         D3D12_RESOURCE_BARRIER barrier = {};
         barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
         barrier.UAV.pResource = bottomLevelAS.Get();
-        dxContext->GetCommandList()->ResourceBarrier(1, &barrier);
+        commandList->ResourceBarrier(1, &barrier);
     }
 
     void AccelerationStructure::BuildTLAS(const std::vector<D3D12_RAYTRACING_INSTANCE_DESC>& instances)
     {
+        auto commandList = dxContext->GetCommandList();
+        SetCommandListName(commandList, L"CmdList_BuildTLAS");
+
         // Create instance buffer
         UINT64 instanceBufferSize = instances.size() * sizeof(D3D12_RAYTRACING_INSTANCE_DESC);
         CreateBuffer(instanceBufferSize,
@@ -468,13 +495,13 @@ namespace RayTraceVS::DXEngine
         buildDesc.ScratchAccelerationStructureData = scratchBuffer->GetGPUVirtualAddress();
 
         // Record to command list
-        dxContext->GetCommandList()->BuildRaytracingAccelerationStructure(&buildDesc, 0, nullptr);
+        commandList->BuildRaytracingAccelerationStructure(&buildDesc, 0, nullptr);
 
         // UAV barrier
         D3D12_RESOURCE_BARRIER barrier = {};
         barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
         barrier.UAV.pResource = topLevelAS.Get();
-        dxContext->GetCommandList()->ResourceBarrier(1, &barrier);
+        commandList->ResourceBarrier(1, &barrier);
     }
 
     // ============================================

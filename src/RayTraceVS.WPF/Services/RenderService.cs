@@ -33,6 +33,7 @@ namespace RayTraceVS.WPF.Services
             MeshCacheData[]? meshCaches = null,
             int samplesPerPixel = 1,
             int maxBounces = 6,
+            int traceRecursionDepth = 2,
             float exposure = 1.0f,
             int toneMapOperator = 2,
             float denoiserStabilization = 1.0f,
@@ -48,7 +49,7 @@ namespace RayTraceVS.WPF.Services
                 engineWrapper.UpdateScene(spheres, planes, boxes, camera, lights, 
                     meshInstances ?? Array.Empty<MeshInstanceData>(), 
                     meshCaches ?? Array.Empty<MeshCacheData>(),
-                    samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization, shadowStrength, enableDenoiser, gamma);
+                    samplesPerPixel, maxBounces, traceRecursionDepth, exposure, toneMapOperator, denoiserStabilization, shadowStrength, enableDenoiser, gamma);
             }
             catch (Exception)
             {

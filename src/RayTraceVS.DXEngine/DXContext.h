@@ -39,6 +39,7 @@ namespace RayTraceVS::DXEngine
         void WaitForGPU();
         void MoveToNextFrame();
         void ResetCommandList();
+        void MarkCommandListClosed();
         ID3D12CommandAllocator* GetCommandAllocator() const;
 
     private:
@@ -49,6 +50,7 @@ namespace RayTraceVS::DXEngine
         ComPtr<ID3D12CommandQueue> commandQueue;
         ComPtr<ID3D12CommandAllocator> commandAllocator;
         ComPtr<ID3D12GraphicsCommandList4> commandList;
+        bool commandListOpen = false;
 
         ComPtr<IDXGISwapChain3> swapChain;
         static const UINT frameCount = 2;

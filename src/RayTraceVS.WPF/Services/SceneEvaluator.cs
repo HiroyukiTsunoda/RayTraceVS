@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using System.Diagnostics;
 using RayTraceVS.WPF.Models;
 using RayTraceVS.WPF.Models.Data;
 using RayTraceVS.WPF.Models.Nodes;
@@ -30,7 +31,7 @@ namespace RayTraceVS.WPF.Services
 {
     public class SceneEvaluator
     {
-        public (InteropSphereData[], InteropPlaneData[], InteropBoxData[], InteropCameraData, InteropLightData[], InteropMeshInstanceData[], InteropMeshCacheData[], int SamplesPerPixel, int MaxBounces, float Exposure, int ToneMapOperator, float DenoiserStabilization, float ShadowStrength, bool EnableDenoiser, float Gamma) EvaluateScene(NodeGraph nodeGraph)
+        public (InteropSphereData[], InteropPlaneData[], InteropBoxData[], InteropCameraData, InteropLightData[], InteropMeshInstanceData[], InteropMeshCacheData[], int SamplesPerPixel, int MaxBounces, int TraceRecursionDepth, float Exposure, int ToneMapOperator, float DenoiserStabilization, float ShadowStrength, bool EnableDenoiser, float Gamma) EvaluateScene(NodeGraph nodeGraph)
         {
             var spheres = new List<InteropSphereData>();
             var planes = new List<InteropPlaneData>();
@@ -40,6 +41,7 @@ namespace RayTraceVS.WPF.Services
             var meshCaches = new Dictionary<string, InteropMeshCacheData>();
             int samplesPerPixel = 1;
             int maxBounces = 6;
+            int traceRecursionDepth = 2;
             float exposure = 1.0f;
             int toneMapOperator = 2;
             float denoiserStabilization = 1.0f;
@@ -70,6 +72,23 @@ namespace RayTraceVS.WPF.Services
                 // SceneNodeの評価結果を取得
                 if (results.TryGetValue(sceneNode.Id, out var sceneResult) && sceneResult is SceneData sceneData)
                 {
+                    // Debug: log SceneNode object socket connections
+                    var sceneObjectSockets = sceneNode.InputSockets.Where(s => s.SocketType == SocketType.Object).ToList();
+                    Debug.WriteLine($"[SceneEvaluator] SceneNode object sockets: {sceneObjectSockets.Count}");
+                    foreach (var socket in sceneObjectSockets)
+                    {
+                        var connection = connections.FirstOrDefault(c => c.InputSocket?.Id == socket.Id);
+                        if (connection?.OutputSocket?.ParentNode != null)
+                        {
+                            var node = connection.OutputSocket.ParentNode;
+                            Debug.WriteLine($"[SceneEvaluator] {socket.Name} <- {node.Title} ({node.GetType().Name}) [{node.Id}]");
+                        }
+                        else
+                        {
+                            Debug.WriteLine($"[SceneEvaluator] {socket.Name} <- (empty)");
+                        }
+                    }
+                    
                     // カメラの設定（デフォルト値でなければ使用）
                     if (sceneData.Camera.FieldOfView > 0)
                     {
@@ -81,6 +100,9 @@ namespace RayTraceVS.WPF.Services
                     {
                         if (obj is SphereData sd && sd.Radius > 0)
                         {
+                            Debug.WriteLine($"[SceneEvaluator] Sphere Pos({sd.Position.X:F3}, {sd.Position.Y:F3}, {sd.Position.Z:F3}) R={sd.Radius:F3} " +
+                                            $"Base({sd.Material.BaseColor.X:F3}, {sd.Material.BaseColor.Y:F3}, {sd.Material.BaseColor.Z:F3}, {sd.Material.BaseColor.W:F3}) " +
+                                            $"M={sd.Material.Metallic:F3} Rgh={sd.Material.Roughness:F3} T={sd.Material.Transmission:F3} IOR={sd.Material.IOR:F3}");
                             spheres.Add(ConvertSphereData(sd));
                         }
                         else if (obj is PlaneData pd)
@@ -118,9 +140,13 @@ namespace RayTraceVS.WPF.Services
                         lights.Add(ConvertLightData(light));
                     }
                     
+                    Debug.WriteLine($"[SceneEvaluator] Objects: spheres={spheres.Count}, planes={planes.Count}, boxes={boxes.Count}, meshInstances={meshInstances.Count}");
+                    Debug.WriteLine($"[SceneEvaluator] Lights: {lights.Count}");
+                    
                     // レンダリング設定を取得
                     samplesPerPixel = sceneData.SamplesPerPixel > 0 ? sceneData.SamplesPerPixel : 1;
                     maxBounces = sceneData.MaxBounces > 0 ? sceneData.MaxBounces : 6;
+                    traceRecursionDepth = sceneData.TraceRecursionDepth > 0 ? sceneData.TraceRecursionDepth : 2;
                     exposure = sceneData.Exposure > 0 ? sceneData.Exposure : 1.0f;
                     toneMapOperator = sceneData.ToneMapOperator;
                     denoiserStabilization = sceneData.DenoiserStabilization > 0 ? sceneData.DenoiserStabilization : 1.0f;
@@ -268,7 +294,7 @@ namespace RayTraceVS.WPF.Services
                 }
             }
 
-            return (spheres.ToArray(), planes.ToArray(), boxes.ToArray(), camera, lights.ToArray(), meshInstances.ToArray(), meshCaches.Values.ToArray(), samplesPerPixel, maxBounces, exposure, toneMapOperator, denoiserStabilization, shadowStrength, enableDenoiser, gamma);
+            return (spheres.ToArray(), planes.ToArray(), boxes.ToArray(), camera, lights.ToArray(), meshInstances.ToArray(), meshCaches.Values.ToArray(), samplesPerPixel, maxBounces, traceRecursionDepth, exposure, toneMapOperator, denoiserStabilization, shadowStrength, enableDenoiser, gamma);
         }
 
         private InteropSphereData ConvertSphereData(SphereData data)

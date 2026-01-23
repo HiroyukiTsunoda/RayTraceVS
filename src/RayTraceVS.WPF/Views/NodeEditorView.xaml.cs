@@ -9,6 +9,7 @@ using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
+using System.Windows.Threading;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using RayTraceVS.WPF.Commands;
@@ -101,7 +102,10 @@ namespace RayTraceVS.WPF.Views
                 // ViewModelの接続変更を監視
                 if (e.NewValue is MainViewModel viewModel)
                 {
-                    viewModel.Connections.CollectionChanged += (_, __) => RebuildConnectionPaths();
+                    viewModel.Connections.CollectionChanged += (_, __) =>
+                    {
+                        RefreshSceneNodeLayoutsAfterConnectionChange();
+                    };
                 }
             };
         }
@@ -129,6 +133,10 @@ namespace RayTraceVS.WPF.Views
         /// </summary>
         private void ClearAllConnectionPaths()
         {
+            // SelectedConnectionLayer上の一部要素は保持（ドラッグ中プレビュー線など）
+            var preservedPreview = previewLine;
+            var preservedSelection = selectionRectangle;
+
             // 中間部分
             foreach (var path in middlePaths.Values)
             {
@@ -152,6 +160,15 @@ namespace RayTraceVS.WPF.Views
 
             // 選択ノード用レイヤー
             SelectedConnectionLayer.Children.Clear();
+
+            if (preservedPreview != null)
+            {
+                SelectedConnectionLayer.Children.Add(preservedPreview);
+            }
+            if (preservedSelection != null)
+            {
+                SelectedConnectionLayer.Children.Add(preservedSelection);
+            }
 
             // 後方互換性のため古いPathも削除
             foreach (var path in connectionPaths.Values)
@@ -1243,6 +1260,7 @@ namespace RayTraceVS.WPF.Views
                     properties["LightSocketNames"] = lightSocketNames;
                     properties["SamplesPerPixel"] = sceneNode.SamplesPerPixel;
                     properties["MaxBounces"] = sceneNode.MaxBounces;
+                    properties["TraceRecursionDepth"] = sceneNode.TraceRecursionDepth;
                     properties["Exposure"] = sceneNode.Exposure;
                     properties["ToneMapOperator"] = sceneNode.ToneMapOperator;
                     properties["DenoiserStabilization"] = sceneNode.DenoiserStabilization;
@@ -1451,6 +1469,8 @@ namespace RayTraceVS.WPF.Views
                         sceneNode.SamplesPerPixel = Convert.ToInt32(samplesObj);
                     if (properties.TryGetValue("MaxBounces", out var bouncesObj))
                         sceneNode.MaxBounces = Convert.ToInt32(bouncesObj);
+                    if (properties.TryGetValue("TraceRecursionDepth", out var depthObj))
+                        sceneNode.TraceRecursionDepth = Convert.ToInt32(depthObj);
                     if (properties.TryGetValue("Exposure", out var exposureObj))
                         sceneNode.Exposure = Convert.ToSingle(exposureObj);
                     if (properties.TryGetValue("ToneMapOperator", out var toneMapObj))
@@ -2097,6 +2117,42 @@ namespace RayTraceVS.WPF.Views
             }
         }
 
+        /// <summary>
+        /// SceneNodeのソケット追加後に位置と接続線を更新
+        /// </summary>
+        private void RefreshSceneNodeSocketLayout(SceneNode sceneNode)
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                NodeCanvas.UpdateLayout();
+                sceneNode.RenumberSceneSockets();
+                UpdateAllSocketPositionsForNode(sceneNode);
+                UpdateNodeConnections(sceneNode);
+                RebuildConnectionPaths();
+            }), DispatcherPriority.Loaded);
+        }
+
+        /// <summary>
+        /// 接続追加/削除後にSceneNodeのソケット位置と接続線を更新
+        /// </summary>
+        private void RefreshSceneNodeLayoutsAfterConnectionChange()
+        {
+            var viewModel = GetViewModel();
+            if (viewModel == null) return;
+
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                NodeCanvas.UpdateLayout();
+                foreach (var sceneNode in viewModel.Nodes.OfType<SceneNode>())
+                {
+                    sceneNode.RenumberSceneSockets();
+                    UpdateAllSocketPositionsForNode(sceneNode);
+                    UpdateNodeConnections(sceneNode);
+                }
+                RebuildConnectionPaths();
+            }), DispatcherPriority.Loaded);
+        }
+
         // ヒットテストヘルパー
         private T? FindVisualParent<T>(DependencyObject? child) where T : DependencyObject
         {
@@ -2275,6 +2331,7 @@ namespace RayTraceVS.WPF.Views
             // シーンノードの場合、自動的に次のソケットを追加
             if (inputSocket.ParentNode is Models.Nodes.SceneNode sceneNode)
             {
+                bool socketAdded = false;
                 if (inputSocket.SocketType == SocketType.Object)
                 {
                     // 空のオブジェクトソケットがあるかチェック
@@ -2285,6 +2342,7 @@ namespace RayTraceVS.WPF.Views
                     if (!hasEmptyObjectSocket)
                     {
                         sceneNode.AddObjectSocket();
+                        socketAdded = true;
                     }
                 }
                 else if (inputSocket.SocketType == SocketType.Light)
@@ -2297,7 +2355,13 @@ namespace RayTraceVS.WPF.Views
                     if (!hasEmptyLightSocket)
                     {
                         sceneNode.AddLightSocket();
+                        socketAdded = true;
                     }
+                }
+
+                if (socketAdded)
+                {
+                    RefreshSceneNodeSocketLayout(sceneNode);
                 }
             }
         }

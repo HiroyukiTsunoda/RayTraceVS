@@ -12,6 +12,7 @@
 #include "Scene/Objects/Plane.h"
 #include "Scene/Objects/Box.h"
 #include <d3dcompiler.h>
+#include <d3d12sdklayers.h>
 #include <dxcapi.h>
 #include <stdexcept>
 #include <algorithm>
@@ -24,6 +25,60 @@
 
 namespace RayTraceVS::DXEngine
 {
+    // Track photon buffer UAV state (buffers start in COMMON)
+    static bool photonMapInUavState = false;
+    static bool photonCounterInUavState = false;
+    static bool photonHashTableInUavState = false;
+
+    static void SetCommandListName(ID3D12GraphicsCommandList* commandList, const wchar_t* name)
+    {
+        if (commandList && name)
+        {
+            commandList->SetName(name);
+        }
+    }
+
+    static void LogDredInfo(ID3D12Device* device)
+    {
+        if (!device)
+            return;
+
+        ComPtr<ID3D12DeviceRemovedExtendedData> dred;
+        if (FAILED(device->QueryInterface(IID_PPV_ARGS(&dred))))
+            return;
+
+        D3D12_DRED_AUTO_BREADCRUMBS_OUTPUT breadcrumbs = {};
+        if (SUCCEEDED(dred->GetAutoBreadcrumbsOutput(&breadcrumbs)))
+        {
+            if (breadcrumbs.pHeadAutoBreadcrumbNode)
+            {
+                auto* node = breadcrumbs.pHeadAutoBreadcrumbNode;
+                const char* listName = node->pCommandListDebugNameA ? node->pCommandListDebugNameA : "(null)";
+                const char* queueName = node->pCommandQueueDebugNameA ? node->pCommandQueueDebugNameA : "(null)";
+                char buf[256];
+                sprintf_s(buf, "DRED AutoBreadcrumbs: CommandList=%s, CommandQueue=%s", listName, queueName);
+                LOG_ERROR(buf);
+                if (node->pLastBreadcrumbValue)
+                {
+                    sprintf_s(buf, "DRED LastBreadcrumbValue=%u", *node->pLastBreadcrumbValue);
+                    LOG_ERROR(buf);
+                }
+            }
+            else
+            {
+                LOG_ERROR("DRED AutoBreadcrumbs: no nodes");
+            }
+        }
+
+        D3D12_DRED_PAGE_FAULT_OUTPUT pageFault = {};
+        if (SUCCEEDED(dred->GetPageFaultAllocationOutput(&pageFault)))
+        {
+            char buf[256];
+            sprintf_s(buf, "DRED PageFault VA: 0x%llX", pageFault.PageFaultVA);
+            LOG_ERROR(buf);
+        }
+    }
+
     DXRPipeline::DXRPipeline(DXContext* context)
         : dxContext(context), mappedConstantData(nullptr)
     {
@@ -113,6 +168,14 @@ namespace RayTraceVS::DXEngine
     
     void DXRPipeline::Render(RenderTarget* renderTarget, Scene* scene)
     {
+        // If scene has no geometry, use compute path to render sky/background safely
+        if (scene && scene->GetObjects().empty() && scene->GetMeshInstances().empty())
+        {
+            LOG_DEBUG("Render: empty scene, using Compute path");
+            RenderWithComputeShader(renderTarget, scene);
+            return;
+        }
+
         if (dxrPipelineReady)
         {
             LOG_DEBUG("Render: using DXR path");
@@ -355,6 +418,44 @@ namespace RayTraceVS::DXEngine
 
         auto device = dxContext->GetDevice();
         auto commandList = dxContext->GetCommandList();
+        SetCommandListName(commandList, L"CmdList_UpdateSceneData");
+
+        // Track default heap buffer states across frames
+        static bool sphereBufferInSrvState = false;
+        static bool planeBufferInSrvState = false;
+        static bool boxBufferInSrvState = false;
+        static bool lightBufferInSrvState = false;
+
+        auto TransitionForCopy = [&](ID3D12Resource* resource, bool& inSrvState)
+        {
+            if (!resource)
+                return;
+
+            D3D12_RESOURCE_BARRIER preBarrier = {};
+            preBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            preBarrier.Transition.pResource = resource;
+            preBarrier.Transition.StateBefore = inSrvState
+                ? D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE
+                : D3D12_RESOURCE_STATE_COMMON;
+            preBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST;
+            preBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+            commandList->ResourceBarrier(1, &preBarrier);
+        };
+
+        auto TransitionToSrv = [&](ID3D12Resource* resource, bool& inSrvState)
+        {
+            if (!resource)
+                return;
+
+            D3D12_RESOURCE_BARRIER postBarrier = {};
+            postBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            postBarrier.Transition.pResource = resource;
+            postBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+            postBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+            postBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+            commandList->ResourceBarrier(1, &postBarrier);
+            inSrvState = true;
+        };
 
         // Update constant buffer
         const Camera& camera = scene->GetCamera();
@@ -399,8 +500,8 @@ namespace RayTraceVS::DXEngine
         mappedConstantData->MaxBounces = scene->GetMaxBounces();
 
         int requestedTraceDepth = scene->GetTraceRecursionDepth();
-        if (requestedTraceDepth < 1)
-            requestedTraceDepth = 1;
+        if (requestedTraceDepth < 2)
+            requestedTraceDepth = 2;
         if (requestedTraceDepth > 8)
             requestedTraceDepth = 8;
         maxTraceRecursionDepth = static_cast<UINT>(requestedTraceDepth);
@@ -542,7 +643,8 @@ namespace RayTraceVS::DXEngine
                     break;
             }
             gl.Radius = light.GetRadius();
-            gl.SoftShadowSamples = light.GetSoftShadowSamples();
+            // Temporary clamp to avoid TDR during heavy sampling (debug isolation)
+            gl.SoftShadowSamples = (std::min)(light.GetSoftShadowSamples(), 1.0f);
             gl.Padding = 0.0f;
             gpuLights.push_back(gl);
 
@@ -591,42 +693,84 @@ namespace RayTraceVS::DXEngine
         // Upload object data to GPU buffers
         if (!spheres.empty() && sphereUploadBuffer)
         {
+            TransitionForCopy(sphereBuffer.Get(), sphereBufferInSrvState);
             void* mapped = nullptr;
             sphereUploadBuffer->Map(0, nullptr, &mapped);
             memcpy(mapped, spheres.data(), sizeof(GPUSphere) * spheres.size());
             sphereUploadBuffer->Unmap(0, nullptr);
 
             commandList->CopyResource(sphereBuffer.Get(), sphereUploadBuffer.Get());
+            TransitionToSrv(sphereBuffer.Get(), sphereBufferInSrvState);
         }
 
         if (!planes.empty() && planeUploadBuffer)
         {
+            TransitionForCopy(planeBuffer.Get(), planeBufferInSrvState);
             void* mapped = nullptr;
             planeUploadBuffer->Map(0, nullptr, &mapped);
             memcpy(mapped, planes.data(), sizeof(GPUPlane) * planes.size());
             planeUploadBuffer->Unmap(0, nullptr);
 
             commandList->CopyResource(planeBuffer.Get(), planeUploadBuffer.Get());
+            TransitionToSrv(planeBuffer.Get(), planeBufferInSrvState);
         }
 
         if (!Boxes.empty() && boxUploadBuffer)
         {
+            TransitionForCopy(boxBuffer.Get(), boxBufferInSrvState);
             void* mapped = nullptr;
-            boxUploadBuffer->Map(0, nullptr, &mapped);
-            memcpy(mapped, Boxes.data(), sizeof(GPUBox) * Boxes.size());
-            boxUploadBuffer->Unmap(0, nullptr);
+            HRESULT hr = boxUploadBuffer->Map(0, nullptr, &mapped);
+            if (FAILED(hr) || mapped == nullptr)
+            {
+                char buf[256];
+                sprintf_s(buf, "boxUploadBuffer->Map failed: 0x%08X (mapped=%p)", (unsigned)hr, mapped);
+                LOG_ERROR(buf);
+                if (auto device = dxContext ? dxContext->GetDevice() : nullptr)
+                {
+                    HRESULT removed = device->GetDeviceRemovedReason();
+                    char buf2[256];
+                    sprintf_s(buf2, "DeviceRemovedReason: 0x%08X", (unsigned)removed);
+                    LOG_ERROR(buf2);
+                    LogDredInfo(device);
+                }
+            }
+            else
+            {
+                memcpy(mapped, Boxes.data(), sizeof(GPUBox) * Boxes.size());
+                boxUploadBuffer->Unmap(0, nullptr);
+            }
 
             commandList->CopyResource(boxBuffer.Get(), boxUploadBuffer.Get());
+            TransitionToSrv(boxBuffer.Get(), boxBufferInSrvState);
         }
 
         if (!gpuLights.empty() && lightUploadBuffer)
         {
+            TransitionForCopy(lightBuffer.Get(), lightBufferInSrvState);
             void* mapped = nullptr;
-            lightUploadBuffer->Map(0, nullptr, &mapped);
-            memcpy(mapped, gpuLights.data(), sizeof(GPULight) * gpuLights.size());
-            lightUploadBuffer->Unmap(0, nullptr);
+            HRESULT hr = lightUploadBuffer->Map(0, nullptr, &mapped);
+            if (FAILED(hr) || mapped == nullptr)
+            {
+                char buf[256];
+                sprintf_s(buf, "lightUploadBuffer->Map failed: 0x%08X (mapped=%p)", (unsigned)hr, mapped);
+                LOG_ERROR(buf);
+                if (auto device = dxContext ? dxContext->GetDevice() : nullptr)
+                {
+                    HRESULT removed = device->GetDeviceRemovedReason();
+                    char buf2[256];
+                    sprintf_s(buf2, "DeviceRemovedReason: 0x%08X", (unsigned)removed);
+                    LOG_ERROR(buf2);
+                    LogDredInfo(device);
+                }
+            }
+            else
+            {
+                memcpy(mapped, gpuLights.data(), sizeof(GPULight) * gpuLights.size());
+                lightUploadBuffer->Unmap(0, nullptr);
+            }
 
             commandList->CopyResource(lightBuffer.Get(), lightUploadBuffer.Get());
+            TransitionToSrv(lightBuffer.Get(), lightBufferInSrvState);
         }
         
         // ============================================
@@ -837,6 +981,7 @@ namespace RayTraceVS::DXEngine
 
         auto device = dxContext->GetDevice();
         auto commandList = dxContext->GetCommandList();
+        SetCommandListName(commandList, L"CmdList_RenderWithCompute");
 
         UINT width = renderTarget->GetWidth();
         UINT height = renderTarget->GetHeight();
@@ -917,6 +1062,33 @@ namespace RayTraceVS::DXEngine
         ID3D12DescriptorHeap* heaps[] = { computeSrvUavHeap.Get() };
         commandList->SetDescriptorHeaps(1, heaps);
 
+        // If scene is empty, clear output to sky color to avoid stale frame
+        if (scene->GetObjects().empty() && scene->GetMeshInstances().empty())
+        {
+            if (!computeUavCpuHeap)
+            {
+                D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
+                heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+                heapDesc.NumDescriptors = 1;
+                heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+                HRESULT hr = device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&computeUavCpuHeap));
+                if (FAILED(hr))
+                {
+                    LOG_ERROR_HR("RenderWithComputeShader: failed to create CPU UAV heap", hr);
+                }
+            }
+
+            if (computeUavCpuHeap)
+            {
+                // GPU handle for output UAV (index 1)
+                CD3DX12_GPU_DESCRIPTOR_HANDLE outputGpuHandle(computeSrvUavHeap->GetGPUDescriptorHandleForHeapStart(), 1, srvUavDescriptorSize);
+                D3D12_CPU_DESCRIPTOR_HANDLE outputCpuHandle = computeUavCpuHeap->GetCPUDescriptorHandleForHeapStart();
+                device->CreateUnorderedAccessView(renderTarget->GetResource(), nullptr, &uavDesc, outputCpuHandle);
+                const float clearColor[4] = { 0.5f, 0.7f, 1.0f, 1.0f };
+                commandList->ClearUnorderedAccessViewFloat(outputGpuHandle, outputCpuHandle, renderTarget->GetResource(), clearColor, 0, nullptr);
+            }
+        }
+
         // Set root descriptor tables
         CD3DX12_GPU_DESCRIPTOR_HANDLE gpuHandle(computeSrvUavHeap->GetGPUDescriptorHandleForHeapStart());
         commandList->SetComputeRootDescriptorTable(0, gpuHandle);  // CBV
@@ -945,6 +1117,7 @@ namespace RayTraceVS::DXEngine
         // Render a simple error pattern when compute shader is not available
         auto device = dxContext->GetDevice();
         auto commandList = dxContext->GetCommandList();
+        SetCommandListName(commandList, L"CmdList_RenderErrorPattern");
         
         if (!device || !commandList)
         {
@@ -1630,6 +1803,13 @@ namespace RayTraceVS::DXEngine
             LOG_ERROR("Failed to build combined TLAS");
             return false;
         }
+
+        // If no instances exist, TLAS will be null and DXR should fall back to compute
+        if (!accelerationStructure->GetTLAS())
+        {
+            LOG_WARN("No TLAS built (no instances) - falling back to compute");
+            return false;
+        }
         
         needsAccelerationStructureRebuild = false;
         lastScene = scene;
@@ -1705,6 +1885,16 @@ namespace RayTraceVS::DXEngine
             photonUavDesc.Buffer.StructureByteStride = sizeof(GPUPhoton);
             device->CreateUnorderedAccessView(photonMapBuffer.Get(), nullptr, &photonUavDesc, cpuHandle);
         }
+        else
+        {
+            D3D12_UNORDERED_ACCESS_VIEW_DESC photonUavDesc = {};
+            photonUavDesc.Format = DXGI_FORMAT_UNKNOWN;
+            photonUavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+            photonUavDesc.Buffer.FirstElement = 0;
+            photonUavDesc.Buffer.NumElements = maxPhotons;
+            photonUavDesc.Buffer.StructureByteStride = sizeof(GPUPhoton);
+            device->CreateUnorderedAccessView(nullptr, nullptr, &photonUavDesc, cpuHandle);
+        }
         cpuHandle.Offset(1, dxrDescriptorSize);
         
         // [8] UAV for photon counter
@@ -1717,53 +1907,82 @@ namespace RayTraceVS::DXEngine
             counterUavDesc.Buffer.NumElements = 1;
             device->CreateUnorderedAccessView(photonCounterBuffer.Get(), nullptr, &counterUavDesc, cpuHandle);
         }
+        else
+        {
+            D3D12_UNORDERED_ACCESS_VIEW_DESC counterUavDesc = {};
+            counterUavDesc.Format = DXGI_FORMAT_R32_UINT;
+            counterUavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+            counterUavDesc.Buffer.FirstElement = 0;
+            counterUavDesc.Buffer.NumElements = 1;
+            device->CreateUnorderedAccessView(nullptr, nullptr, &counterUavDesc, cpuHandle);
+        }
         cpuHandle.Offset(1, dxrDescriptorSize);
         
         // [10-17] UAVs for G-Buffer (NRD denoiser)
-        if (denoiser && denoiser->IsReady())
         {
-            auto& gBuffer = denoiser->GetGBuffer();
             D3D12_UNORDERED_ACCESS_VIEW_DESC gbufferUavDesc = {};
             gbufferUavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
             gbufferUavDesc.Texture2D.MipSlice = 0;
-            
+
+            ID3D12Resource* diffuse = nullptr;
+            ID3D12Resource* specular = nullptr;
+            ID3D12Resource* normalRoughness = nullptr;
+            ID3D12Resource* albedo = nullptr;
+            ID3D12Resource* motionVectors = nullptr;
+            ID3D12Resource* viewZ = nullptr;
+            ID3D12Resource* shadowData = nullptr;
+            ID3D12Resource* shadowTranslucency = nullptr;
+
+            if (denoiser && denoiser->IsReady())
+            {
+                auto& gBuffer = denoiser->GetGBuffer();
+                diffuse = gBuffer.DiffuseRadianceHitDist.Get();
+                specular = gBuffer.SpecularRadianceHitDist.Get();
+                normalRoughness = gBuffer.NormalRoughness.Get();
+                albedo = gBuffer.Albedo.Get();
+                motionVectors = gBuffer.MotionVectors.Get();
+                viewZ = gBuffer.ViewZ.Get();
+                shadowData = gBuffer.ShadowData.Get();
+                shadowTranslucency = gBuffer.ShadowTranslucency.Get();
+            }
+
             // [10] u3: DiffuseRadianceHitDist (RGBA16F)
             gbufferUavDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
-            device->CreateUnorderedAccessView(gBuffer.DiffuseRadianceHitDist.Get(), nullptr, &gbufferUavDesc, cpuHandle);
+            device->CreateUnorderedAccessView(diffuse, nullptr, &gbufferUavDesc, cpuHandle);
             cpuHandle.Offset(1, dxrDescriptorSize);
-            
+
             // [11] u4: SpecularRadianceHitDist (RGBA16F)
-            device->CreateUnorderedAccessView(gBuffer.SpecularRadianceHitDist.Get(), nullptr, &gbufferUavDesc, cpuHandle);
+            device->CreateUnorderedAccessView(specular, nullptr, &gbufferUavDesc, cpuHandle);
             cpuHandle.Offset(1, dxrDescriptorSize);
-            
+
             // [12] u5: NormalRoughness (RGBA8)
             gbufferUavDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-            device->CreateUnorderedAccessView(gBuffer.NormalRoughness.Get(), nullptr, &gbufferUavDesc, cpuHandle);
+            device->CreateUnorderedAccessView(normalRoughness, nullptr, &gbufferUavDesc, cpuHandle);
             cpuHandle.Offset(1, dxrDescriptorSize);
-            
+
             // [13] u8: Albedo (RGBA8) - placed at index 13 for DXR compatibility
             gbufferUavDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-            device->CreateUnorderedAccessView(gBuffer.Albedo.Get(), nullptr, &gbufferUavDesc, cpuHandle);
+            device->CreateUnorderedAccessView(albedo, nullptr, &gbufferUavDesc, cpuHandle);
             cpuHandle.Offset(1, dxrDescriptorSize);
-            
+
             // [14] u7: MotionVectors (RG16F)
             gbufferUavDesc.Format = DXGI_FORMAT_R16G16_FLOAT;
-            device->CreateUnorderedAccessView(gBuffer.MotionVectors.Get(), nullptr, &gbufferUavDesc, cpuHandle);
+            device->CreateUnorderedAccessView(motionVectors, nullptr, &gbufferUavDesc, cpuHandle);
             cpuHandle.Offset(1, dxrDescriptorSize);
-            
+
             // [15] u6: ViewZ (R32F) - placed at index 15
             gbufferUavDesc.Format = DXGI_FORMAT_R32_FLOAT;
-            device->CreateUnorderedAccessView(gBuffer.ViewZ.Get(), nullptr, &gbufferUavDesc, cpuHandle);
+            device->CreateUnorderedAccessView(viewZ, nullptr, &gbufferUavDesc, cpuHandle);
             cpuHandle.Offset(1, dxrDescriptorSize);
-            
+
             // [16] u9: ShadowData (RG16F)
             gbufferUavDesc.Format = DXGI_FORMAT_R16G16_FLOAT;
-            device->CreateUnorderedAccessView(gBuffer.ShadowData.Get(), nullptr, &gbufferUavDesc, cpuHandle);
+            device->CreateUnorderedAccessView(shadowData, nullptr, &gbufferUavDesc, cpuHandle);
             cpuHandle.Offset(1, dxrDescriptorSize);
-            
+
             // [17] u10: ShadowTranslucency (RGBA16F)
             gbufferUavDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
-            device->CreateUnorderedAccessView(gBuffer.ShadowTranslucency.Get(), nullptr, &gbufferUavDesc, cpuHandle);
+            device->CreateUnorderedAccessView(shadowTranslucency, nullptr, &gbufferUavDesc, cpuHandle);
             cpuHandle.Offset(1, dxrDescriptorSize);
         }
         
@@ -1777,6 +1996,16 @@ namespace RayTraceVS::DXEngine
             hashUavDesc.Buffer.NumElements = PHOTON_HASH_TABLE_SIZE;
             hashUavDesc.Buffer.StructureByteStride = sizeof(PhotonHashCell);
             device->CreateUnorderedAccessView(photonHashTableBuffer.Get(), nullptr, &hashUavDesc, cpuHandle);
+        }
+        else
+        {
+            D3D12_UNORDERED_ACCESS_VIEW_DESC hashUavDesc = {};
+            hashUavDesc.Format = DXGI_FORMAT_UNKNOWN;
+            hashUavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+            hashUavDesc.Buffer.FirstElement = 0;
+            hashUavDesc.Buffer.NumElements = PHOTON_HASH_TABLE_SIZE;
+            hashUavDesc.Buffer.StructureByteStride = sizeof(PhotonHashCell);
+            device->CreateUnorderedAccessView(nullptr, nullptr, &hashUavDesc, cpuHandle);
         }
         cpuHandle.Offset(1, dxrDescriptorSize);
         
@@ -1876,8 +2105,21 @@ namespace RayTraceVS::DXEngine
             return;
         }
         
+        // Debug isolation toggles (temporary)
+        const bool debugDisableCaustics = false;
+        const bool debugDisableDenoiser = false;
+        if (debugDisableCaustics)
+        {
+            causticsEnabled = false;
+        }
+        if (debugDisableDenoiser)
+        {
+            denoiserEnabled = false;
+        }
+        
         auto device = dxContext->GetDevice();
         auto commandList = dxContext->GetCommandList();
+        SetCommandListName(commandList, L"CmdList_RenderWithDXR");
         
         UINT width = renderTarget->GetWidth();
         UINT height = renderTarget->GetHeight();
@@ -1972,6 +2214,20 @@ namespace RayTraceVS::DXEngine
         
         commandList->SetPipelineState1(stateObject.Get());
         commandList->DispatchRays(&dispatchDesc);
+
+        // Ray tracing writes G-Buffer as UAVs; sync NRD state tracking
+        if (denoiser && denoiser->IsReady())
+        {
+            auto& gBuffer = denoiser->GetGBuffer();
+            denoiser->NotifyResourceState(gBuffer.DiffuseRadianceHitDist.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+            denoiser->NotifyResourceState(gBuffer.SpecularRadianceHitDist.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+            denoiser->NotifyResourceState(gBuffer.NormalRoughness.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+            denoiser->NotifyResourceState(gBuffer.ViewZ.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+            denoiser->NotifyResourceState(gBuffer.MotionVectors.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+            denoiser->NotifyResourceState(gBuffer.Albedo.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+            denoiser->NotifyResourceState(gBuffer.ShadowData.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+            denoiser->NotifyResourceState(gBuffer.ShadowTranslucency.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        }
         
         // ============================================
         // Pass 3: Denoising (NRD)
@@ -2053,7 +2309,7 @@ namespace RayTraceVS::DXEngine
             &defaultHeapProps,
             D3D12_HEAP_FLAG_NONE,
             &photonBufferDesc,
-            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+            D3D12_RESOURCE_STATE_COMMON,
             nullptr,
             IID_PPV_ARGS(&photonMapBuffer));
         
@@ -2070,7 +2326,7 @@ namespace RayTraceVS::DXEngine
             &defaultHeapProps,
             D3D12_HEAP_FLAG_NONE,
             &counterBufferDesc,
-            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+            D3D12_RESOURCE_STATE_COMMON,
             nullptr,
             IID_PPV_ARGS(&photonCounterBuffer));
         
@@ -2255,6 +2511,18 @@ namespace RayTraceVS::DXEngine
     void DXRPipeline::ClearPhotonMap()
     {
         auto commandList = dxContext->GetCommandList();
+        SetCommandListName(commandList, L"CmdList_ClearPhotonMap");
+
+        // Ensure photon counter is in UAV state before transitioning to COPY_DEST
+        if (photonCounterBuffer && !photonCounterInUavState)
+        {
+            CD3DX12_RESOURCE_BARRIER toUav = CD3DX12_RESOURCE_BARRIER::Transition(
+                photonCounterBuffer.Get(),
+                D3D12_RESOURCE_STATE_COMMON,
+                D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+            commandList->ResourceBarrier(1, &toUav);
+            photonCounterInUavState = true;
+        }
         
         // Transition counter to copy dest
         CD3DX12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(
@@ -2272,6 +2540,7 @@ namespace RayTraceVS::DXEngine
             D3D12_RESOURCE_STATE_COPY_DEST,
             D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         commandList->ResourceBarrier(1, &barrier);
+        photonCounterInUavState = true;
     }
 
     // ============================================
@@ -2296,7 +2565,7 @@ namespace RayTraceVS::DXEngine
             &defaultHeapProps,
             D3D12_HEAP_FLAG_NONE,
             &hashTableDesc,
-            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+            D3D12_RESOURCE_STATE_COMMON,
             nullptr,
             IID_PPV_ARGS(&photonHashTableBuffer));
         
@@ -2391,6 +2660,27 @@ namespace RayTraceVS::DXEngine
             return;
         
         auto commandList = dxContext->GetCommandList();
+        SetCommandListName(commandList, L"CmdList_BuildPhotonHash");
+
+        // Ensure photon map/hash table buffers are in UAV state
+        if (photonMapBuffer && !photonMapInUavState)
+        {
+            CD3DX12_RESOURCE_BARRIER toUav = CD3DX12_RESOURCE_BARRIER::Transition(
+                photonMapBuffer.Get(),
+                D3D12_RESOURCE_STATE_COMMON,
+                D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+            commandList->ResourceBarrier(1, &toUav);
+            photonMapInUavState = true;
+        }
+        if (photonHashTableBuffer && !photonHashTableInUavState)
+        {
+            CD3DX12_RESOURCE_BARRIER toUav = CD3DX12_RESOURCE_BARRIER::Transition(
+                photonHashTableBuffer.Get(),
+                D3D12_RESOURCE_STATE_COMMON,
+                D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+            commandList->ResourceBarrier(1, &toUav);
+            photonHashTableInUavState = true;
+        }
         
         // Update constants
         mappedPhotonHashConstants->PhotonCount = mappedConstantData->PhotonMapSize;
@@ -2429,7 +2719,12 @@ namespace RayTraceVS::DXEngine
         CD3DX12_CPU_DESCRIPTOR_HANDLE cpuHandle(photonSrvUavHeap->GetCPUDescriptorHandleForHeapStart());
         
         // [0] UAV for output (not used in photon pass, but keep layout consistent)
-        // Skip this slot
+        // Initialize with a null UAV descriptor to satisfy static descriptor requirements
+        D3D12_UNORDERED_ACCESS_VIEW_DESC nullOutputUavDesc = {};
+        nullOutputUavDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        nullOutputUavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+        nullOutputUavDesc.Texture2D.MipSlice = 0;
+        device->CreateUnorderedAccessView(nullptr, nullptr, &nullOutputUavDesc, cpuHandle);
         cpuHandle.Offset(1, dxrDescriptorSize);
         
         // [1] SRV for TLAS
@@ -2497,7 +2792,67 @@ namespace RayTraceVS::DXEngine
         if (!causticsEnabled || !photonStateObject)
             return;
 
+        // Skip photon pass if there are no specular/transmissive materials or no non-ambient lights
+        const auto& objects = scene->GetObjects();
+        const auto& meshInstances = scene->GetMeshInstances();
+        const auto& lights = scene->GetLights();
+
+        UINT nonAmbientLights = 0;
+        UINT pointLights = 0;
+        for (const auto& light : lights)
+        {
+            if (light.GetType() != LightType::Ambient)
+            {
+                nonAmbientLights++;
+                if (light.GetType() == LightType::Point)
+                {
+                    pointLights++;
+                }
+            }
+        }
+
+        bool hasSpecular = false;
+        for (const auto& obj : objects)
+        {
+            const auto mat = obj->GetMaterial();
+            if (mat.transmission > 0.01f || mat.metallic > 0.5f)
+            {
+                hasSpecular = true;
+                break;
+            }
+        }
+        if (!hasSpecular)
+        {
+            for (const auto& inst : meshInstances)
+            {
+                if (inst.material.transmission > 0.01f || inst.material.metallic > 0.5f)
+                {
+                    hasSpecular = true;
+                    break;
+                }
+            }
+        }
+
+        if (!hasSpecular || nonAmbientLights == 0)
+        {
+            mappedConstantData->NumPhotons = 0;
+            mappedConstantData->PhotonMapSize = 0;
+            return;
+        }
+        
         auto commandList = dxContext->GetCommandList();
+        SetCommandListName(commandList, L"CmdList_EmitPhotons");
+
+        // Ensure photon map is in UAV state before use
+        if (photonMapBuffer && !photonMapInUavState)
+        {
+            CD3DX12_RESOURCE_BARRIER toUav = CD3DX12_RESOURCE_BARRIER::Transition(
+                photonMapBuffer.Get(),
+                D3D12_RESOURCE_STATE_COMMON,
+                D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+            commandList->ResourceBarrier(1, &toUav);
+            photonMapInUavState = true;
+        }
         
         // Clear the photon map
         ClearPhotonMap();
@@ -2521,8 +2876,21 @@ namespace RayTraceVS::DXEngine
         }
         
         // Calculate number of photons to emit
-        UINT totalPhotons = photonsPerLight * scene->GetLights().size();
+        UINT totalPhotons = photonsPerLight * nonAmbientLights;
         totalPhotons = min(totalPhotons, maxPhotons);
+        if (pointLights > 0)
+        {
+            // Safe cap for point lights to avoid long DispatchRays (TDR)
+            UINT perLightCap = 8192u;
+            UINT cap = perLightCap * max(1u, nonAmbientLights);
+            totalPhotons = (std::min)(totalPhotons, cap);
+        }
+        if (pointLights > 0 && (objects.size() + meshInstances.size()) > 1)
+        {
+            // Point lights + multiple objects can trigger TDR; cap photon count
+            UINT cap = 8192u * max(1u, nonAmbientLights);
+            totalPhotons = (std::min)(totalPhotons, cap);
+        }
         
         // Dispatch photon rays
         D3D12_DISPATCH_RAYS_DESC dispatchDesc = {};
@@ -2607,6 +2975,7 @@ namespace RayTraceVS::DXEngine
         }
         
         auto commandList = dxContext->GetCommandList();
+        SetCommandListName(commandList, L"CmdList_ApplyDenoising");
         auto camera = scene->GetCamera();
         
         // Build frame settings for denoiser
@@ -2679,9 +3048,9 @@ namespace RayTraceVS::DXEngine
             // Dest: Previous state -> COPY_DEST
             copyBarriers[barrierCount].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
             copyBarriers[barrierCount].Transition.pResource = gBuffer.RawSpecularBackup.Get();
-            copyBarriers[barrierCount].Transition.StateBefore = rawSpecularInSrvState 
-                ? D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE 
-                : D3D12_RESOURCE_STATE_COMMON;
+            copyBarriers[barrierCount].Transition.StateBefore = rawSpecularInSrvState
+                ? D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE
+                : D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
             copyBarriers[barrierCount].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST;
             copyBarriers[barrierCount].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
             barrierCount++;
@@ -2711,6 +3080,8 @@ namespace RayTraceVS::DXEngine
             commandList->ResourceBarrier(2, postCopyBarriers);
             
             rawSpecularInSrvState = true;  // Now in SRV state for next frame
+            denoiser->NotifyResourceState(gBuffer.RawSpecularBackup.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+            denoiser->NotifyResourceState(gBuffer.SpecularRadianceHitDist.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         }
         
         // CRITICAL: Copy raw diffuse data BEFORE NRD processes it
@@ -2742,9 +3113,9 @@ namespace RayTraceVS::DXEngine
             // Dest: Previous state -> COPY_DEST
             copyBarriers[barrierCount].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
             copyBarriers[barrierCount].Transition.pResource = gBuffer.RawDiffuseBackup.Get();
-            copyBarriers[barrierCount].Transition.StateBefore = rawDiffuseInSrvState 
-                ? D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE 
-                : D3D12_RESOURCE_STATE_COMMON;
+            copyBarriers[barrierCount].Transition.StateBefore = rawDiffuseInSrvState
+                ? D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE
+                : D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
             copyBarriers[barrierCount].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST;
             copyBarriers[barrierCount].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
             barrierCount++;
@@ -2774,9 +3145,11 @@ namespace RayTraceVS::DXEngine
             commandList->ResourceBarrier(2, postCopyBarriers);
             
             rawDiffuseInSrvState = true;  // Now in SRV state for next frame
+            denoiser->NotifyResourceState(gBuffer.RawDiffuseBackup.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+            denoiser->NotifyResourceState(gBuffer.DiffuseRadianceHitDist.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         }
         
-        // Apply denoising
+        // Apply denoising (NRD handles per-dispatch state transitions internally)
         denoiser->Denoise(commandList, settings);
         
         // Transition NRD output from UAV to SRV for CompositeOutput
@@ -2793,36 +3166,6 @@ namespace RayTraceVS::DXEngine
         uavBarriers[2].Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
         uavBarriers[2].UAV.pResource = output.DenoisedShadow.Get();
         commandList->ResourceBarrier(3, uavBarriers);
-        
-        // Second: State transitions from UAV to SRV for Composite shader read
-        // NOTE: Only transition NRD outputs and Albedo. G-Buffer inputs (t4-t8) are also used by NRD
-        // and NRD manages their state internally. Transitioning them here causes corruption.
-        D3D12_RESOURCE_BARRIER transitionBarriers[4] = {};
-        transitionBarriers[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-        transitionBarriers[0].Transition.pResource = output.DiffuseRadiance.Get();
-        transitionBarriers[0].Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-        transitionBarriers[0].Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-        transitionBarriers[0].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-        
-        transitionBarriers[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-        transitionBarriers[1].Transition.pResource = output.SpecularRadiance.Get();
-        transitionBarriers[1].Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-        transitionBarriers[1].Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-        transitionBarriers[1].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-        
-        transitionBarriers[2].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-        transitionBarriers[2].Transition.pResource = output.DenoisedShadow.Get();
-        transitionBarriers[2].Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-        transitionBarriers[2].Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-        transitionBarriers[2].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-        
-        transitionBarriers[3].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-        transitionBarriers[3].Transition.pResource = gBuffer.Albedo.Get();
-        transitionBarriers[3].Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-        transitionBarriers[3].Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-        transitionBarriers[3].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-        
-        commandList->ResourceBarrier(4, transitionBarriers);
         
         // Update previous frame data
         XMStoreFloat4x4(&prevViewMatrix, viewMatrix);
@@ -2992,8 +3335,26 @@ namespace RayTraceVS::DXEngine
             }
         }
         
+        // CPU-only heap for ClearUnorderedAccessViewFloat (debug)
+        if (!compositeUavCpuHeap)
+        {
+            auto device = dxContext->GetDevice();
+            D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
+            heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+            heapDesc.NumDescriptors = 1;
+            heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+            
+            HRESULT hr = device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&compositeUavCpuHeap));
+            if (FAILED(hr))
+            {
+                LOG_ERROR_HR("CompositeOutput: failed to create CPU UAV heap", hr);
+                return;
+            }
+        }
+        
         auto commandList = dxContext->GetCommandList();
         auto device = dxContext->GetDevice();
+        SetCommandListName(commandList, L"CmdList_CompositeOutput");
         
         UINT width = renderTarget->GetWidth();
         UINT height = renderTarget->GetHeight();
@@ -3007,6 +3368,20 @@ namespace RayTraceVS::DXEngine
         
         auto& gBuffer = denoiser->GetGBuffer();
         auto& output = denoiser->GetOutput();
+
+        // Ensure composite inputs are in SRV state
+        denoiser->EnsureResourceState(commandList, output.DiffuseRadiance.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        denoiser->EnsureResourceState(commandList, output.SpecularRadiance.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        denoiser->EnsureResourceState(commandList, output.DenoisedShadow.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        denoiser->EnsureResourceState(commandList, gBuffer.Albedo.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        denoiser->EnsureResourceState(commandList, gBuffer.RawDiffuseBackup.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        denoiser->EnsureResourceState(commandList, gBuffer.SpecularRadianceHitDist.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        denoiser->EnsureResourceState(commandList, gBuffer.NormalRoughness.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        denoiser->EnsureResourceState(commandList, gBuffer.ViewZ.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        denoiser->EnsureResourceState(commandList, gBuffer.MotionVectors.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        denoiser->EnsureResourceState(commandList, gBuffer.ShadowData.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        denoiser->EnsureResourceState(commandList, gBuffer.RawSpecularBackup.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        denoiser->EnsureResourceState(commandList, gBuffer.ShadowTranslucency.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         
         // Create SRVs for all input textures
         D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
@@ -3053,18 +3428,29 @@ namespace RayTraceVS::DXEngine
         uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
         uavDesc.Texture2D.MipSlice = 0;
         uavDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; // Render target format
-        device->CreateUnorderedAccessView(renderTarget->GetResource(), nullptr, &uavDesc, cpuHandle);
+        D3D12_CPU_DESCRIPTOR_HANDLE uavCpuHandle = cpuHandle;
+        device->CreateUnorderedAccessView(renderTarget->GetResource(), nullptr, &uavDesc, uavCpuHandle);
+        
+        // CPU-only handle for ClearUnorderedAccessViewFloat
+        D3D12_CPU_DESCRIPTOR_HANDLE uavCpuClearHandle = compositeUavCpuHeap->GetCPUDescriptorHandleForHeapStart();
+        device->CreateUnorderedAccessView(renderTarget->GetResource(), nullptr, &uavDesc, uavCpuClearHandle);
         
         CD3DX12_GPU_DESCRIPTOR_HANDLE uavTableHandle(compositeDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
         uavTableHandle.Offset(11, descriptorSize);
         
+        // Set descriptor heap (also needed for ClearUnorderedAccessViewFloat)
+        ID3D12DescriptorHeap* heaps[] = { compositeDescriptorHeap.Get() };
+        commandList->SetDescriptorHeaps(1, heaps);
+
+        // Debug: clear output to verify write path
+        {
+            const float clearColor[4] = { 1.0f, 0.0f, 1.0f, 1.0f };
+            commandList->ClearUnorderedAccessViewFloat(uavTableHandle, uavCpuClearHandle, renderTarget->GetResource(), clearColor, 0, nullptr);
+        }
+        
         // Set pipeline state
         commandList->SetPipelineState(compositePipelineState.Get());
         commandList->SetComputeRootSignature(compositeRootSignature.Get());
-        
-        // Set descriptor heap
-        ID3D12DescriptorHeap* heaps[] = { compositeDescriptorHeap.Get() };
-        commandList->SetDescriptorHeaps(1, heaps);
         
         // Set root parameters
         commandList->SetComputeRootDescriptorTable(0, srvTableHandle);  // SRVs
@@ -3095,33 +3481,15 @@ namespace RayTraceVS::DXEngine
         
         commandList->Dispatch(dispatchX, dispatchY, 1);
         
-        // Transition resources back to UAV state for next frame's NRD pass
-        D3D12_RESOURCE_BARRIER backToUavBarriers[4] = {};
-        backToUavBarriers[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-        backToUavBarriers[0].Transition.pResource = output.DiffuseRadiance.Get();
-        backToUavBarriers[0].Transition.StateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-        backToUavBarriers[0].Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-        backToUavBarriers[0].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-        
-        backToUavBarriers[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-        backToUavBarriers[1].Transition.pResource = output.SpecularRadiance.Get();
-        backToUavBarriers[1].Transition.StateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-        backToUavBarriers[1].Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-        backToUavBarriers[1].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-        
-        backToUavBarriers[2].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-        backToUavBarriers[2].Transition.pResource = output.DenoisedShadow.Get();
-        backToUavBarriers[2].Transition.StateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-        backToUavBarriers[2].Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-        backToUavBarriers[2].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-        
-        backToUavBarriers[3].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-        backToUavBarriers[3].Transition.pResource = gBuffer.Albedo.Get();
-        backToUavBarriers[3].Transition.StateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-        backToUavBarriers[3].Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-        backToUavBarriers[3].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-        
-        commandList->ResourceBarrier(4, backToUavBarriers);
+        // Transition resources back to UAV state for next frame's raytracing pass
+        denoiser->EnsureResourceState(commandList, gBuffer.Albedo.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        denoiser->EnsureResourceState(commandList, gBuffer.MotionVectors.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        denoiser->EnsureResourceState(commandList, gBuffer.NormalRoughness.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        denoiser->EnsureResourceState(commandList, gBuffer.ViewZ.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        denoiser->EnsureResourceState(commandList, gBuffer.DiffuseRadianceHitDist.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        denoiser->EnsureResourceState(commandList, gBuffer.SpecularRadianceHitDist.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        denoiser->EnsureResourceState(commandList, gBuffer.ShadowData.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        denoiser->EnsureResourceState(commandList, gBuffer.ShadowTranslucency.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     }
 }
 

@@ -39,6 +39,19 @@ namespace RayTraceVS.WPF.Models.Nodes
             }
         }
 
+        private int _traceRecursionDepth = 2;
+        public int TraceRecursionDepth
+        {
+            get => _traceRecursionDepth;
+            set
+            {
+                if (SetProperty(ref _traceRecursionDepth, value))
+                {
+                    MarkDirty();
+                }
+            }
+        }
+
         private float _exposure = 1.0f;
         public float Exposure
         {
@@ -171,6 +184,8 @@ namespace RayTraceVS.WPF.Models.Nodes
             {
                 InputSockets.Add(socket);
             }
+
+            RenumberSceneSockets();
         }
 
         /// <summary>
@@ -181,6 +196,7 @@ namespace RayTraceVS.WPF.Models.Nodes
             lightSocketCount++;
             var socket = new NodeSocket($"Light{lightSocketCount}", SocketType.Light, true) { ParentNode = this };
             InputSockets.Add(socket);
+            RenumberSceneSockets();
         }
 
         /// <summary>
@@ -230,6 +246,30 @@ namespace RayTraceVS.WPF.Models.Nodes
             {
                 InputSockets.Remove(socket);
             }
+        }
+
+        /// <summary>
+        /// Object/Lightソケット名を1から連番で再割り当て
+        /// </summary>
+        public void RenumberSceneSockets()
+        {
+            int objectIndex = 1;
+            int lightIndex = 1;
+
+            foreach (var socket in InputSockets)
+            {
+                if (socket.SocketType == SocketType.Object)
+                {
+                    socket.Name = $"Object{objectIndex++}";
+                }
+                else if (socket.SocketType == SocketType.Light)
+                {
+                    socket.Name = $"Light{lightIndex++}";
+                }
+            }
+
+            objectSocketCount = objectIndex - 1;
+            lightSocketCount = lightIndex - 1;
         }
 
         /// <summary>
@@ -331,6 +371,7 @@ namespace RayTraceVS.WPF.Models.Nodes
                 Lights = lights,
                 SamplesPerPixel = SamplesPerPixel,
                 MaxBounces = MaxBounces,
+                TraceRecursionDepth = TraceRecursionDepth,
                 Exposure = Exposure,
                 ToneMapOperator = ToneMapOperator,
                 DenoiserStabilization = DenoiserStabilization,

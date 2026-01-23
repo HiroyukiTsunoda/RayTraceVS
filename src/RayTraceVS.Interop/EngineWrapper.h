@@ -30,6 +30,7 @@ namespace RayTraceVS::Interop
             array<MeshCacheData^>^ meshCaches,
             int samplesPerPixel,
             int maxBounces,
+            int traceRecursionDepth,
             float exposure,
             int toneMapOperator,
             float denoiserStabilization,
