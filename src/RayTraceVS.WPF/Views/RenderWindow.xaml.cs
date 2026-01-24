@@ -433,6 +433,9 @@ namespace RayTraceVS.WPF.Views
             PhotonDebugText.Text = photonDebugMode == 0
                 ? "Photon Debug: Off"
                 : $"Photon Debug: Mode {photonDebugMode} (x{photonDebugScale:0.##})";
+            InfoOverlay.Visibility = photonDebugMode == 0
+                ? Visibility.Collapsed
+                : Visibility.Visible;
         }
 
         private void Window_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)

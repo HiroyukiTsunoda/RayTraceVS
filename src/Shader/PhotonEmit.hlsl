@@ -121,31 +121,69 @@ void PhotonEmit()
         return;
     }
     
-    // Create photon ray
-    RayDesc ray;
-    ray.Origin = photonOrigin;
-    ray.Direction = photonDir;
-    ray.TMin = 0.001;
-    ray.TMax = 10000.0;
-    
-    // Initialize photon payload
-    PhotonPayload payload;
-    payload.color = photonColor;
-    payload.power = photonPower;
-    payload.depth = 0;
-    payload.isCaustic = false;
-    payload.terminated = false;
-    
-    // Trace the photon through the scene
-    // The ClosestHit shader will handle interactions and storage
-    TraceRay(
-        SceneBVH,
-        RAY_FLAG_NONE,
-        0xFF,
-        0,  // Hit group index 0 (PhotonHitGroup)
-        0,
-        0,  // Miss shader index 0 (PhotonTraceMiss)
-        ray,
-        payload
-    );
+    // Queue-based photon tracing (TraceRay only in RayGen)
+    const uint maxPhotonQueueSize = 8;
+    PhotonPathState queue[maxPhotonQueueSize];
+    uint queueCount = 0;
+
+    PhotonPathState primary;
+    primary.origin = photonOrigin;
+    primary.tMin = 0.001;
+    primary.direction = photonDir;
+    primary.depth = 0;
+    primary.color = photonColor;
+    primary.power = photonPower;
+    primary.isCaustic = 0;
+    primary.padding = 0;
+    queue[queueCount++] = primary;
+
+    while (queueCount > 0)
+    {
+        PhotonPathState state = queue[--queueCount];
+        if (state.depth >= MAX_PHOTON_BOUNCES)
+        {
+            continue;
+        }
+
+        RayDesc ray;
+        ray.Origin = state.origin;
+        ray.Direction = state.direction;
+        ray.TMin = state.tMin;
+        ray.TMax = 10000.0;
+
+        PhotonPayload payload;
+        payload.color = state.color;
+        payload.power = state.power;
+        payload.depth = state.depth;
+        payload.isCaustic = (state.isCaustic != 0);
+        payload.terminated = false;
+        payload.childCount = 0;
+        payload.photonPadding = 0;
+        payload.photonPadding2 = float2(0, 0);
+
+        TraceRay(
+            SceneBVH,
+            RAY_FLAG_NONE,
+            0xFF,
+            0,  // Hit group index 0 (PhotonHitGroup)
+            0,
+            0,  // Miss shader index 0 (PhotonTraceMiss)
+            ray,
+            payload
+        );
+
+        if (payload.terminated || payload.childCount == 0)
+        {
+            continue;
+        }
+
+        uint childCount = min(payload.childCount, 2u);
+        [loop]
+        for (uint i = 0; i < childCount; i++)
+        {
+            if (queueCount >= maxPhotonQueueSize)
+                break;
+            queue[queueCount++] = payload.childPaths[i];
+        }
+    }
 }

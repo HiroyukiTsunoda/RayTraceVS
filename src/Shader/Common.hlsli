@@ -45,6 +45,10 @@ struct PhotonHashCell
 #define PATH_FLAG_INSIDE 0x1
 #define PATH_FLAG_SPECULAR 0x2
 
+#define PATH_TYPE_RADIANCE 0
+#define PATH_TYPE_SHADOW 1
+#define PATH_TYPE_PHOTON 2
+
 #define SKY_BOOST_GLASS 1.2
 #define SKY_BOOST_METAL 1.1
 
@@ -57,7 +61,7 @@ struct PathState
     float3 throughput;
     uint flags; // PATH_FLAG_*
     float3 absorption; // sigmaA for current medium
-    uint padding;
+    uint pathType; // PATH_TYPE_*
     float skyBoost; // Miss-only sky boost for specular paths
     float3 padding2;
 };
@@ -85,6 +89,14 @@ struct RayPayload
     float shadowPenumbra;     // Packed penumbra radius for SIGMA
     float shadowDistance;     // Distance to occluder (or NRD_FP16_MAX)
     float padding2;           // Padding for alignment
+
+    // Material data for RayGen shading
+    float transmission;
+    float ior;
+    float specular;
+    float materialPadding;
+    float3 emission;
+    float emissionPadding;
     
     // Thickness query for refractive objects
     uint targetObjectType;      // Object to skip (input)
@@ -270,6 +282,18 @@ struct Photon
     float padding;
 };
 
+struct PhotonPathState
+{
+    float3 origin;
+    float tMin;
+    float3 direction;
+    uint depth;
+    float3 color;
+    float power;
+    uint isCaustic;
+    uint padding;
+};
+
 // Photon ray payload
 struct PhotonPayload
 {
@@ -278,6 +302,11 @@ struct PhotonPayload
     uint depth;         // Current bounce depth
     bool isCaustic;     // Has passed through specular surface
     bool terminated;    // Photon has been absorbed or stored
+    uint childCount;    // Number of queued photon children
+    uint photonPadding;
+    float2 photonPadding2;
+    // Child photon paths for RayGen to enqueue
+    PhotonPathState childPaths[2];
 };
 
 // ============================================
@@ -806,6 +835,12 @@ float TraceSingleShadowRay(float3 rayOrigin, float3 rayDir, float maxDist, out f
         shadowPayload.thicknessQuery = 0;
         shadowPayload.shadowColorAccum = float3(1, 1, 1);
         shadowPayload.shadowTransmissionAccum = 0.0;  // Will be set by ClosestHit
+        shadowPayload.transmission = 0.0;
+        shadowPayload.ior = 1.5;
+        shadowPayload.specular = 0.5;
+        shadowPayload.materialPadding = 0.0;
+        shadowPayload.emission = float3(0, 0, 0);
+        shadowPayload.emissionPadding = 0.0;
         shadowPayload.loopRayOrigin = float4(0, 0, 0, 0);
         shadowPayload.loopRayDirection = float4(0, 0, 0, 0);
         shadowPayload.loopThroughput = float4(1, 1, 1, 0);

@@ -1666,9 +1666,9 @@ namespace RayTraceVS::DXEngine
         auto shaderConfig = stateObjectDesc.CreateSubobject<CD3DX12_RAYTRACING_SHADER_CONFIG_SUBOBJECT>();
         // RayPayload (with queue-based path states + sky boost):
         //   Total size must match HLSL RayPayload (see Common.hlsli)
-        //   Current layout includes child paths (2 * PathState = 160 bytes)
-        //   Total: 400 bytes (aligned to 8)
-        UINT payloadSize = 400;
+        //   Current layout includes material fields and child paths (2 * PathState = 160 bytes)
+        //   Total: 432 bytes (aligned to 8)
+        UINT payloadSize = 432;
         // ProceduralAttributes: float3 normal (12) + uint objectType (4) + uint objectIndex (4) = 20 bytes
         UINT attribSize = 12 + 4 + 4;   // 20 bytes
         shaderConfig->Config(payloadSize, attribSize);
@@ -2443,8 +2443,9 @@ namespace RayTraceVS::DXEngine
         
         // Shader config
         auto shaderConfig = stateObjectDesc.CreateSubobject<CD3DX12_RAYTRACING_SHADER_CONFIG_SUBOBJECT>();
-        // PhotonPayload: float3 color (12) + float power (4) + uint depth (4) + bool isCaustic (4) + bool terminated (4) = 28 bytes
-        UINT payloadSize = 28;
+        // PhotonPayload: includes child paths for queue-based tracing
+        // Total: 160 bytes (aligned to 8)
+        UINT payloadSize = 160;
         UINT attribSize = 20;  // Same as main pipeline
         shaderConfig->Config(payloadSize, attribSize);
         

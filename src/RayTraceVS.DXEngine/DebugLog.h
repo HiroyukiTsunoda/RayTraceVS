@@ -6,9 +6,14 @@
 
 namespace RayTraceVS::DXEngine
 {
-    // Debug mode flag: 0 = minimal logging (errors only), 1 = verbose logging
+    // Logging control: 0 = errors only, 1 = enable info/warn/debug
+    inline int g_LogEnabled = 0;
+    // Debug mode flag: 0 = debug disabled, 1 = debug enabled
     inline int g_DebugMode = 0;
 
+    // Set logging mode (call from NativeBridge or application startup)
+    inline void SetLogEnabled(int enabled) { g_LogEnabled = enabled; }
+    inline int GetLogEnabled() { return g_LogEnabled; }
     // Set debug mode (call from NativeBridge or application startup)
     inline void SetDebugMode(int mode) { g_DebugMode = mode; }
     inline int GetDebugMode() { return g_DebugMode; }
@@ -40,22 +45,28 @@ namespace RayTraceVS::DXEngine
         LogError(buf);
     }
 
-    // WARN log - Always output (warnings that should be addressed)
+    // WARN log - Output only when logging is enabled
     inline void LogWarn(const char* message)
     {
-        WriteLogToFile("[WARN] ", message);
+        if (g_LogEnabled > 0)
+        {
+            WriteLogToFile("[WARN] ", message);
+        }
     }
 
-    // INFO log - Output once during initialization (important milestones)
+    // INFO log - Output only when logging is enabled
     inline void LogInfo(const char* message)
     {
-        WriteLogToFile("[INFO] ", message);
+        if (g_LogEnabled > 0)
+        {
+            WriteLogToFile("[INFO] ", message);
+        }
     }
 
-    // DEBUG log - Only output when DebugMode is enabled (verbose debugging)
+    // DEBUG log - Output only when logging and debug mode are enabled
     inline void LogDebug(const char* message)
     {
-        if (g_DebugMode > 0)
+        if (g_LogEnabled > 0 && g_DebugMode > 0)
         {
             WriteLogToFile("[DEBUG] ", message);
         }
@@ -63,7 +74,7 @@ namespace RayTraceVS::DXEngine
 
     inline void LogDebug(const char* message, HRESULT hr)
     {
-        if (g_DebugMode > 0)
+        if (g_LogEnabled > 0 && g_DebugMode > 0)
         {
             char buf[512];
             sprintf_s(buf, "%s: 0x%08X", message, hr);

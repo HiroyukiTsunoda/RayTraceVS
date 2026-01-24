@@ -181,6 +181,18 @@ void ClosestHit_Triangle(inout RayPayload payload, in BuiltInTriangleIntersectio
     bool isInside = (payload.pathFlags & PATH_FLAG_INSIDE) != 0;
     // Final shading normal (ensure it faces the ray)
     float3 N = frontFace ? normal : -normal;
+
+    // Store hit/material data for RayGen shading
+    payload.worldNormal = N;
+    payload.worldPosition = hitPosition;
+    payload.roughness = roughness;
+    payload.metallic = metallic;
+    payload.albedo = color.rgb;
+    payload.transmission = transmission;
+    payload.ior = ior;
+    payload.specular = specular;
+    payload.emission = emission;
+    payload.viewZ = RayTCurrent();
     
     // Glass with Fresnel - Loop-based stochastic selection
     if (isGlass)
@@ -244,7 +256,7 @@ void ClosestHit_Triangle(inout RayPayload payload, in BuiltInTriangleIntersectio
         reflectChild.throughput = reflectThroughput;
         reflectChild.flags = payload.pathFlags | PATH_FLAG_SPECULAR;
         reflectChild.absorption = payload.pathAbsorption;
-        reflectChild.padding = 0;
+        reflectChild.pathType = PATH_TYPE_RADIANCE;
         reflectChild.skyBoost = SKY_BOOST_GLASS;
         reflectChild.padding2 = float3(0, 0, 0);
         payload.childPaths[childCount++] = reflectChild;
@@ -268,70 +280,15 @@ void ClosestHit_Triangle(inout RayPayload payload, in BuiltInTriangleIntersectio
                 refractChild.flags = (payload.pathFlags & ~PATH_FLAG_INSIDE) | PATH_FLAG_SPECULAR;
                 refractChild.absorption = float3(0, 0, 0);
             }
-            refractChild.padding = 0;
+            refractChild.pathType = PATH_TYPE_RADIANCE;
             refractChild.skyBoost = SKY_BOOST_GLASS;
             refractChild.padding2 = float3(0, 0, 0);
             payload.childPaths[childCount++] = refractChild;
         }
         payload.childCount = childCount;
         
-        // Specular highlight (direct lighting on glass surface)
-        float3 specularHighlight = float3(0, 0, 0);
-        if (specular > 0.01)
-        {
-            float3 viewDir = -rayDir;
-            for (uint li = 0; li < Scene.NumLights; li++)
-            {
-                LightData light = Lights[li];
-                if (light.type == LIGHT_TYPE_AMBIENT)
-                    continue;
-                
-                float3 lightDir;
-                float attenuation = 1.0;
-                
-                if (light.type == LIGHT_TYPE_DIRECTIONAL)
-                {
-                    lightDir = normalize(-light.position);
-                }
-                else
-                {
-                    lightDir = normalize(light.position - hitPosition);
-                    float lightDist = length(light.position - hitPosition);
-                    attenuation = 1.0 / (1.0 + lightDist * lightDist * 0.01);
-                }
-                
-                float NdotL = max(dot(N, lightDir), 0.0);
-                if (NdotL > 0.0)
-                {
-                    float3 halfDir = normalize(lightDir + viewDir);
-                    float shininess = max(64.0, 512.0 * (1.0 - roughness));
-                    float spec = pow(max(0.0, dot(N, halfDir)), shininess);
-                    float specFresnel = FresnelSchlick(max(0.0, dot(halfDir, viewDir)), f0);
-                    specularHighlight += light.color.rgb * light.intensity * spec * specFresnel * attenuation;
-                }
-            }
-            specularHighlight *= specular * (1.0 - roughness);
-        }
-        
-        // Primary ray: queue-based continuation
-        payload.color = specularHighlight;
-        
-        // NRD outputs for glass (primary rays only)
-        if (payload.depth == 0)
-        {
-            payload.diffuseRadiance = float3(0, 0, 0);  // Glass has no diffuse
-            payload.specularRadiance = specularHighlight;
-            payload.hitDistance = RayTCurrent();
-            payload.worldNormal = normal;
-            payload.roughness = roughness;
-            payload.worldPosition = hitPosition;
-            payload.viewZ = RayTCurrent();
-            payload.metallic = 0.0;
-            payload.albedo = color.rgb;
-            payload.shadowVisibility = 1.0;
-            payload.shadowPenumbra = 0.0;
-            payload.shadowDistance = NRD_FP16_MAX;
-        }
+        // Shading is handled in RayGen; return material + child paths only.
+        payload.color = float3(0, 0, 0);
         
         return;
     }
@@ -364,205 +321,14 @@ void ClosestHit_Triangle(inout RayPayload payload, in BuiltInTriangleIntersectio
         reflectChild.throughput = F * reflectScale * boost;
         reflectChild.flags = payload.pathFlags | PATH_FLAG_SPECULAR;
         reflectChild.absorption = payload.pathAbsorption;
-        reflectChild.padding = 0;
+        reflectChild.pathType = PATH_TYPE_RADIANCE;
         reflectChild.skyBoost = SKY_BOOST_METAL;
         reflectChild.padding2 = float3(0, 0, 0);
         payload.childPaths[0] = reflectChild;
         payload.childCount = 1;
     }
     
-    // Direct lighting
-    float3 ambient = float3(0, 0, 0);
-    float3 directDiffuse = float3(0, 0, 0);
-    float3 directSpecular = float3(0, 0, 0);
-    
-    SoftShadowResult bestShadowForSigma;
-    bestShadowForSigma.visibility = 1.0;
-    bestShadowForSigma.penumbra = 0.0;
-    bestShadowForSigma.occluderDistance = NRD_FP16_MAX;
-    bestShadowForSigma.shadowColor = float3(1, 1, 1);
-    float bestShadowWeight = -1.0;
-    
-    // Keep direct lighting even for pure metal to preserve color in reflections.
-    bool skipDirectLighting = false;
-
-    // Process lights for primary and secondary hits
-    if (Scene.NumLights > 0 && !skipDirectLighting)
-    {
-        for (uint li = 0; li < Scene.NumLights; li++)
-        {
-            LightData light = Lights[li];
-            
-            if (light.type == LIGHT_TYPE_AMBIENT)
-            {
-                ambient += light.color.rgb * light.intensity * lerp(diffuseColor, color.rgb * 0.3, metallic);
-            }
-            else
-            {
-                float3 L;
-                float attenuation = 1.0;
-                
-                if (light.type == LIGHT_TYPE_DIRECTIONAL)
-                {
-                    L = normalize(-light.position);
-                }
-                else
-                {
-                    L = normalize(light.position - hitPosition);
-                    float lightDist = length(light.position - hitPosition);
-                    attenuation = 1.0 / (1.0 + lightDist * lightDist * 0.01);
-                }
-                
-                float NdotL = max(dot(N, L), 0.0);
-                
-                if (NdotL > 0.0)
-                {
-                    SoftShadowResult shadow = CalculateSoftShadow(hitPosition, normal, light, seed);
-                    
-                    if (payload.depth == 0)
-                    {
-                        float weight = NdotL * attenuation * light.intensity;
-                        if (weight > bestShadowWeight)
-                        {
-                            bestShadowWeight = weight;
-                            bestShadowForSigma = shadow;
-                        }
-                    }
-                    
-                    float shadowAmount = 1.0 - shadow.visibility;
-                    shadowAmount *= Scene.ShadowStrength;
-                    shadowAmount = saturate(shadowAmount);
-                    float adjustedVisibility = 1.0 - shadowAmount;
-                    float3 shadowColor = shadow.shadowColor;
-                    
-                    float3 radiance = light.color.rgb * light.intensity * attenuation * adjustedVisibility * shadowColor;
-                    
-                    float3 H = normalize(V + L);
-                    float NdotV = max(dot(N, V), 0.001);
-                    float NdotH = max(dot(N, H), 0.0);
-                    float VdotH = max(dot(V, H), 0.0);
-                    
-                    float3 F = Fresnel_Schlick3(VdotH, F0);
-                    float D = GGX_D(NdotH, max(roughness, 0.04));
-                    float G = Smith_G(NdotV, NdotL, roughness);
-                    float3 specBRDF = (D * G * F) / (4.0 * NdotV * NdotL + 0.001);
-                    
-                    float3 kD = (1.0 - F) * (1.0 - metallic);
-                    float3 diffBRDF = kD * diffuseColor / PI;
-                    
-                    directDiffuse += diffBRDF * radiance * NdotL;
-                    directSpecular += specBRDF * radiance * NdotL;
-                }
-            }
-        }
-    }
-    else if (!skipDirectLighting)
-    {
-        // Fallback lighting
-        float3 L = normalize(Scene.LightPosition - hitPosition);
-        float lightDist = length(Scene.LightPosition - hitPosition);
-        float attenuation = 1.0 / (1.0 + lightDist * lightDist * 0.01);
-        
-        float NdotL = max(dot(N, L), 0.0);
-        
-        LightData fallbackLight;
-        fallbackLight.position = Scene.LightPosition;
-        fallbackLight.intensity = Scene.LightIntensity;
-        fallbackLight.color = Scene.LightColor;
-        fallbackLight.type = LIGHT_TYPE_POINT;
-        fallbackLight.radius = 0.0;
-        fallbackLight.softShadowSamples = 1.0;
-        fallbackLight.padding = 0.0;
-        
-        SoftShadowResult shadow = CalculateSoftShadow(hitPosition, normal, fallbackLight, seed);
-        if (payload.depth == 0)
-        {
-            bestShadowForSigma = shadow;
-        }
-        
-        if (NdotL > 0.0)
-        {
-            float shadowAmount = 1.0 - shadow.visibility;
-            shadowAmount *= Scene.ShadowStrength;
-            shadowAmount = saturate(shadowAmount);
-            float adjustedVisibility = 1.0 - shadowAmount;
-            float3 shadowColor = shadow.shadowColor;
-            
-            float3 radiance = Scene.LightColor.rgb * Scene.LightIntensity * attenuation * adjustedVisibility * shadowColor;
-            
-            float3 H = normalize(V + L);
-            float NdotV = max(dot(N, V), 0.001);
-            float NdotH = max(dot(N, H), 0.0);
-            float VdotH = max(dot(V, H), 0.0);
-            
-            float3 F = Fresnel_Schlick3(VdotH, F0);
-            float D = GGX_D(NdotH, max(roughness, 0.04));
-            float G = Smith_G(NdotV, NdotL, roughness);
-            float3 specBRDF = (D * G * F) / (4.0 * NdotV * NdotL + 0.001);
-            
-            float3 kD = (1.0 - F) * (1.0 - metallic);
-            float3 diffBRDF = kD * diffuseColor / PI;
-            
-            directDiffuse = diffBRDF * radiance * NdotL;
-            directSpecular = specBRDF * radiance * NdotL;
-        }
-        
-        ambient = lerp(diffuseColor, color.rgb * 0.3, metallic) * 0.2;
-    }
-    
-    // Combine reflection and direct lighting
-    float reflectionWeight = metallic * (1.0 - roughness * 0.5);
-    float directWeight = 1.0 - reflectionWeight * 0.5;
-    
-    float3 photonCaustic = float3(0, 0, 0);
-    if (payload.depth == 0 && metallic < 0.5 && transmission <= 0.01 && Scene.PhotonMapSize > 0)
-    {
-        photonCaustic = GatherPhotons(hitPosition, N, Scene.PhotonRadius);
-        if (Scene.PhotonDebugMode > 0)
-        {
-            float3 debugColor = photonCaustic * Scene.PhotonDebugScale;
-            payload.color = debugColor;
-            payload.loopRayOrigin.w = 0.0;
-            payload.diffuseRadiance = debugColor;
-            payload.specularRadiance = float3(0, 0, 0);
-            payload.hitDistance = RayTCurrent();
-            payload.worldNormal = N;
-            payload.roughness = roughness;
-            payload.worldPosition = hitPosition;
-            payload.viewZ = RayTCurrent();
-            payload.metallic = metallic;
-            payload.albedo = color.rgb;
-            payload.shadowVisibility = 1.0;
-            payload.shadowPenumbra = 0.0;
-            payload.shadowDistance = NRD_FP16_MAX;
-            return;
-        }
-    }
-    
-    float3 finalColor = ambient 
-                      + directDiffuse * directWeight 
-                      + directSpecular 
-                      + reflectColor * reflectionWeight
-                      + photonCaustic
-                      + emission;
-    
-    payload.color = saturate(finalColor);
-    
-    // NRD outputs (primary rays only)
-    if (payload.depth == 0)
-    {
-        float hitDistance = RayTCurrent();
-        payload.diffuseRadiance = ambient + directDiffuse * directWeight + reflectColor * reflectionWeight + photonCaustic + emission;
-        payload.specularRadiance = directSpecular;
-        payload.shadowVisibility = bestShadowForSigma.visibility;
-        payload.shadowPenumbra = bestShadowForSigma.penumbra;
-        payload.shadowDistance = bestShadowForSigma.occluderDistance;
-        payload.hitDistance = hitDistance;
-        payload.worldNormal = N;
-        payload.roughness = roughness;
-        payload.worldPosition = hitPosition;
-        payload.viewZ = hitDistance;
-        payload.metallic = metallic;
-        payload.albedo = color.rgb;
-    }
+    // Shading is handled in RayGen; return material + child paths only.
+    payload.color = float3(0, 0, 0);
+    return;
 }

@@ -162,42 +162,6 @@ namespace RayTraceVS.WPF
             settingsService.MainWindowBounds = bounds;
         }
 
-        private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
-        {
-            // Ctrl+S / Ctrl+Shift+S はフォーカスやIME状態に依存せず捕捉する
-            var key = GetEffectiveKey(e);
-            if (key == System.Windows.Input.Key.S &&
-                e.KeyboardDevice.Modifiers.HasFlag(System.Windows.Input.ModifierKeys.Control))
-            {
-                if (e.KeyboardDevice.Modifiers.HasFlag(System.Windows.Input.ModifierKeys.Shift))
-                {
-                    SaveSceneAs_Click(this, new RoutedEventArgs());
-                }
-                else
-                {
-                    SaveScene_Click(this, new RoutedEventArgs());
-                }
-
-                e.Handled = true;
-            }
-        }
-
-        private static System.Windows.Input.Key GetEffectiveKey(System.Windows.Input.KeyEventArgs e)
-        {
-            // IME有効時は Key が ImeProcessed になるため、実キーを取得する
-            if (e.Key == System.Windows.Input.Key.ImeProcessed)
-            {
-                return e.ImeProcessedKey;
-            }
-
-            if (e.Key == System.Windows.Input.Key.System)
-            {
-                return e.SystemKey;
-            }
-
-            return e.Key;
-        }
-
         private void Window_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
         {
             // Deleteキーの処理（優先）
@@ -264,33 +228,32 @@ namespace RayTraceVS.WPF
                         OpenScene_Click(this, new RoutedEventArgs());
                         e.Handled = true;
                         break;
-                    case System.Windows.Input.Key.S:
-                        if (e.KeyboardDevice.Modifiers.HasFlag(System.Windows.Input.ModifierKeys.Shift))
-                        {
-                            SaveSceneAs_Click(this, new RoutedEventArgs());
-                        }
-                        else
-                        {
-                            SaveScene_Click(this, new RoutedEventArgs());
-                        }
-                        e.Handled = true;
-                        break;
                 }
             }
             else if (e.KeyboardDevice.Modifiers == (System.Windows.Input.ModifierKeys.Control | System.Windows.Input.ModifierKeys.Shift))
             {
-                if (e.Key == System.Windows.Input.Key.S)
-                {
-                    SaveSceneAs_Click(this, new RoutedEventArgs());
-                    e.Handled = true;
-                }
-                else if (e.Key == System.Windows.Input.Key.P)
+                if (e.Key == System.Windows.Input.Key.P)
                 {
                     // Ctrl+Shift+P: スクリーンショット保存
                     SaveScreenshot();
                     e.Handled = true;
                 }
             }
+        }
+
+        private void SaveCommand_CanExecute(object sender, System.Windows.Input.CanExecuteRoutedEventArgs e)
+        {
+            e.CanExecute = true;
+        }
+
+        private void SaveCommand_Executed(object sender, System.Windows.Input.ExecutedRoutedEventArgs e)
+        {
+            SaveScene_Click(this, new RoutedEventArgs());
+        }
+
+        private void SaveAsCommand_Executed(object sender, System.Windows.Input.ExecutedRoutedEventArgs e)
+        {
+            SaveSceneAs_Click(this, new RoutedEventArgs());
         }
         
         private void LoadLastScene()

@@ -19,7 +19,7 @@
         </Border>
 
         <!-- 情報オーバーレイ -->
-        <Border VerticalAlignment="Top" HorizontalAlignment="Right"
+        <Border x:Name="InfoOverlay" VerticalAlignment="Top" HorizontalAlignment="Right"
                 Margin="10" Background="#80000000" Padding="10" CornerRadius="4">
             <StackPanel>
                 <TextBlock x:Name="StatusText" Text="状態: 停止中" Foreground="White" FontSize="12"/>
