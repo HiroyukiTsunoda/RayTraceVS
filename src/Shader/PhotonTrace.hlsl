@@ -46,6 +46,7 @@ void PhotonTraceClosestHit(inout PhotonPayload payload, in ProceduralAttributes 
     // Already terminated
     if (payload.terminated)
         return;
+    payload.childCount = 0;
     
     // Max depth reached
     if (payload.depth >= MAX_PHOTON_BOUNCES)
@@ -168,26 +169,24 @@ void PhotonTraceClosestHit(inout PhotonPayload payload, in ProceduralAttributes 
             newOrigin = hitPosition + outwardNormal * 0.01;
         }
         
-        // Continue tracing
-        if (payload.depth + 1 >= MAX_PHOTON_BOUNCES)
+        // Queue the next photon path for RayGen to trace
+        if (payload.depth + 1 >= MAX_PHOTON_BOUNCES || any(!isfinite(newDir)) || any(!isfinite(newOrigin)))
         {
             payload.terminated = true;
             return;
         }
-        if (any(!isfinite(newDir)) || any(!isfinite(newOrigin)))
-        {
-            payload.terminated = true;
-            return;
-        }
-        RayDesc ray;
-        ray.Origin = newOrigin;
-        ray.Direction = newDir;
-        ray.TMin = 0.001;
-        ray.TMax = 10000.0;
-        
-        payload.depth++;
-        
-        TraceRay(SceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, ray, payload);
+        PhotonPathState child;
+        child.origin = newOrigin;
+        child.tMin = 0.001;
+        child.direction = newDir;
+        child.depth = payload.depth + 1;
+        child.color = payload.color;
+        child.power = payload.power;
+        child.isCaustic = payload.isCaustic ? 1 : 0;
+        child.padding = 0;
+        payload.childPaths[0] = child;
+        payload.childCount = 1;
+        payload.terminated = false;
     }
     else if (metallic > 0.5)
     {
@@ -203,26 +202,24 @@ void PhotonTraceClosestHit(inout PhotonPayload payload, in ProceduralAttributes 
             reflectDir = normalize(lerp(reflectDir, randomDir, roughness * roughness));
         }
         
-        // Continue tracing
-        if (payload.depth + 1 >= MAX_PHOTON_BOUNCES)
+        // Queue the next photon path for RayGen to trace
+        if (payload.depth + 1 >= MAX_PHOTON_BOUNCES || any(!isfinite(reflectDir)) || any(!isfinite(hitPosition)))
         {
             payload.terminated = true;
             return;
         }
-        if (any(!isfinite(reflectDir)) || any(!isfinite(hitPosition)))
-        {
-            payload.terminated = true;
-            return;
-        }
-        RayDesc ray;
-        ray.Origin = hitPosition + normal * 0.01;
-        ray.Direction = reflectDir;
-        ray.TMin = 0.001;
-        ray.TMax = 10000.0;
-        
-        payload.depth++;
-        
-        TraceRay(SceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, ray, payload);
+        PhotonPathState child;
+        child.origin = hitPosition + normal * 0.01;
+        child.tMin = 0.001;
+        child.direction = reflectDir;
+        child.depth = payload.depth + 1;
+        child.color = payload.color;
+        child.power = payload.power;
+        child.isCaustic = payload.isCaustic ? 1 : 0;
+        child.padding = 0;
+        payload.childPaths[0] = child;
+        payload.childCount = 1;
+        payload.terminated = false;
     }
 }
 
@@ -231,4 +228,5 @@ void PhotonTraceMiss(inout PhotonPayload payload)
 {
     // Photon escaped to sky - terminate
     payload.terminated = true;
+    payload.childCount = 0;
 }

@@ -214,7 +214,7 @@
       "PositionY": 213.956380293934,
       "Properties": {
         "X": 0.0,
-        "Y": 0.0,
+        "Y": 45.0,
         "Z": 0.0
       }
     },
@@ -494,7 +494,7 @@
       "PositionX": 959.1204583411736,
       "PositionY": 1693.7262954074872,
       "Properties": {
-        "Value": 0.0
+        "Value": 0.8
       }
     },
     {
@@ -621,7 +621,7 @@
       "PositionX": 960.641544757417,
       "PositionY": 1561.5613238921464,
       "Properties": {
-        "Value": 1.0
+        "Value": 0.0
       }
     },
     {
@@ -1410,8 +1410,8 @@
     }
   ],
   "Viewport": {
-    "PanX": -599.4175695238116,
-    "PanY": -548.1445014792655,
+    "PanX": -708.2175695238117,
+    "PanY": -655.3445014792698,
     "Zoom": 0.8200000000000005,
     "IsLeftPanelVisible": true,
     "IsRightPanelVisible": true,

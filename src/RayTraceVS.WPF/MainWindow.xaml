@@ -12,8 +12,15 @@
         ResizeMode="CanResizeWithGrip"
         WindowState="Normal"
         Background="{StaticResource BackgroundBrush}"
-        PreviewKeyDown="Window_PreviewKeyDown"
         KeyDown="Window_KeyDown">
+    <Window.InputBindings>
+        <KeyBinding Command="ApplicationCommands.Save" Key="S" Modifiers="Control"/>
+        <KeyBinding Command="ApplicationCommands.SaveAs" Key="S" Modifiers="Control+Shift"/>
+    </Window.InputBindings>
+    <Window.CommandBindings>
+        <CommandBinding Command="ApplicationCommands.Save" Executed="SaveCommand_Executed" CanExecute="SaveCommand_CanExecute"/>
+        <CommandBinding Command="ApplicationCommands.SaveAs" Executed="SaveAsCommand_Executed" CanExecute="SaveCommand_CanExecute"/>
+    </Window.CommandBindings>
     
     <DockPanel>
         <!-- メニューバー -->
@@ -28,8 +35,8 @@
             <MenuItem Header="ファイル(_F)">
                 <MenuItem Header="新規シーン(_N)" Click="NewScene_Click" InputGestureText="Ctrl+N"/>
                 <MenuItem Header="開く(_O)..." Click="OpenScene_Click" InputGestureText="Ctrl+O"/>
-                <MenuItem Header="保存(_S)" Click="SaveScene_Click" InputGestureText="Ctrl+S"/>
-                <MenuItem Header="名前を付けて保存(_A)..." Click="SaveSceneAs_Click" InputGestureText="Ctrl+Shift+S"/>
+                <MenuItem Header="保存(_S)" Command="ApplicationCommands.Save" InputGestureText="Ctrl+S"/>
+                <MenuItem Header="名前を付けて保存(_A)..." Command="ApplicationCommands.SaveAs" InputGestureText="Ctrl+Shift+S"/>
                 <Separator/>
                 <MenuItem Header="終了(_X)" Click="Exit_Click" InputGestureText="Alt+F4"/>
             </MenuItem>

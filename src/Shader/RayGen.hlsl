@@ -156,7 +156,7 @@ void RayGen()
         primaryState.throughput = float3(1, 1, 1);
         primaryState.flags = 0;
         primaryState.absorption = float3(0, 0, 0);
-        primaryState.padding = 0;
+        primaryState.pathType = PATH_TYPE_RADIANCE;
         primaryState.skyBoost = 1.0;
         primaryState.padding2 = float3(0, 0, 0);
         queue[queueCount++] = primaryState;
@@ -218,6 +218,12 @@ void RayGen()
             payload.thicknessQuery = 0;
             payload.shadowColorAccum = float3(1, 1, 1);
             payload.shadowTransmissionAccum = 1.0;
+            payload.transmission = 0.0;
+            payload.ior = 1.5;
+            payload.specular = 0.5;
+            payload.materialPadding = 0.0;
+            payload.emission = float3(0, 0, 0);
+            payload.emissionPadding = 0.0;
             payload.loopRayOrigin = float4(0, 0, 0, 0);
             payload.loopRayDirection = float4(0, 0, 0, 0.001);
             payload.loopThroughput = float4(1, 1, 1, 0);
@@ -260,6 +266,242 @@ void RayGen()
             {
                 float3 absorption = exp(-state.absorption * payload.hitDistance);
                 state.throughput *= absorption;
+            }
+
+            // Shade in RayGen to keep TraceRay calls centralized here.
+            if (payload.hit && !(payload.depth == 0 && (Scene.PhotonDebugMode == 3 || Scene.PhotonDebugMode == 4)))
+            {
+                float3 hitPosition = payload.worldPosition;
+                float3 N = normalize(payload.worldNormal);
+                float3 V = -state.direction;
+                float metallic = payload.metallic;
+                float roughness = payload.roughness;
+                float transmission = payload.transmission;
+                float ior = payload.ior;
+                float specular = payload.specular;
+                float3 baseColor = payload.albedo;
+                float3 emission = payload.emission;
+                bool isGlass = (transmission > 0.01);
+
+                // Seed for shadow sampling (matches ClosestHit)
+                uint seed = asuint(hitPosition.x * 1000.0) ^ asuint(hitPosition.y * 2000.0) ^ asuint(hitPosition.z * 3000.0);
+                seed = WangHash(seed + payload.depth * 7919);
+
+                if (isGlass)
+                {
+                    float3 specularHighlight = float3(0, 0, 0);
+                    if (specular > 0.01)
+                    {
+                        float3 viewDir = -state.direction;
+                        float f0 = pow((ior - 1.0) / (ior + 1.0), 2.0);
+                        for (uint li = 0; li < Scene.NumLights; li++)
+                        {
+                            LightData light = Lights[li];
+                            if (light.type == LIGHT_TYPE_AMBIENT)
+                                continue;
+
+                            float3 lightDir;
+                            float attenuation = 1.0;
+                            if (light.type == LIGHT_TYPE_DIRECTIONAL)
+                            {
+                                lightDir = normalize(-light.position);
+                            }
+                            else
+                            {
+                                lightDir = normalize(light.position - hitPosition);
+                                float lightDist = length(light.position - hitPosition);
+                                attenuation = 1.0 / (1.0 + lightDist * lightDist * 0.01);
+                            }
+
+                            float ndotl = max(0.0, dot(N, lightDir));
+                            if (ndotl > 0.0)
+                            {
+                                float3 halfDir = normalize(lightDir + viewDir);
+                                float shininess = max(64.0, 512.0 * (1.0 - roughness));
+                                float spec = pow(max(0.0, dot(N, halfDir)), shininess);
+                                float specFresnel = FresnelSchlick(max(0.0, dot(halfDir, viewDir)), f0);
+                                specularHighlight += light.color.rgb * light.intensity * spec * specFresnel * attenuation;
+                            }
+                        }
+                        specularHighlight *= specular * (1.0 - roughness);
+                    }
+
+                    payload.color = specularHighlight + emission;
+                    if (payload.depth == 0)
+                    {
+                        payload.diffuseRadiance = float3(0, 0, 0);
+                        payload.specularRadiance = specularHighlight;
+                        payload.shadowVisibility = 1.0;
+                        payload.shadowPenumbra = 0.0;
+                        payload.shadowDistance = NRD_FP16_MAX;
+                    }
+                }
+                else
+                {
+                    float3 F0 = lerp(0.04.xxx, baseColor, metallic);
+                    float3 diffuseColor = baseColor * (1.0 - metallic);
+                    float3 ambient = float3(0, 0, 0);
+                    float3 directDiffuse = float3(0, 0, 0);
+                    float3 directSpecular = float3(0, 0, 0);
+
+                    SoftShadowResult bestShadowForSigma;
+                    bestShadowForSigma.visibility = 1.0;
+                    bestShadowForSigma.penumbra = 0.0;
+                    bestShadowForSigma.occluderDistance = NRD_FP16_MAX;
+                    bestShadowForSigma.shadowColor = float3(1, 1, 1);
+                    float bestShadowWeight = -1.0;
+
+                    if (Scene.NumLights > 0)
+                    {
+                        for (uint li = 0; li < Scene.NumLights; li++)
+                        {
+                            LightData light = Lights[li];
+                            if (light.type == LIGHT_TYPE_AMBIENT)
+                            {
+                                ambient += light.color.rgb * light.intensity * lerp(diffuseColor, baseColor * 0.3, metallic);
+                                continue;
+                            }
+
+                            float3 L;
+                            float attenuation = 1.0;
+                            if (light.type == LIGHT_TYPE_DIRECTIONAL)
+                            {
+                                L = normalize(-light.position);
+                            }
+                            else
+                            {
+                                L = normalize(light.position - hitPosition);
+                                float lightDist = length(light.position - hitPosition);
+                                attenuation = 1.0 / (1.0 + lightDist * lightDist * 0.01);
+                            }
+
+                            float NdotL = max(dot(N, L), 0.0);
+                            if (NdotL > 0.0)
+                            {
+                                SoftShadowResult shadow = CalculateSoftShadow(hitPosition, N, light, seed);
+                                if (payload.depth == 0)
+                                {
+                                    float weight = NdotL * attenuation * light.intensity;
+                                    if (weight > bestShadowWeight)
+                                    {
+                                        bestShadowWeight = weight;
+                                        bestShadowForSigma = shadow;
+                                    }
+                                }
+
+                                float shadowAmount = 1.0 - shadow.visibility;
+                                shadowAmount *= Scene.ShadowStrength;
+                                shadowAmount = saturate(shadowAmount);
+                                float adjustedVisibility = 1.0 - shadowAmount;
+                                float3 shadowColor = shadow.shadowColor;
+
+                                float3 radiance = light.color.rgb * light.intensity * attenuation * adjustedVisibility * shadowColor;
+
+                                float3 H = normalize(V + L);
+                                float NdotV = max(dot(N, V), 0.001);
+                                float NdotH = max(dot(N, H), 0.0);
+                                float VdotH = max(dot(V, H), 0.0);
+
+                                float3 F = Fresnel_Schlick3(VdotH, F0);
+                                float D = GGX_D(NdotH, max(roughness, 0.04));
+                                float G = Smith_G(NdotV, NdotL, roughness);
+                                float3 specBRDF = (D * G * F) / (4.0 * NdotV * NdotL + 0.001);
+
+                                float3 kD = (1.0 - F) * (1.0 - metallic);
+                                float3 diffBRDF = kD * diffuseColor / PI;
+
+                                directDiffuse += diffBRDF * radiance * NdotL;
+                                directSpecular += specBRDF * radiance * NdotL;
+                            }
+                        }
+                    }
+                    else if (payload.depth == 0)
+                    {
+                        float3 L = normalize(Scene.LightPosition - hitPosition);
+                        float lightDist = length(Scene.LightPosition - hitPosition);
+                        float attenuation = 1.0 / (1.0 + lightDist * lightDist * 0.01);
+                        float NdotL = max(dot(N, L), 0.0);
+
+                        LightData fallbackLight;
+                        fallbackLight.position = Scene.LightPosition;
+                        fallbackLight.intensity = Scene.LightIntensity;
+                        fallbackLight.color = Scene.LightColor;
+                        fallbackLight.type = LIGHT_TYPE_POINT;
+                        fallbackLight.radius = 0.0;
+                        fallbackLight.softShadowSamples = 1.0;
+                        fallbackLight.padding = 0.0;
+
+                        SoftShadowResult shadow = CalculateSoftShadow(hitPosition, N, fallbackLight, seed);
+                        bestShadowForSigma = shadow;
+
+                        if (NdotL > 0.0)
+                        {
+                            float shadowAmount = 1.0 - shadow.visibility;
+                            shadowAmount *= Scene.ShadowStrength;
+                            shadowAmount = saturate(shadowAmount);
+                            float adjustedVisibility = 1.0 - shadowAmount;
+                            float3 shadowColor = shadow.shadowColor;
+
+                            float3 radiance = Scene.LightColor.rgb * Scene.LightIntensity * attenuation * adjustedVisibility * shadowColor;
+
+                            float3 H = normalize(V + L);
+                            float NdotV = max(dot(N, V), 0.001);
+                            float NdotH = max(dot(N, H), 0.0);
+                            float VdotH = max(dot(V, H), 0.0);
+
+                            float3 F = Fresnel_Schlick3(VdotH, F0);
+                            float D = GGX_D(NdotH, max(roughness, 0.04));
+                            float G = Smith_G(NdotV, NdotL, roughness);
+                            float3 specBRDF = (D * G * F) / (4.0 * NdotV * NdotL + 0.001);
+
+                            float3 kD = (1.0 - F) * (1.0 - metallic);
+                            float3 diffBRDF = kD * diffuseColor / PI;
+
+                            directDiffuse = diffBRDF * radiance * NdotL;
+                            directSpecular = specBRDF * radiance * NdotL;
+                        }
+
+                        ambient = lerp(diffuseColor, baseColor * 0.3, metallic) * 0.2;
+                    }
+
+                    float reflectionWeight = metallic * (1.0 - roughness * 0.5);
+                    float directWeight = 1.0 - reflectionWeight * 0.5;
+
+                    float3 photonCaustic = float3(0, 0, 0);
+                    if (payload.depth == 0 && metallic < 0.5 && transmission <= 0.01 && Scene.PhotonMapSize > 0)
+                    {
+                        photonCaustic = GatherPhotons(hitPosition, N, Scene.PhotonRadius);
+                        if (Scene.PhotonDebugMode > 0)
+                        {
+                            float3 debugColor = photonCaustic * Scene.PhotonDebugScale;
+                            payload.color = debugColor;
+                            payload.diffuseRadiance = debugColor;
+                            payload.specularRadiance = float3(0, 0, 0);
+                            payload.shadowVisibility = 1.0;
+                            payload.shadowPenumbra = 0.0;
+                            payload.shadowDistance = NRD_FP16_MAX;
+                        }
+                    }
+
+                    if (Scene.PhotonDebugMode == 0)
+                    {
+                        float3 finalColor = ambient
+                                          + directDiffuse * directWeight
+                                          + directSpecular
+                                          + photonCaustic
+                                          + emission;
+                        payload.color = saturate(finalColor);
+                    }
+
+                    if (payload.depth == 0)
+                    {
+                        payload.diffuseRadiance = ambient + directDiffuse * directWeight + photonCaustic + emission;
+                        payload.specularRadiance = directSpecular;
+                        payload.shadowVisibility = bestShadowForSigma.visibility;
+                        payload.shadowPenumbra = bestShadowForSigma.penumbra;
+                        payload.shadowDistance = bestShadowForSigma.occluderDistance;
+                    }
+                }
             }
             
             // Accumulate color with throughput
