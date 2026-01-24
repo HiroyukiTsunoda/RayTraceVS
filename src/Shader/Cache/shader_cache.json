@@ -5,15 +5,7 @@
   "shaders": {
     "RayGen": {
       "sourceHash": "9c640005d91c31079388e9224b0f6e3b8c28118e7423267132ee43060d19556c",
-      "compiledAt": "2026-01-25T03:19:35",
-      "dependencies": {
-        "Common.hlsli": "51de43d6a7d8d1b0fce10b4929c7406e849a2e8fb4d715a9e3134fc8823ea460",
-        "NRDEncoding.hlsli": "bf26d0fea30357df6cd6e099270cb11126f03f8eacfbfb0eea995e5161b8c41c"
-      }
-    },
-    "ClosestHit": {
-      "sourceHash": "79337b95a48306fee455091024543c8b73e8d04b0c899275eee1b96a292a18b0",
-      "compiledAt": "2026-01-25T03:19:35",
+      "compiledAt": "",
       "dependencies": {
         "Common.hlsli": "51de43d6a7d8d1b0fce10b4929c7406e849a2e8fb4d715a9e3134fc8823ea460",
         "NRDEncoding.hlsli": "bf26d0fea30357df6cd6e099270cb11126f03f8eacfbfb0eea995e5161b8c41c"
@@ -21,14 +13,14 @@
     },
     "Miss": {
       "sourceHash": "7578bd51ef72904d49f4e47460fa830f6b5edcca54e9e74e2e8b2548b9b3d67a",
-      "compiledAt": "2026-01-25T03:19:35",
+      "compiledAt": "",
       "dependencies": {
         "Common.hlsli": "51de43d6a7d8d1b0fce10b4929c7406e849a2e8fb4d715a9e3134fc8823ea460"
       }
     },
-    "ClosestHit_Triangle": {
-      "sourceHash": "aadef1cdb35a0aca1e74c01aec3f9ce9249bb46ad658780aaaed19c4d13ff7cd",
-      "compiledAt": "2026-01-25T03:19:35",
+    "ClosestHit": {
+      "sourceHash": "79337b95a48306fee455091024543c8b73e8d04b0c899275eee1b96a292a18b0",
+      "compiledAt": "",
       "dependencies": {
         "Common.hlsli": "51de43d6a7d8d1b0fce10b4929c7406e849a2e8fb4d715a9e3134fc8823ea460",
         "NRDEncoding.hlsli": "bf26d0fea30357df6cd6e099270cb11126f03f8eacfbfb0eea995e5161b8c41c"
@@ -36,47 +28,65 @@
     },
     "Intersection": {
       "sourceHash": "ab492563fedc40d675635404adcae7404f0c9af3d06b869d861d6790e23c7a35",
-      "compiledAt": "2026-01-25T03:19:35",
+      "compiledAt": "",
       "dependencies": {
         "Common.hlsli": "51de43d6a7d8d1b0fce10b4929c7406e849a2e8fb4d715a9e3134fc8823ea460"
       }
     },
+    "ClosestHit_Triangle": {
+      "sourceHash": "aadef1cdb35a0aca1e74c01aec3f9ce9249bb46ad658780aaaed19c4d13ff7cd",
+      "compiledAt": "",
+      "dependencies": {
+        "Common.hlsli": "51de43d6a7d8d1b0fce10b4929c7406e849a2e8fb4d715a9e3134fc8823ea460",
+        "NRDEncoding.hlsli": "bf26d0fea30357df6cd6e099270cb11126f03f8eacfbfb0eea995e5161b8c41c"
+      }
+    },
     "AnyHit_Shadow": {
       "sourceHash": "fe217b84cf3bd29e3d8719e572e479096d8cfa7ddc7141599dc5cb8a7f5cc4f0",
-      "compiledAt": "2026-01-25T03:19:35",
+      "compiledAt": "",
       "dependencies": {
         "Common.hlsli": "51de43d6a7d8d1b0fce10b4929c7406e849a2e8fb4d715a9e3134fc8823ea460"
       }
     },
     "AnyHit_SkipSelf": {
       "sourceHash": "f0714cc8d7a705182ffe73688c2063e864eb5f140f060e44b943a5070fc6cce0",
-      "compiledAt": "2026-01-25T03:19:35",
+      "compiledAt": "",
       "dependencies": {
         "Common.hlsli": "51de43d6a7d8d1b0fce10b4929c7406e849a2e8fb4d715a9e3134fc8823ea460"
       }
     },
     "PhotonEmit": {
       "sourceHash": "31d85ad3c832cf1cd64c53246846317e1690ab0a10f4433e67b1632ea0c91312",
-      "compiledAt": "2026-01-25T03:19:16",
+      "compiledAt": "",
       "dependencies": {
         "Common.hlsli": "51de43d6a7d8d1b0fce10b4929c7406e849a2e8fb4d715a9e3134fc8823ea460"
       }
     },
     "PhotonTrace": {
       "sourceHash": "21f94bad127b749150d572cc8e2ebe4e21bf6003f107930e4d7d274b5176ec87",
-      "compiledAt": "2026-01-25T03:19:16",
+      "compiledAt": "",
       "dependencies": {
         "Common.hlsli": "51de43d6a7d8d1b0fce10b4929c7406e849a2e8fb4d715a9e3134fc8823ea460"
       }
     },
     "RayTraceCompute": {
       "sourceHash": "a6b388826a0ac9c3eeb2c068d996accbc051673646d6af7cb35463b0dda96b07",
-      "compiledAt": "2026-01-25T03:19:35",
+      "compiledAt": "",
       "dependencies": {}
     },
     "Composite": {
       "sourceHash": "936cf50fcc0b23655ffdf7a4cce903d1ace623671d7636bea34e06aabde0b0d6",
-      "compiledAt": "2026-01-25T03:19:38",
+      "compiledAt": "",
+      "dependencies": {}
+    },
+    "BuildPhotonHashClear": {
+      "sourceHash": "b807723df9020efcb90d68a32b5ade6704275e1e7f8f17c58b7aa9d8b172f9f0",
+      "compiledAt": "2026-01-25T06:25:33",
+      "dependencies": {}
+    },
+    "BuildPhotonHashBuild": {
+      "sourceHash": "b807723df9020efcb90d68a32b5ade6704275e1e7f8f17c58b7aa9d8b172f9f0",
+      "compiledAt": "2026-01-25T06:25:33",
       "dependencies": {}
     }
   }
