@@ -266,6 +266,14 @@ namespace RayTraceVS::DXEngine
         // Check source file hash
         std::wstring sourcePath = GetSourcePath(shaderName);
         std::string currentHash = CalculateFileHash(sourcePath);
+        
+        // ハッシュが空の場合はファイルが読めなかった = キャッシュ無効として再コンパイル
+        if (currentHash.empty())
+        {
+            Log(("Failed to hash source: " + JsonHelper::WStringToString(sourcePath)).c_str());
+            return false;
+        }
+        
         if (currentHash != info.sourceHash)
         {
             Log(("Source changed: " + JsonHelper::WStringToString(shaderName)).c_str());
@@ -277,10 +285,26 @@ namespace RayTraceVS::DXEngine
         if (defIt != shaderDefinitions.end())
         {
             const auto& deps = defIt->second.dependencies;
-            for (size_t i = 0; i < deps.size() && i < info.dependencies.size(); i++)
+            
+            // 依存関係の個数が変わったらキャッシュ無効
+            if (deps.size() != info.dependencies.size())
+            {
+                Log(("Dependency count changed for: " + JsonHelper::WStringToString(shaderName)).c_str());
+                return false;
+            }
+            
+            for (size_t i = 0; i < deps.size(); i++)
             {
                 std::wstring depPath = sourceDir + deps[i];
                 std::string depHash = CalculateFileHash(depPath);
+                
+                // 依存ファイルのハッシュが空の場合もキャッシュ無効
+                if (depHash.empty())
+                {
+                    Log(("Failed to hash dependency: " + JsonHelper::WStringToString(deps[i])).c_str());
+                    return false;
+                }
+                
                 if (depHash != info.dependencies[i].hash)
                 {
                     Log(("Dependency changed: " + JsonHelper::WStringToString(deps[i])).c_str());
@@ -757,6 +781,14 @@ namespace RayTraceVS::DXEngine
 
     std::wstring ShaderCache::GetSourcePath(const std::wstring& shaderName) const
     {
+        // shaderDefinitions から実際のソースファイル名を取得
+        // (例: BuildPhotonHashClear -> BuildPhotonHash.hlsl)
+        auto it = shaderDefinitions.find(shaderName);
+        if (it != shaderDefinitions.end())
+        {
+            return sourceDir + it->second.name + L".hlsl";
+        }
+        // フォールバック: shaderName をそのまま使用
         return sourceDir + shaderName + L".hlsl";
     }
 
