@@ -129,7 +129,7 @@
         "Exposure": 1.0,
         "ToneMapOperator": 2,
         "DenoiserStabilization": 1.0,
-        "ShadowStrength": 1.1,
+        "ShadowStrength": 1.0,
         "EnableDenoiser": true,
         "Gamma": 1.0
       }
@@ -1377,8 +1377,8 @@
     }
   ],
   "Viewport": {
-    "PanX": -764.2768941973318,
-    "PanY": -1152.032102194325,
+    "PanX": -1209.076894197332,
+    "PanY": -951.2321021943251,
     "Zoom": 0.9400000000000001,
     "IsLeftPanelVisible": true,
     "IsRightPanelVisible": true,
