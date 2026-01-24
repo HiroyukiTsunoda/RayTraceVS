@@ -49,6 +49,9 @@ namespace RayTraceVS::DXEngine
         UINT PhotonMapSize;         // Current photon map size
         float PhotonRadius;         // Search radius for gathering
         float CausticIntensity;     // Intensity multiplier
+        UINT PhotonDebugMode;       // 0 = off, 1+ = debug visualization
+        float PhotonDebugScale;     // Debug intensity scale
+        float PhotonDebugPadding[2];
         // DoF (Depth of Field) parameters
         float ApertureSize;         // 0.0 = DoF disabled, larger = stronger bokeh
         float FocusDistance;        // Distance to the focal plane
@@ -434,11 +437,11 @@ namespace RayTraceVS::DXEngine
         ComPtr<ID3D12DescriptorHeap> photonSrvUavHeap;
         
         // Photon mapping parameters
-        UINT maxPhotons = 262144;   // 256K photons
+        UINT maxPhotons = 262144;   // 256K photons (TDR safety)
         float photonRadius = 0.5f;
-        float causticIntensity = 2.0f;
-        UINT photonsPerLight = 65536;
-        bool causticsEnabled = true;
+        float causticIntensity = 3.0f;
+        UINT photonsPerLight = 32768;
+        bool causticsEnabled = false;
         
         // ============================================
         // Photon Hash Table Resources (Spatial Hash)

@@ -63,7 +63,7 @@ namespace RayTraceVS::DXEngine
         Camera& GetCamera() { return camera; }
         const Camera& GetCamera() const { return camera; }
 
-        void SetRenderSettings(int samples, int bounces, int traceRecursion, float exp = 1.0f, int tone = 2, float stab = 1.0f, float shadow = 1.0f, bool denoiser = true, float gam = 2.2f)
+        void SetRenderSettings(int samples, int bounces, int traceRecursion, float exp = 1.0f, int tone = 2, float stab = 1.0f, float shadow = 1.0f, bool denoiser = true, float gam = 2.2f, int photonDebug = 0, float photonDebugScale = 1.0f)
         {
             samplesPerPixel = samples;
             maxBounces = bounces;
@@ -74,6 +74,8 @@ namespace RayTraceVS::DXEngine
             shadowStrength = shadow;
             enableDenoiser = denoiser;
             gamma = gam;
+            photonDebugMode = photonDebug;
+            photonDebugScale = photonDebugScale;
         }
         int GetSamplesPerPixel() const { return samplesPerPixel; }
         int GetMaxBounces() const { return maxBounces; }
@@ -84,6 +86,8 @@ namespace RayTraceVS::DXEngine
         float GetShadowStrength() const { return shadowStrength; }
         bool GetEnableDenoiser() const { return enableDenoiser; }
         float GetGamma() const { return gamma; }
+        int GetPhotonDebugMode() const { return photonDebugMode; }
+        float GetPhotonDebugScale() const { return photonDebugScale; }
 
         void AddObject(std::shared_ptr<RayTracingObject> obj);
         void AddLight(const Light& light);
@@ -119,5 +123,7 @@ namespace RayTraceVS::DXEngine
         float shadowStrength = 1.0f;
         bool enableDenoiser = true;
         float gamma = 1.0f;
+        int photonDebugMode = 0;
+        float photonDebugScale = 1.0f;
     };
 }

@@ -162,6 +162,42 @@ namespace RayTraceVS.WPF
             settingsService.MainWindowBounds = bounds;
         }
 
+        private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            // Ctrl+S / Ctrl+Shift+S はフォーカスやIME状態に依存せず捕捉する
+            var key = GetEffectiveKey(e);
+            if (key == System.Windows.Input.Key.S &&
+                e.KeyboardDevice.Modifiers.HasFlag(System.Windows.Input.ModifierKeys.Control))
+            {
+                if (e.KeyboardDevice.Modifiers.HasFlag(System.Windows.Input.ModifierKeys.Shift))
+                {
+                    SaveSceneAs_Click(this, new RoutedEventArgs());
+                }
+                else
+                {
+                    SaveScene_Click(this, new RoutedEventArgs());
+                }
+
+                e.Handled = true;
+            }
+        }
+
+        private static System.Windows.Input.Key GetEffectiveKey(System.Windows.Input.KeyEventArgs e)
+        {
+            // IME有効時は Key が ImeProcessed になるため、実キーを取得する
+            if (e.Key == System.Windows.Input.Key.ImeProcessed)
+            {
+                return e.ImeProcessedKey;
+            }
+
+            if (e.Key == System.Windows.Input.Key.System)
+            {
+                return e.SystemKey;
+            }
+
+            return e.Key;
+        }
+
         private void Window_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
         {
             // Deleteキーの処理（優先）

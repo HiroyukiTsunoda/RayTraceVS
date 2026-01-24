@@ -65,12 +65,23 @@ void RayGen()
     
     // サンプル数を取得（最小1、最大64）
     uint sampleCount = clamp(Scene.SamplesPerPixel, 1, 64);
+        uint maxBounces = (Scene.MaxBounces > 0) ? min(Scene.MaxBounces, 32) : 8;
+
+    // Ray budget safety: cap total rays per pixel to avoid TDR
+    const uint maxRaysPerPixel = 128;
+    if (sampleCount * maxBounces > maxRaysPerPixel)
+    {
+        sampleCount = max(1u, maxRaysPerPixel / maxBounces);
+    }
+
     
     // 累積カラーとNRDデータ
     float3 accumulatedColor = float3(0, 0, 0);
+    float3 accumulatedPrimaryColor = float3(0, 0, 0);
     float3 accumulatedDiffuse = float3(0, 0, 0);
     float3 accumulatedSpecular = float3(0, 0, 0);
     float accumulatedHitDist = 0.0;
+    float accumulatedBounce = 0.0;
     float3 primaryNormal = float3(0, 1, 0);
     float primaryRoughness = 1.0;
     float3 primaryPosition = float3(0, 0, 0);
@@ -127,13 +138,14 @@ void RayGen()
         // ============================================
         // Loop-based ray tracing
         // ============================================
-        uint maxBounces = (Scene.MaxBounces > 0) ? min(Scene.MaxBounces, 32) : 8;
         float3 throughput = float3(1, 1, 1);
         float3 sampleColor = float3(0, 0, 0);
+        float3 primaryContribution = float3(0, 0, 0);
         float rayTMin = 0.001;
         bool primaryHitRecorded = false;
         
         bool loopTerminated = false;
+        uint bounceCount = 0;
         for (uint bounce = 0; bounce < maxBounces; bounce++)
         {
             // レイディスクリプタ
@@ -179,6 +191,8 @@ void RayGen()
                 ray,
                 payload
             );
+            
+            bounceCount = bounce + 1;
 
             // NaN/Inf guard: if any critical payload field is invalid,
             // terminate the loop and fall back to sky for this ray.
@@ -189,13 +203,23 @@ void RayGen()
                 HasNonFinite4(payload.loopThroughput);
             if (invalidPayload)
             {
-                sampleColor += throughput * GetSkyColor(rayDir);
+                float3 skyFallback = throughput * GetSkyColor(rayDir);
+                sampleColor += skyFallback;
+                if (bounce == 0)
+                {
+                    primaryContribution += skyFallback;
+                }
                 loopTerminated = true;
                 break;
             }
             
             // Accumulate color with throughput
-            sampleColor += throughput * payload.color;
+            float3 bounceColor = throughput * payload.color;
+            sampleColor += bounceColor;
+            if (bounce == 0)
+            {
+                primaryContribution += bounceColor;
+            }
             
             // Record NRD data from first bounce only
             if (bounce == 0 && !primaryHitRecorded)
@@ -234,7 +258,12 @@ void RayGen()
                 // Miss or terminal hit - add sky color if miss
                 if (!payload.hit)
                 {
-                    sampleColor += throughput * GetSkyColor(rayDir);
+                    float3 missSky = throughput * GetSkyColor(rayDir);
+                    sampleColor += missSky;
+                    if (bounce == 0)
+                    {
+                        primaryContribution += missSky;
+                    }
                 }
                 loopTerminated = true;
                 break;
@@ -245,6 +274,21 @@ void RayGen()
             rayOrigin = payload.loopRayOrigin.xyz;
             rayDir = payload.loopRayDirection.xyz;
             rayTMin = payload.loopRayDirection.w;
+
+            // Russian roulette after 10 bounces to avoid TDR on high transmission
+            // (Allow up to 10 bounces without early termination)
+            if (bounce >= 10)
+            {
+                float survival = clamp(max(throughput.r, max(throughput.g, throughput.b)), 0.2, 0.95);
+                uint rrSeed = launchIndex.x * 1973u + launchIndex.y * 9277u + s * 26699u + bounce * 911u;
+                float rr = Hash(rrSeed);
+                if (rr > survival)
+                {
+                    loopTerminated = true;
+                    break;
+                }
+                throughput /= max(survival, 0.001);
+            }
         }
         
         // If loop ended due to maxBounces (not break), add sky color as fallback
@@ -255,10 +299,48 @@ void RayGen()
         }
         
         accumulatedColor += sampleColor;
+        accumulatedPrimaryColor += primaryContribution;
+        accumulatedBounce += (float)bounceCount;
     }
     
     // 平均を取って結果を出力
     float invSampleCount = 1.0 / float(sampleCount);
+    float avgBounce = accumulatedBounce * invSampleCount;
+
+    if (Scene.PhotonDebugMode == 2)
+    {
+        float bounceRatio = (maxBounces > 0) ? saturate(avgBounce / (float)maxBounces) : 0.0;
+        float3 debugColor = bounceRatio.xxx;
+        
+        RenderTarget[launchIndex] = float4(debugColor, 1.0);
+        GBuffer_DiffuseRadianceHitDist[launchIndex] = float4(debugColor, 0.0);
+        GBuffer_SpecularRadianceHitDist[launchIndex] = float4(0, 0, 0, 0.0);
+        GBuffer_NormalRoughness[launchIndex] = NRD_FrontEnd_PackNormalAndRoughness(float3(0, 1, 0), 1.0);
+        GBuffer_ViewZ[launchIndex] = 10000.0;
+        GBuffer_Albedo[launchIndex] = float4(1.0, 1.0, 1.0, 0.0);
+        GBuffer_ShadowData[launchIndex] = float2(NRD_FP16_MAX, 1.0);
+        GBuffer_ShadowTranslucency[launchIndex] = SIGMA_FrontEnd_PackTranslucency(NRD_FP16_MAX, float3(0, 0, 0));
+        GBuffer_MotionVectors[launchIndex] = float2(0, 0);
+        return;
+    }
+    
+    if (Scene.PhotonDebugMode == 1)
+    {
+        float3 secondaryColor = (accumulatedColor - accumulatedPrimaryColor) * invSampleCount;
+        secondaryColor = max(secondaryColor, 0.0);
+        
+        RenderTarget[launchIndex] = float4(secondaryColor, 1.0);
+        GBuffer_DiffuseRadianceHitDist[launchIndex] = float4(secondaryColor, 0.0);
+        GBuffer_SpecularRadianceHitDist[launchIndex] = float4(0, 0, 0, 0.0);
+        GBuffer_NormalRoughness[launchIndex] = NRD_FrontEnd_PackNormalAndRoughness(float3(0, 1, 0), 1.0);
+        GBuffer_ViewZ[launchIndex] = 10000.0;
+        GBuffer_Albedo[launchIndex] = float4(1.0, 1.0, 1.0, 0.0);
+        GBuffer_ShadowData[launchIndex] = float2(NRD_FP16_MAX, 1.0);
+        GBuffer_ShadowTranslucency[launchIndex] = SIGMA_FrontEnd_PackTranslucency(NRD_FP16_MAX, float3(0, 0, 0));
+        GBuffer_MotionVectors[launchIndex] = float2(0, 0);
+        return;
+    }
+
     float3 finalColor = accumulatedColor * invSampleCount;
     RenderTarget[launchIndex] = float4(finalColor, 1.0);
     
