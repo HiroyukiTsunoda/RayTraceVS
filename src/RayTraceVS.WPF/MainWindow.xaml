@@ -16,10 +16,14 @@
     <Window.InputBindings>
         <KeyBinding Command="ApplicationCommands.Save" Key="S" Modifiers="Control"/>
         <KeyBinding Command="ApplicationCommands.SaveAs" Key="S" Modifiers="Control+Shift"/>
+        <KeyBinding Command="ApplicationCommands.Undo" Key="Z" Modifiers="Control"/>
+        <KeyBinding Command="ApplicationCommands.Redo" Key="Z" Modifiers="Control+Shift"/>
     </Window.InputBindings>
     <Window.CommandBindings>
         <CommandBinding Command="ApplicationCommands.Save" Executed="SaveCommand_Executed" CanExecute="SaveCommand_CanExecute"/>
         <CommandBinding Command="ApplicationCommands.SaveAs" Executed="SaveAsCommand_Executed" CanExecute="SaveCommand_CanExecute"/>
+        <CommandBinding Command="ApplicationCommands.Undo" Executed="UndoCommand_Executed" CanExecute="UndoCommand_CanExecute"/>
+        <CommandBinding Command="ApplicationCommands.Redo" Executed="RedoCommand_Executed" CanExecute="RedoCommand_CanExecute"/>
     </Window.CommandBindings>
     
     <DockPanel>
@@ -41,8 +45,8 @@
                 <MenuItem Header="終了(_X)" Click="Exit_Click" InputGestureText="Alt+F4"/>
             </MenuItem>
             <MenuItem Header="編集(_E)">
-                <MenuItem Header="元に戻す(_U)"/>
-                <MenuItem Header="やり直し(_R)"/>
+                <MenuItem Header="元に戻す(_U)" Command="ApplicationCommands.Undo" InputGestureText="Ctrl+Z"/>
+                <MenuItem Header="やり直し(_R)" Command="ApplicationCommands.Redo" InputGestureText="Ctrl+Shift+Z"/>
                 <Separator/>
                 <MenuItem Header="削除(_D)"/>
             </MenuItem>
