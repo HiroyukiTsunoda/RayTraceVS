@@ -112,9 +112,11 @@ namespace RayTraceVS::DXEngine
 
             return true;
         }
-        catch (const std::exception&)
+        catch (const std::exception& ex)
         {
-            // Error handling
+            char buf[512];
+            sprintf_s(buf, "DXContext::Initialize failed: %s\n", ex.what());
+            OutputDebugStringA(buf);
             return false;
         }
     }
@@ -185,6 +187,26 @@ namespace RayTraceVS::DXEngine
 
     void DXContext::CreateSwapChain(HWND hwnd, int width, int height)
     {
+        char buf[256];
+        sprintf_s(buf, "CreateSwapChain: hwnd=%p, width=%d, height=%d\n", hwnd, width, height);
+        OutputDebugStringA(buf);
+
+        // hwndの検証
+        if (!hwnd || !IsWindow(hwnd))
+        {
+            sprintf_s(buf, "CreateSwapChain: Invalid HWND (%p, IsWindow=%d)\n", hwnd, hwnd ? IsWindow(hwnd) : 0);
+            OutputDebugStringA(buf);
+            throw std::runtime_error("Invalid window handle");
+        }
+
+        // サイズの検証
+        if (width <= 0 || height <= 0)
+        {
+            sprintf_s(buf, "CreateSwapChain: Invalid size (%dx%d)\n", width, height);
+            OutputDebugStringA(buf);
+            throw std::runtime_error("Invalid swap chain size");
+        }
+
         DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
         swapChainDesc.BufferCount = frameCount;
         swapChainDesc.Width = width;
@@ -195,17 +217,27 @@ namespace RayTraceVS::DXEngine
         swapChainDesc.SampleDesc.Count = 1;
 
         ComPtr<IDXGISwapChain1> swapChain1;
-        if (FAILED(dxgiFactory->CreateSwapChainForHwnd(commandQueue.Get(), hwnd, &swapChainDesc, nullptr, nullptr, &swapChain1)))
+        HRESULT hr = dxgiFactory->CreateSwapChainForHwnd(commandQueue.Get(), hwnd, &swapChainDesc, nullptr, nullptr, &swapChain1);
+        if (FAILED(hr))
         {
-            throw std::runtime_error("Failed to create swap chain");
+            sprintf_s(buf, "CreateSwapChainForHwnd failed (HRESULT: 0x%08X)\n", hr);
+            OutputDebugStringA(buf);
+            throw std::runtime_error(buf);
         }
+        OutputDebugStringA("CreateSwapChainForHwnd: Success\n");
 
-        if (FAILED(swapChain1.As(&swapChain)))
+        hr = swapChain1.As(&swapChain);
+        if (FAILED(hr))
         {
-            throw std::runtime_error("Failed to cast swap chain");
+            sprintf_s(buf, "SwapChain cast failed (HRESULT: 0x%08X)\n", hr);
+            OutputDebugStringA(buf);
+            throw std::runtime_error(buf);
         }
+        OutputDebugStringA("SwapChain cast: Success\n");
 
         currentFrameIndex = swapChain->GetCurrentBackBufferIndex();
+        sprintf_s(buf, "Initial frame index: %u\n", currentFrameIndex);
+        OutputDebugStringA(buf);
 
         // Create RTV descriptor heap
         D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {};
@@ -225,11 +257,24 @@ namespace RayTraceVS::DXEngine
 
         for (UINT i = 0; i < frameCount; i++)
         {
-            if (FAILED(swapChain->GetBuffer(i, IID_PPV_ARGS(&renderTargets[i]))))
+            HRESULT hr = swapChain->GetBuffer(i, IID_PPV_ARGS(&renderTargets[i]));
+            if (FAILED(hr))
             {
-                throw std::runtime_error("Failed to get swap chain buffer");
+                char buf[256];
+                sprintf_s(buf, "Failed to get swap chain buffer %u (HRESULT: 0x%08X)\n", i, hr);
+                OutputDebugStringA(buf);
+                throw std::runtime_error(buf);
             }
 
+            // GetBufferが成功してもポインタがnullの場合のチェック
+            if (!renderTargets[i])
+            {
+                char buf[256];
+                sprintf_s(buf, "GetBuffer succeeded but render target %u is null (HRESULT was: 0x%08X)\n", i, hr);
+                OutputDebugStringA(buf);
+                throw std::runtime_error(buf);
+            }
+            
             device->CreateRenderTargetView(renderTargets[i].Get(), nullptr, rtvHandle);
             rtvHandle.Offset(1, rtvDescriptorSize);
         }

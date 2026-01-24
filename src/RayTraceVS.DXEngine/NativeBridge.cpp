@@ -378,8 +378,20 @@ namespace RayTraceVS::Interop::Bridge
             if (FAILED(hr))
             {
                 char buffer[256];
-                sprintf_s(buffer, "ExecuteCommandList: Failed to close: 0x%08X\n", hr);
+                sprintf_s(buffer, "ExecuteCommandList: Failed to close command list (HRESULT: 0x%08X)\n", hr);
                 OutputDebugStringA(buffer);
+                
+                // Check for device removed
+                auto device = context->GetDevice();
+                if (device)
+                {
+                    HRESULT removeReason = device->GetDeviceRemovedReason();
+                    if (removeReason != S_OK)
+                    {
+                        sprintf_s(buffer, "ExecuteCommandList: Device removed! Reason: 0x%08X\n", removeReason);
+                        OutputDebugStringA(buffer);
+                    }
+                }
                 return;
             }
 
@@ -390,9 +402,15 @@ namespace RayTraceVS::Interop::Bridge
             
             OutputDebugStringA("ExecuteCommandList: Success\n");
         }
+        catch (const std::exception& ex)
+        {
+            char buffer[512];
+            sprintf_s(buffer, "ExecuteCommandList: Exception - %s\n", ex.what());
+            OutputDebugStringA(buffer);
+        }
         catch (...)
         {
-            OutputDebugStringA("ExecuteCommandList: Exception\n");
+            OutputDebugStringA("ExecuteCommandList: Unknown exception\n");
         }
     }
 
@@ -409,9 +427,27 @@ namespace RayTraceVS::Interop::Bridge
             context->WaitForGPU();
             OutputDebugStringA("WaitForGPU: Success\n");
         }
+        catch (const std::exception& ex)
+        {
+            char buffer[512];
+            sprintf_s(buffer, "WaitForGPU: Exception - %s\n", ex.what());
+            OutputDebugStringA(buffer);
+            
+            // Check for device removed
+            auto device = context->GetDevice();
+            if (device)
+            {
+                HRESULT removeReason = device->GetDeviceRemovedReason();
+                if (removeReason != S_OK)
+                {
+                    sprintf_s(buffer, "WaitForGPU: Device removed! Reason: 0x%08X\n", removeReason);
+                    OutputDebugStringA(buffer);
+                }
+            }
+        }
         catch (...)
         {
-            OutputDebugStringA("WaitForGPU: Exception\n");
+            OutputDebugStringA("WaitForGPU: Unknown exception\n");
         }
     }
 }

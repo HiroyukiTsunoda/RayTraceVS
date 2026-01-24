@@ -331,9 +331,10 @@ namespace RayTraceVS.WPF.Views
                 var centerPoint = transform.Transform(new Point(ellipse.ActualWidth / 2, ellipse.ActualHeight / 2));
                 socket.Position = centerPoint;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // TransformToAncestor can fail if the element is not in the visual tree
+                System.Diagnostics.Debug.WriteLine($"UpdateSocketPositionFromUI: 座標変換に失敗 - {ex.Message}");
             }
         }
 
@@ -981,6 +982,12 @@ namespace RayTraceVS.WPF.Views
             catch (Exception ex)
             {
                 Debug.WriteLine($"コピー失敗: {ex.Message}");
+                Debug.WriteLine($"スタックトレース: {ex.StackTrace}");
+                System.Windows.MessageBox.Show(
+                    $"ノードのコピーに失敗しました。\n{ex.Message}",
+                    "コピーエラー",
+                    System.Windows.MessageBoxButton.OK,
+                    System.Windows.MessageBoxImage.Warning);
             }
         }
         
@@ -1099,6 +1106,12 @@ namespace RayTraceVS.WPF.Views
             catch (Exception ex)
             {
                 Debug.WriteLine($"ペースト失敗: {ex.Message}");
+                Debug.WriteLine($"スタックトレース: {ex.StackTrace}");
+                System.Windows.MessageBox.Show(
+                    $"ノードのペーストに失敗しました。\n{ex.Message}",
+                    "ペーストエラー",
+                    System.Windows.MessageBoxButton.OK,
+                    System.Windows.MessageBoxImage.Warning);
             }
         }
         

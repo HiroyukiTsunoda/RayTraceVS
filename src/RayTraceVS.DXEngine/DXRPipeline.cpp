@@ -361,42 +361,83 @@ namespace RayTraceVS::DXEngine
 
         CD3DX12_HEAP_PROPERTIES defaultHeapProps(D3D12_HEAP_TYPE_DEFAULT);
         CD3DX12_HEAP_PROPERTIES uploadHeapProps(D3D12_HEAP_TYPE_UPLOAD);
+        HRESULT hr;
 
         // Create sphere buffer
         UINT64 sphereBufferSize = sizeof(GPUSphere) * maxSpheres;
         CD3DX12_RESOURCE_DESC sphereDesc = CD3DX12_RESOURCE_DESC::Buffer(sphereBufferSize);
         
-        device->CreateCommittedResource(&defaultHeapProps, D3D12_HEAP_FLAG_NONE, &sphereDesc,
+        hr = device->CreateCommittedResource(&defaultHeapProps, D3D12_HEAP_FLAG_NONE, &sphereDesc,
             D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&sphereBuffer));
-        device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &sphereDesc,
+        if (FAILED(hr))
+        {
+            LOG_ERROR_HR("Failed to create sphere buffer", hr);
+            return false;
+        }
+        hr = device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &sphereDesc,
             D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&sphereUploadBuffer));
+        if (FAILED(hr))
+        {
+            LOG_ERROR_HR("Failed to create sphere upload buffer", hr);
+            return false;
+        }
 
         // Create plane buffer
         UINT64 planeBufferSize = sizeof(GPUPlane) * maxPlanes;
         CD3DX12_RESOURCE_DESC planeDesc = CD3DX12_RESOURCE_DESC::Buffer(planeBufferSize);
         
-        device->CreateCommittedResource(&defaultHeapProps, D3D12_HEAP_FLAG_NONE, &planeDesc,
+        hr = device->CreateCommittedResource(&defaultHeapProps, D3D12_HEAP_FLAG_NONE, &planeDesc,
             D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&planeBuffer));
-        device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &planeDesc,
+        if (FAILED(hr))
+        {
+            LOG_ERROR_HR("Failed to create plane buffer", hr);
+            return false;
+        }
+        hr = device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &planeDesc,
             D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&planeUploadBuffer));
+        if (FAILED(hr))
+        {
+            LOG_ERROR_HR("Failed to create plane upload buffer", hr);
+            return false;
+        }
 
         // Create box buffer
         UINT64 boxBufferSize = sizeof(GPUBox) * maxBoxes;
         CD3DX12_RESOURCE_DESC boxDesc = CD3DX12_RESOURCE_DESC::Buffer(boxBufferSize);
         
-        device->CreateCommittedResource(&defaultHeapProps, D3D12_HEAP_FLAG_NONE, &boxDesc,
+        hr = device->CreateCommittedResource(&defaultHeapProps, D3D12_HEAP_FLAG_NONE, &boxDesc,
             D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&boxBuffer));
-        device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &boxDesc,
+        if (FAILED(hr))
+        {
+            LOG_ERROR_HR("Failed to create box buffer", hr);
+            return false;
+        }
+        hr = device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &boxDesc,
             D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&boxUploadBuffer));
+        if (FAILED(hr))
+        {
+            LOG_ERROR_HR("Failed to create box upload buffer", hr);
+            return false;
+        }
 
         // Create light buffer
         UINT64 lightBufferSize = sizeof(GPULight) * maxLights;
         CD3DX12_RESOURCE_DESC lightDesc = CD3DX12_RESOURCE_DESC::Buffer(lightBufferSize);
         
-        device->CreateCommittedResource(&defaultHeapProps, D3D12_HEAP_FLAG_NONE, &lightDesc,
+        hr = device->CreateCommittedResource(&defaultHeapProps, D3D12_HEAP_FLAG_NONE, &lightDesc,
             D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&lightBuffer));
-        device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &lightDesc,
+        if (FAILED(hr))
+        {
+            LOG_ERROR_HR("Failed to create light buffer", hr);
+            return false;
+        }
+        hr = device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &lightDesc,
             D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&lightUploadBuffer));
+        if (FAILED(hr))
+        {
+            LOG_ERROR_HR("Failed to create light upload buffer", hr);
+            return false;
+        }
 
         return true;
     }

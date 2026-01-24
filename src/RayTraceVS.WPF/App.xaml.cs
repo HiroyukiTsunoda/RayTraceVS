@@ -20,12 +20,15 @@ namespace RayTraceVS.WPF
             // アプリケーション起動時にデバッグログファイルをクリア
             ClearDebugLog();
             
-            // メッシュキャッシュを初期化（FBX変換、エラー時はアプリ終了）
+            // メッシュキャッシュを初期化（FBX変換）
+            // 重要: MainWindow表示前に完了させる必要がある
             MeshCacheService = new MeshCacheService();
             await MeshCacheService.InitializeAsync();
             
-            // アプリケーション起動時の初期化処理
-            // ログ設定、設定ファイル読み込みなど
+            // キャッシュ初期化完了後にMainWindowを表示
+            // StartupUriを使わず手動で表示することで、初期化完了を保証
+            var mainWindow = new MainWindow();
+            mainWindow.Show();
         }
 
         private void ClearDebugLog()

@@ -166,8 +166,46 @@ namespace RayTraceVS.WPF.Services
                 if (NeedsRebuild(fbxPath, cachePath))
                 {
                     Debug.WriteLine($"Converting FBX: {meshName}");
-                    await Task.Run(() => ConvertFBXToCache(fbxPath, cachePath));
-                    UpdateManifest(meshName, fbxPath);
+                    
+                    // タイムアウト付きで変換を実行（60秒）
+                    var convertTask = Task.Run(() => ConvertFBXToCache(fbxPath, cachePath));
+                    var timeoutTask = Task.Delay(TimeSpan.FromSeconds(60));
+                    
+                    var completedTask = await Task.WhenAny(convertTask, timeoutTask);
+                    
+                    if (completedTask == timeoutTask)
+                    {
+                        // タイムアウト発生
+                        var errorMsg = $"FBX変換がタイムアウトしました: {meshName}\nファイルが大きすぎるか、破損している可能性があります。";
+                        Debug.WriteLine(errorMsg);
+                        
+                        // エラーダイアログを表示（UIスレッドで）
+                        Application.Current.Dispatcher.Invoke(() =>
+                        {
+                            MessageBox.Show(errorMsg, "FBX変換タイムアウト", 
+                                MessageBoxButton.OK, MessageBoxImage.Warning);
+                        });
+                        
+                        continue; // 次のファイルへ
+                    }
+                    
+                    // 変換タスクの例外をチェック
+                    try
+                    {
+                        await convertTask; // 例外があればここで再スロー
+                        UpdateManifest(meshName, fbxPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"FBX変換エラー: {meshName} - {ex.Message}");
+                        
+                        // エラーダイアログを表示（UIスレッドで）
+                        Application.Current.Dispatcher.Invoke(() =>
+                        {
+                            MessageBox.Show(ex.Message, "FBX変換エラー", 
+                                MessageBoxButton.OK, MessageBoxImage.Warning);
+                        });
+                    }
                 }
             }
             SaveManifest();
@@ -306,7 +344,14 @@ namespace RayTraceVS.WPF.Services
         /// </summary>
         private void ConvertWithAssimp(string fbxPath, string cachePath)
         {
+            var fileName = Path.GetFileName(fbxPath);
+            var sw = Stopwatch.StartNew();
+            
+            Debug.WriteLine($"[Assimp] 開始: {fileName}");
+            
             using var context = new AssimpContext();
+            
+            Debug.WriteLine($"[Assimp] ImportFile開始: {fileName}");
             var scene = context.ImportFile(fbxPath,
                 // 必須処理
                 PostProcessSteps.Triangulate |              // DXRは三角形のみ対応
@@ -319,6 +364,7 @@ namespace RayTraceVS.WPF.Services
                 PostProcessSteps.MakeLeftHanded |           // 左手座標系に変換
                 PostProcessSteps.FlipWindingOrder           // 面の巻き方向を反転（左手系用）
             );
+            Debug.WriteLine($"[Assimp] ImportFile完了: {fileName} ({sw.ElapsedMilliseconds}ms)");
 
             // シーンの検証
             if (scene == null)
@@ -331,7 +377,9 @@ namespace RayTraceVS.WPF.Services
                 throw new InvalidOperationException($"FBXファイルにメッシュが含まれていません: {fbxPath}");
             }
 
+            Debug.WriteLine($"[Assimp] メッシュ数: {scene.MeshCount}, マージ開始: {fileName}");
             var (vertices, indices, boundsMin, boundsMax) = MergeMeshesFromAssimp(scene);
+            Debug.WriteLine($"[Assimp] マージ完了: {fileName} - 頂点数: {vertices.Length / FLOATS_PER_VERTEX}, インデックス数: {indices.Length} ({sw.ElapsedMilliseconds}ms)");
 
             // 頂点数0のチェック
             if (vertices.Length == 0)
@@ -339,7 +387,9 @@ namespace RayTraceVS.WPF.Services
                 throw new InvalidOperationException($"有効な頂点データがありません: {fbxPath}");
             }
 
+            Debug.WriteLine($"[Assimp] キャッシュ書き込み開始: {fileName}");
             WriteMeshCache(cachePath, vertices, indices, boundsMin, boundsMax);
+            Debug.WriteLine($"[Assimp] 完了: {fileName} (総時間: {sw.ElapsedMilliseconds}ms)");
         }
 
         /// <summary>
@@ -348,15 +398,35 @@ namespace RayTraceVS.WPF.Services
         /// </summary>
         private (float[] vertices, uint[] indices, Vector3 boundsMin, Vector3 boundsMax) MergeMeshesFromAssimp(Scene scene)
         {
-            var vertices = new List<float>();
-            var indices = new List<uint>();
+            // 総頂点数を先に計算してキャパシティを確保
+            int totalVertexCount = 0;
+            int totalFaceCount = 0;
+            foreach (var mesh in scene.Meshes)
+            {
+                totalVertexCount += mesh.VertexCount;
+                totalFaceCount += mesh.FaceCount;
+            }
+            
+            Debug.WriteLine($"[Assimp] 統合予定: 総頂点数={totalVertexCount}, 総フェイス数={totalFaceCount}");
+            
+            // 大きすぎるメッシュの警告
+            if (totalVertexCount > 1000000)
+            {
+                Debug.WriteLine($"[Assimp] 警告: 非常に大きなメッシュです（{totalVertexCount}頂点）。処理に時間がかかる可能性があります。");
+            }
+            
+            var vertices = new List<float>(totalVertexCount * FLOATS_PER_VERTEX);
+            var indices = new List<uint>(totalFaceCount * 3); // 三角形なので3倍
 
             var min = new Vector3(float.MaxValue);
             var max = new Vector3(float.MinValue);
             uint baseVertex = 0;
+            int meshIndex = 0;
 
             foreach (var mesh in scene.Meshes)
             {
+                Debug.WriteLine($"[Assimp] メッシュ {meshIndex + 1}/{scene.MeshCount}: {mesh.Name ?? "(unnamed)"} - 頂点数={mesh.VertexCount}");
+                
                 // 頂点データを追加（32バイト/頂点フォーマット）
                 for (int i = 0; i < mesh.VertexCount; i++)
                 {
@@ -391,8 +461,10 @@ namespace RayTraceVS.WPF.Services
                 }
 
                 baseVertex += (uint)mesh.VertexCount;
+                meshIndex++;
             }
 
+            Debug.WriteLine($"[Assimp] 統合完了: 頂点数={vertices.Count / FLOATS_PER_VERTEX}, インデックス数={indices.Count}");
             return (vertices.ToArray(), indices.ToArray(), min, max);
         }
 
