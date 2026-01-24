@@ -8,7 +8,8 @@
         SizeToContent="WidthAndHeight"
         Background="Black"
         Loaded="Window_Loaded"
-        Closing="Window_Closing">
+        Closing="Window_Closing"
+        KeyDown="Window_KeyDown">
     
     <Grid>
         <!-- DirectX レンダリング用のホストパネル -->
@@ -24,6 +25,7 @@
                 <TextBlock x:Name="StatusText" Text="状態: 停止中" Foreground="White" FontSize="12"/>
                 <TextBlock x:Name="ResolutionText" Text="解像度: 1920x1080" Foreground="#888888" FontSize="11"/>
                 <TextBlock x:Name="ObjectCountText" Text="オブジェクト: 0" Foreground="#888888" FontSize="11"/>
+                <TextBlock x:Name="PhotonDebugText" Text="Photon Debug: Off" Foreground="#888888" FontSize="11"/>
             </StackPanel>
         </Border>
     </Grid>

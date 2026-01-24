@@ -169,6 +169,16 @@ void PhotonTraceClosestHit(inout PhotonPayload payload, in ProceduralAttributes 
         }
         
         // Continue tracing
+        if (payload.depth + 1 >= MAX_PHOTON_BOUNCES)
+        {
+            payload.terminated = true;
+            return;
+        }
+        if (any(!isfinite(newDir)) || any(!isfinite(newOrigin)))
+        {
+            payload.terminated = true;
+            return;
+        }
         RayDesc ray;
         ray.Origin = newOrigin;
         ray.Direction = newDir;
@@ -194,6 +204,16 @@ void PhotonTraceClosestHit(inout PhotonPayload payload, in ProceduralAttributes 
         }
         
         // Continue tracing
+        if (payload.depth + 1 >= MAX_PHOTON_BOUNCES)
+        {
+            payload.terminated = true;
+            return;
+        }
+        if (any(!isfinite(reflectDir)) || any(!isfinite(hitPosition)))
+        {
+            payload.terminated = true;
+            return;
+        }
         RayDesc ray;
         ray.Origin = hitPosition + normal * 0.01;
         ray.Direction = reflectDir;

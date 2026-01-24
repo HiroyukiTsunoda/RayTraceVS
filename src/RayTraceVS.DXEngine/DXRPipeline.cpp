@@ -689,6 +689,28 @@ namespace RayTraceVS::DXEngine
         shadowStrength = (float)scene->GetShadowStrength();
         denoiserEnabled = scene->GetEnableDenoiser();
         gamma = (float)scene->GetGamma();
+        int photonDebugMode = scene->GetPhotonDebugMode();
+        if (photonDebugMode < 0)
+            photonDebugMode = 0;
+        if (photonDebugMode > 2)
+            photonDebugMode = 2;
+        mappedConstantData->PhotonDebugMode = static_cast<UINT>(photonDebugMode);
+        float photonDebugScale = scene->GetPhotonDebugScale();
+        if (photonDebugScale < 0.1f)
+            photonDebugScale = 0.1f;
+        if (photonDebugScale > 64.0f)
+            photonDebugScale = 64.0f;
+        mappedConstantData->PhotonDebugScale = photonDebugScale;
+        mappedConstantData->PhotonDebugPadding[0] = 0.0f;
+        mappedConstantData->PhotonDebugPadding[1] = 0.0f;
+        
+        if (!causticsEnabled)
+        {
+            mappedConstantData->NumPhotons = 0;
+            mappedConstantData->PhotonMapSize = 0;
+            mappedConstantData->PhotonRadius = 0.0f;
+            mappedConstantData->CausticIntensity = 0.0f;
+        }
         
         // Upload object data to GPU buffers
         if (!spheres.empty() && sphereUploadBuffer)
@@ -1245,22 +1267,29 @@ namespace RayTraceVS::DXEngine
         // Create acceleration structure object
         accelerationStructure = std::make_unique<AccelerationStructure>(dxContext);
         
-        // Initialize photon mapping for caustics
-        if (CreatePhotonMappingResources())
+        // Initialize photon mapping for caustics (disabled by default)
+        if (causticsEnabled)
         {
-            if (CreatePhotonStateObject())
+            if (CreatePhotonMappingResources())
             {
-                CreatePhotonShaderTables();
-                
-                if (CreatePhotonHashResources())
+                if (CreatePhotonStateObject())
                 {
-                    LOG_INFO("Photon mapping with spatial hash initialized");
-                }
-                else
-                {
-                    LOG_WARN("Photon mapping initialized without spatial hash - using brute force");
+                    CreatePhotonShaderTables();
+                    
+                    if (CreatePhotonHashResources())
+                    {
+                        LOG_INFO("Photon mapping with spatial hash initialized");
+                    }
+                    else
+                    {
+                        LOG_WARN("Photon mapping initialized without spatial hash - using brute force");
+                    }
                 }
             }
+        }
+        else
+        {
+            LOG_INFO("Photon mapping disabled");
         }
         
         LOG_INFO("CreateDXRPipeline completed successfully");
@@ -2105,17 +2134,10 @@ namespace RayTraceVS::DXEngine
             return;
         }
         
-        // Debug isolation toggles (temporary)
-        const bool debugDisableCaustics = false;
-        const bool debugDisableDenoiser = false;
-        if (debugDisableCaustics)
-        {
-            causticsEnabled = false;
-        }
-        if (debugDisableDenoiser)
-        {
-            denoiserEnabled = false;
-        }
+        // Debug: bypass denoiser/composite to validate raw ray output
+        const bool debugSkipPostFX = false;
+        
+        // Debug isolation toggles removed
         
         auto device = dxContext->GetDevice();
         auto commandList = dxContext->GetCommandList();
@@ -2180,7 +2202,6 @@ namespace RayTraceVS::DXEngine
         // ============================================
         // Pass 2: Main Rendering
         // ============================================
-        
         UpdateDXRDescriptors(renderTarget);
         
         ID3D12DescriptorHeap* heaps[] = { dxrSrvUavHeap.Get() };
@@ -2214,6 +2235,7 @@ namespace RayTraceVS::DXEngine
         
         commandList->SetPipelineState1(stateObject.Get());
         commandList->DispatchRays(&dispatchDesc);
+        LOG_DEBUG("RenderWithDXR: DispatchRays done");
 
         // Ray tracing writes G-Buffer as UAVs; sync NRD state tracking
         if (denoiser && denoiser->IsReady())
@@ -2227,6 +2249,12 @@ namespace RayTraceVS::DXEngine
             denoiser->NotifyResourceState(gBuffer.Albedo.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
             denoiser->NotifyResourceState(gBuffer.ShadowData.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
             denoiser->NotifyResourceState(gBuffer.ShadowTranslucency.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        }
+        
+        if (debugSkipPostFX)
+        {
+            LOG_DEBUG("RenderWithDXR: debugSkipPostFX enabled");
+            return;
         }
         
         // ============================================
@@ -2796,6 +2824,7 @@ namespace RayTraceVS::DXEngine
         const auto& objects = scene->GetObjects();
         const auto& meshInstances = scene->GetMeshInstances();
         const auto& lights = scene->GetLights();
+        const UINT objectCount = static_cast<UINT>(objects.size() + meshInstances.size());
 
         UINT nonAmbientLights = 0;
         UINT pointLights = 0;
@@ -2835,6 +2864,16 @@ namespace RayTraceVS::DXEngine
 
         if (!hasSpecular || nonAmbientLights == 0)
         {
+            char buf[256];
+            sprintf_s(buf,
+                "EmitPhotons skipped: hasSpecular=%d nonAmbient=%u point=%u objects=%zu mesh=%zu",
+                hasSpecular ? 1 : 0,
+                nonAmbientLights,
+                pointLights,
+                objects.size(),
+                meshInstances.size());
+            LOG_DEBUG(buf);
+
             mappedConstantData->NumPhotons = 0;
             mappedConstantData->PhotonMapSize = 0;
             return;
@@ -2885,11 +2924,33 @@ namespace RayTraceVS::DXEngine
             UINT cap = perLightCap * max(1u, nonAmbientLights);
             totalPhotons = (std::min)(totalPhotons, cap);
         }
-        if (pointLights > 0 && (objects.size() + meshInstances.size()) > 1)
+        if (pointLights > 0 && objectCount > 1)
         {
             // Point lights + multiple objects can trigger TDR; cap photon count
             UINT cap = 8192u * max(1u, nonAmbientLights);
             totalPhotons = (std::min)(totalPhotons, cap);
+        }
+
+        // Additional safety cap to prevent long DispatchRays on heavy scenes
+        UINT safeCap = 131072u;
+        if (pointLights > 0 && objectCount > 1)
+        {
+            safeCap = min(safeCap, 65536u);
+        }
+        if (totalPhotons > safeCap)
+        {
+            char buf[256];
+            sprintf_s(buf, "EmitPhotons safety cap: total=%u -> %u (objects=%u, point=%u)",
+                totalPhotons, safeCap, objectCount, pointLights);
+            LOG_WARN(buf);
+            totalPhotons = safeCap;
+        }
+
+        if (totalPhotons == 0)
+        {
+            mappedConstantData->NumPhotons = 0;
+            mappedConstantData->PhotonMapSize = 0;
+            return;
         }
         
         // Dispatch photon rays
@@ -2974,6 +3035,7 @@ namespace RayTraceVS::DXEngine
             return;
         }
         
+        LOG_DEBUG("ApplyDenoising: begin");
         auto commandList = dxContext->GetCommandList();
         SetCommandListName(commandList, L"CmdList_ApplyDenoising");
         auto camera = scene->GetCamera();
@@ -3172,6 +3234,7 @@ namespace RayTraceVS::DXEngine
         XMStoreFloat4x4(&prevProjMatrix, projMatrix);
         isFirstFrame = false;
         frameIndex++;
+        LOG_DEBUG("ApplyDenoising: end");
     }
 
     bool DXRPipeline::CreateCompositePipeline()
@@ -3255,7 +3318,7 @@ namespace RayTraceVS::DXEngine
         CD3DX12_ROOT_PARAMETER1 rootParams[3];
         rootParams[0].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_ALL);
         rootParams[1].InitAsDescriptorTable(1, &uavRange, D3D12_SHADER_VISIBILITY_ALL);
-        rootParams[2].InitAsConstants(9, 0); // b0: OutputSize (2), ExposureValue, ToneMapOperator, DebugMode, DebugTileScale, UseDenoisedShadow, ShadowStrength, Gamma
+        rootParams[2].InitAsConstants(11, 0); // b0: OutputSize (2), ExposureValue, ToneMapOperator, DebugMode, DebugTileScale, UseDenoisedShadow, ShadowStrength, Gamma, PhotonMapSize, MaxPhotons
         
         CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSigDesc;
         rootSigDesc.Init_1_1(_countof(rootParams), rootParams, 2, staticSamplers,
@@ -3304,6 +3367,7 @@ namespace RayTraceVS::DXEngine
         if (!denoiser || !denoiser->IsReady())
             return;
 
+        LOG_DEBUG("CompositeOutput: begin");
         // Always recreate pipeline to pick up shader changes during development
         // TODO: Remove this forced recreation in release builds
         compositePipelineState.Reset();
@@ -3456,7 +3520,7 @@ namespace RayTraceVS::DXEngine
         commandList->SetComputeRootDescriptorTable(0, srvTableHandle);  // SRVs
         commandList->SetComputeRootDescriptorTable(1, uavTableHandle);  // UAV
         
-        // Set constants: OutputSize (2 uints), ExposureValue, ToneMapOperator, DebugMode, DebugTileScale, UseDenoisedShadow, ShadowStrength, Gamma
+        // Set constants: OutputSize (2 uints), ExposureValue, ToneMapOperator, DebugMode, DebugTileScale, UseDenoisedShadow, ShadowStrength, Gamma, PhotonMapSize, MaxPhotons
         // Shadow source: 0 = InputShadow(t9/noisy), 1 = DenoisedShadow(t3/SIGMA), 2 = No shadow (debug)
         UINT forceUseDenoisedShadow = 1;  // Enable SIGMA denoised shadow
         
@@ -3465,13 +3529,26 @@ namespace RayTraceVS::DXEngine
             UINT height;
             float exposureValue;
             float toneMapOperator;
-            UINT debugMode;          // 0=off, 6=diffuse only, 7=diffuse*albedo, 8=raw input
+            UINT debugMode;          // 0=off, 6=diffuse only, 7=diffuse*albedo, 8=raw input, 9=photon only, 10=photon heatmap
             float debugTileScale;
             UINT useDenoisedShadow;
             float shadowStrength;
             float gammaValue;
+            UINT photonMapSize;
+            UINT maxPhotons;
         // DebugMode: 0 = Off (normal rendering)
-        } constants = { width, height, exposure, (float)toneMapOperator, 0, 0.15f, forceUseDenoisedShadow, shadowStrength, gamma };
+        };
+        
+        UINT debugMode = 0;
+        if (mappedConstantData)
+        {
+            if (mappedConstantData->PhotonDebugMode == 1)
+                debugMode = 9;
+            else if (mappedConstantData->PhotonDebugMode == 2)
+                debugMode = 10;
+        }
+        
+        CompositeConstants constants = { width, height, exposure, (float)toneMapOperator, debugMode, 0.15f, forceUseDenoisedShadow, shadowStrength, gamma, mappedConstantData ? mappedConstantData->PhotonMapSize : 0u, maxPhotons };
         
         commandList->SetComputeRoot32BitConstants(2, sizeof(constants) / 4, &constants, 0);
         
@@ -3490,6 +3567,7 @@ namespace RayTraceVS::DXEngine
         denoiser->EnsureResourceState(commandList, gBuffer.SpecularRadianceHitDist.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         denoiser->EnsureResourceState(commandList, gBuffer.ShadowData.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         denoiser->EnsureResourceState(commandList, gBuffer.ShadowTranslucency.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        LOG_DEBUG("CompositeOutput: end");
     }
 }
 

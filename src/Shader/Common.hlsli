@@ -20,9 +20,9 @@
 // ============================================
 // Photon Mapping for Caustics
 // ============================================
-#define MAX_PHOTONS 262144          // 256K photons
+#define MAX_PHOTONS 262144          // 256K photons (TDR safety)
 #define PHOTON_SEARCH_RADIUS 0.5    // Search radius for photon gathering
-#define MAX_PHOTON_BOUNCES 8        // Max bounces for photon tracing
+#define MAX_PHOTON_BOUNCES 4        // Max bounces for photon tracing (TDR safety)
 #define CAUSTIC_INTENSITY 2.0       // Intensity multiplier for caustics
 
 // ============================================
@@ -131,6 +131,9 @@ struct SceneConstantBuffer
     uint PhotonMapSize;         // Current photon map size
     float PhotonRadius;         // Search radius for gathering
     float CausticIntensity;     // Intensity multiplier
+    uint PhotonDebugMode;       // 0 = off, 1+ = debug visualization
+    float PhotonDebugScale;     // Debug intensity scale
+    float2 PhotonDebugPadding;
     // DoF (Depth of Field) parameters
     float ApertureSize;         // 0.0 = DoF disabled, larger = stronger bokeh
     float FocusDistance;        // Distance to the focal plane
@@ -577,7 +580,16 @@ float3 CosineSampleHemisphere(float3 normal, inout uint seed)
     return normalize(tangent * x + bitangent * y + normal * z);
 }
 
-// Gather photons within radius (brute force for now)
+// Hash function for photon cell lookup (must match BuildPhotonHash.hlsl)
+uint HashPhotonCell(int3 cell)
+{
+    uint hash = (uint(cell.x) * 73856093u) ^
+                (uint(cell.y) * 19349663u) ^
+                (uint(cell.z) * 83492791u);
+    return hash % PHOTON_HASH_TABLE_SIZE;
+}
+
+// Gather photons within radius using spatial hash table
 float3 GatherPhotons(float3 position, float3 normal, float radius)
 {
     float3 causticColor = float3(0, 0, 0);
@@ -585,29 +597,57 @@ float3 GatherPhotons(float3 position, float3 normal, float radius)
     float radiusSq = radius * radius;
     
     uint photonCount = min(Scene.PhotonMapSize, MAX_PHOTONS);
+    if (photonCount == 0)
+        return float3(0, 0, 0);
     
-    for (uint i = 0; i < photonCount; i++)
+    float cellSize = max(radius * 2.0, 1e-4);
+    int3 baseCell = int3(floor(position / cellSize));
+    
+    // Search current cell and neighbors
+    [loop]
+    for (int z = -1; z <= 1; z++)
     {
-        Photon p = PhotonMap[i];
-        
-        // Skip invalid photons
-        if (p.flags == 0)
-            continue;
-        
-        // Distance check
-        float3 diff = position - p.position;
-        float distSq = dot(diff, diff);
-        
-        if (distSq < radiusSq)
+        [loop]
+        for (int y = -1; y <= 1; y++)
         {
-            // Check if photon is on the same side of surface
-            float dotN = dot(-p.direction, normal);
-            if (dotN > 0.0)
+            [loop]
+            for (int x = -1; x <= 1; x++)
             {
-                // Gaussian kernel weight
-                float weight = exp(-distSq / (2.0 * radiusSq * 0.5)) * dotN;
-                causticColor += p.color * p.power * weight;
-                totalWeight += weight;
+                int3 cell = baseCell + int3(x, y, z);
+                uint cellHash = HashPhotonCell(cell);
+                PhotonHashCell cellData = PhotonHashTable[cellHash];
+                uint cellCount = min(cellData.count, MAX_PHOTONS_PER_CELL);
+                
+                [loop]
+                for (uint i = 0; i < cellCount; i++)
+                {
+                    uint photonIndex = cellData.photonIndices[i];
+                    if (photonIndex >= photonCount)
+                        continue;
+                    
+                    Photon p = PhotonMap[photonIndex];
+                    
+                    // Skip invalid photons
+                    if (p.flags == 0)
+                        continue;
+                    
+                    // Distance check
+                    float3 diff = position - p.position;
+                    float distSq = dot(diff, diff);
+                    
+                    if (distSq < radiusSq)
+                    {
+                        // Check if photon is on the same side of surface
+                        float dotN = dot(-p.direction, normal);
+                        if (dotN > 0.0)
+                        {
+                            // Gaussian kernel weight
+                            float weight = exp(-distSq / (2.0 * radiusSq * 0.5)) * dotN;
+                            causticColor += p.color * p.power * weight;
+                            totalWeight += weight;
+                        }
+                    }
+                }
             }
         }
     }

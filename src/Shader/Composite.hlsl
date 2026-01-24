@@ -38,6 +38,8 @@ cbuffer CompositeConstants : register(b0)
     uint UseDenoisedShadow; // 1 = apply SIGMA-denoised shadow
     float ShadowStrength;   // Multiplier for shadow contrast (1.0 = normal)
     float GammaValue;       // Gamma correction value (2.2 = standard sRGB, 1.0 = linear)
+    uint PhotonMapSize;     // Current photon count (for overlay)
+    uint MaxPhotons;        // Max photon capacity (for overlay)
 };
 
 // ============================================
@@ -77,6 +79,29 @@ float3 LinearToSRGB(float3 color)
 float3 ApplyGamma(float3 color, float gamma)
 {
     return pow(max(color, 0.0), 1.0 / gamma);
+}
+
+float Luminance(float3 color)
+{
+    return dot(color, float3(0.2126, 0.7152, 0.0722));
+}
+
+// Simple heatmap for debug visualization
+float3 Heatmap(float t)
+{
+    t = saturate(t);
+    float3 c1 = float3(0.0, 0.0, 0.2);
+    float3 c2 = float3(0.0, 0.4, 1.0);
+    float3 c3 = float3(0.0, 1.0, 0.2);
+    float3 c4 = float3(1.0, 1.0, 0.0);
+    float3 c5 = float3(1.0, 0.2, 0.0);
+    if (t < 0.25)
+        return lerp(c1, c2, t / 0.25);
+    if (t < 0.5)
+        return lerp(c2, c3, (t - 0.25) / 0.25);
+    if (t < 0.75)
+        return lerp(c3, c4, (t - 0.5) / 0.25);
+    return lerp(c4, c5, (t - 0.75) / 0.25);
 }
 
 // ============================================
@@ -205,6 +230,25 @@ void CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
         rawDiff *= ExposureValue;
         float3 tonemapped = ACESFilm(rawDiff);
         OutputTexture[pixelCoord] = float4(LinearToSRGB(tonemapped), 1.0);
+        return;
+    }
+    // Debug Mode 9: Photon contribution (linear)
+    if (DebugMode == 9)
+    {
+        float3 photonOnly = GBuffer_DiffuseIn.SampleLevel(LinearSampler, uv, 0).rgb;
+        photonOnly *= ExposureValue;
+        float3 tonemapped = ACESFilm(photonOnly);
+        OutputTexture[pixelCoord] = float4(LinearToSRGB(tonemapped), 1.0);
+        return;
+    }
+    // Debug Mode 10: Photon contribution heatmap
+    if (DebugMode == 10)
+    {
+        float3 photonOnly = GBuffer_DiffuseIn.SampleLevel(LinearSampler, uv, 0).rgb;
+        float intensity = Luminance(photonOnly);
+        float mapped = log2(1.0 + intensity * 4.0) / 4.0;
+        float3 heat = Heatmap(mapped);
+        OutputTexture[pixelCoord] = float4(LinearToSRGB(heat), 1.0);
         return;
     }
     
@@ -369,6 +413,27 @@ void CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
     {
         finalColor = ApplyGamma(saturate(tonemapped), GammaValue);
     }
+    // Photon map usage overlay (top-left bar)
+    if (MaxPhotons > 0)
+    {
+        uint barWidth = max(64u, OutputSize.x / 5u);
+        uint barHeight = 8u;
+        if (pixelCoord.x < barWidth && pixelCoord.y < barHeight)
+        {
+            float ratio = saturate((float)PhotonMapSize / (float)MaxPhotons);
+            uint filled = (uint)round(ratio * barWidth);
+            if (pixelCoord.x < filled)
+            {
+                // Green -> Red as it fills
+                finalColor = lerp(float3(0.1, 0.9, 0.1), float3(0.9, 0.1, 0.1), ratio);
+            }
+            else
+            {
+                finalColor = float3(0.05, 0.05, 0.05);
+            }
+        }
+    }
+
     OutputTexture[pixelCoord] = float4(finalColor, 1.0);
 }
 

@@ -39,7 +39,9 @@ namespace RayTraceVS.WPF.Services
             float denoiserStabilization = 1.0f,
             float shadowStrength = 1.0f,
             bool enableDenoiser = true,
-            float gamma = 1.0f)
+            float gamma = 1.0f,
+            int photonDebugMode = 0,
+            float photonDebugScale = 1.0f)
         {
             if (!isInitialized || engineWrapper == null)
                 return;
@@ -49,7 +51,7 @@ namespace RayTraceVS.WPF.Services
                 engineWrapper.UpdateScene(spheres, planes, boxes, camera, lights, 
                     meshInstances ?? Array.Empty<MeshInstanceData>(), 
                     meshCaches ?? Array.Empty<MeshCacheData>(),
-                    samplesPerPixel, maxBounces, traceRecursionDepth, exposure, toneMapOperator, denoiserStabilization, shadowStrength, enableDenoiser, gamma);
+                    samplesPerPixel, maxBounces, traceRecursionDepth, exposure, toneMapOperator, denoiserStabilization, shadowStrength, enableDenoiser, gamma, photonDebugMode, photonDebugScale);
             }
             catch (Exception)
             {

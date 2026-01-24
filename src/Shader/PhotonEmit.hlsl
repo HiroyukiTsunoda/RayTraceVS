@@ -35,6 +35,8 @@ void PhotonEmit()
     // Get photon index from dispatch ID
     uint photonIndex = DispatchRaysIndex().x;
     uint totalPhotons = DispatchRaysDimensions().x;
+    if (totalPhotons == 0)
+        return;
     
     // Initialize random seed based on photon index
     uint seed = WangHash(photonIndex * 1973 + 9277);
@@ -56,7 +58,10 @@ void PhotonEmit()
     
     // Find which non-ambient light to use
     uint photonsPerLight = totalPhotons / lightCount;
+    if (photonsPerLight == 0)
+        return;
     uint lightIndex = photonIndex / photonsPerLight;
+    lightIndex = min(lightIndex, lightCount - 1);
     
     // Find the actual light index (skipping ambient lights)
     uint actualLightIndex = 0;

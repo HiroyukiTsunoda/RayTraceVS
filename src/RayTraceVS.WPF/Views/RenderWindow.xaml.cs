@@ -30,7 +30,9 @@ namespace RayTraceVS.WPF.Views
         float DenoiserStabilization,
         float ShadowStrength,
         bool EnableDenoiser,
-        float Gamma);
+        float Gamma,
+        int PhotonDebugMode,
+        float PhotonDebugScale);
 
     public partial class RenderWindow : Window
     {
@@ -41,6 +43,9 @@ namespace RayTraceVS.WPF.Views
         private byte[]? cachedSkyBuffer;
         
         private bool isRendering = false;
+        private int photonDebugMode = 0;
+        private float photonDebugScale = 1.0f;
+        private readonly float[] photonDebugScaleOptions = new[] { 1.0f, 4.0f, 16.0f };
         
         // 非同期レンダリング用フィールド
         private bool _isRenderingInProgress = false;
@@ -91,7 +96,8 @@ namespace RayTraceVS.WPF.Views
                 evaluated.SamplesPerPixel, evaluated.MaxBounces, evaluated.TraceRecursionDepth,
                 evaluated.Exposure, evaluated.ToneMapOperator,
                 evaluated.DenoiserStabilization, evaluated.ShadowStrength,
-                evaluated.EnableDenoiser, evaluated.Gamma);
+                evaluated.EnableDenoiser, evaluated.Gamma,
+                photonDebugMode, photonDebugScale);
 
             lock (_renderLock)
             {
@@ -231,7 +237,8 @@ namespace RayTraceVS.WPF.Views
                 evaluated.SamplesPerPixel, evaluated.MaxBounces, evaluated.TraceRecursionDepth,
                 evaluated.Exposure, evaluated.ToneMapOperator,
                 evaluated.DenoiserStabilization, evaluated.ShadowStrength,
-                evaluated.EnableDenoiser, evaluated.Gamma);
+                evaluated.EnableDenoiser, evaluated.Gamma,
+                photonDebugMode, photonDebugScale);
 
             lock (_renderLock)
             {
@@ -280,7 +287,8 @@ namespace RayTraceVS.WPF.Views
                                 sceneParams.SamplesPerPixel, sceneParams.MaxBounces, sceneParams.TraceRecursionDepth,
                                 sceneParams.Exposure, sceneParams.ToneMapOperator,
                                 sceneParams.DenoiserStabilization, sceneParams.ShadowStrength,
-                                sceneParams.EnableDenoiser, sceneParams.Gamma);
+                                sceneParams.EnableDenoiser, sceneParams.Gamma,
+                                sceneParams.PhotonDebugMode, sceneParams.PhotonDebugScale);
                             
                             // 空シーンはGPUを使わずスカイ色で即時更新
                             bool emptyScene = (sceneParams.Spheres.Length == 0 &&
@@ -422,6 +430,67 @@ namespace RayTraceVS.WPF.Views
                 var objects = nodeGraph.GetAllNodes();
                 ObjectCountText.Text = $"オブジェクト: {System.Linq.Enumerable.Count(objects)}";
             }
+            PhotonDebugText.Text = photonDebugMode == 0
+                ? "Photon Debug: Off"
+                : $"Photon Debug: Mode {photonDebugMode} (x{photonDebugScale:0.##})";
+        }
+
+        private void Window_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            if (e.Key == System.Windows.Input.Key.F2)
+            {
+                photonDebugMode = (photonDebugMode + 1) % 3;
+                UpdateInfo();
+                RequestRenderRefresh();
+                e.Handled = true;
+                return;
+            }
+
+            if (e.Key == System.Windows.Input.Key.F3)
+            {
+                int index = Array.IndexOf(photonDebugScaleOptions, photonDebugScale);
+                if (index < 0)
+                {
+                    photonDebugScale = photonDebugScaleOptions[0];
+                }
+                else
+                {
+                    photonDebugScale = photonDebugScaleOptions[(index + 1) % photonDebugScaleOptions.Length];
+                }
+                UpdateInfo();
+                RequestRenderRefresh();
+                e.Handled = true;
+            }
+        }
+
+        private void RequestRenderRefresh()
+        {
+            if (!isRendering || renderService == null || nodeGraph == null || sceneEvaluator == null)
+                return;
+
+            var evaluated = sceneEvaluator.EvaluateScene(nodeGraph);
+            var sceneParams = new SceneParams(
+                evaluated.Item1, evaluated.Item2, evaluated.Item3,
+                evaluated.Item4, evaluated.Item5,
+                evaluated.Item6, evaluated.Item7,
+                evaluated.SamplesPerPixel, evaluated.MaxBounces, evaluated.TraceRecursionDepth,
+                evaluated.Exposure, evaluated.ToneMapOperator,
+                evaluated.DenoiserStabilization, evaluated.ShadowStrength,
+                evaluated.EnableDenoiser, evaluated.Gamma,
+                photonDebugMode, photonDebugScale);
+
+            lock (_renderLock)
+            {
+                if (_isRenderingInProgress)
+                {
+                    _pendingSceneParams = sceneParams;
+                    return;
+                }
+
+                _isRenderingInProgress = true;
+            }
+
+            _ = RenderWithParamsAsync(sceneParams);
         }
 
     }

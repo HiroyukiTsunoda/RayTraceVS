@@ -36,7 +36,9 @@ namespace RayTraceVS::Interop
             float denoiserStabilization,
             float shadowStrength,
             bool enableDenoiser,
-            float gamma);
+            float gamma,
+            int photonDebugMode,
+            float photonDebugScale);
 
         // Rendering
         void Render();

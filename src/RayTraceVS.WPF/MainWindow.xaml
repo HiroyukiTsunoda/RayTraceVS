@@ -12,6 +12,7 @@
         ResizeMode="CanResizeWithGrip"
         WindowState="Normal"
         Background="{StaticResource BackgroundBrush}"
+        PreviewKeyDown="Window_PreviewKeyDown"
         KeyDown="Window_KeyDown">
     
     <DockPanel>
