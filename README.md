@@ -144,28 +144,25 @@ RayTraceVS/
 - **Sphere（球）**: 球体オブジェクト
 - **Plane（平面）**: 無限平面
 - **Box（ボックス）**: 直方体オブジェクト
+- **FBXメッシュ**: Resource/Modelフォルダに配置したFBXファイルを自動読み込み
 
 ### マテリアルノード
-- **DiffuseMaterial**: 拡散反射マテリアル
-- **MetalMaterial**: 金属マテリアル（反射）
-- **GlassMaterial**: ガラスマテリアル（屈折）
-- **EmissionMaterial**: 発光マテリアル（全オブジェクトでEmissionパラメータ対応）
+- **Universal PBR**: 統合物理ベースマテリアル（Metallic/Roughness/Transmission/IOR/Emission）
 - **MaterialBSDF**: BSDFマテリアル
+- **EmissionMaterial**: 発光マテリアル（全オブジェクトでEmissionパラメータ対応）
 
 ### ライトノード
 - **Light（ポイントライト）**: 点光源
 - **DirectionalLight**: 方向性ライト（太陽光など）
 - **AmbientLight**: 環境光
 
-### トランスフォームノード
-- **Transform**: 位置・回転・スケール変換
-- **CombineTransform**: トランスフォームの合成
-
 ### 数学ノード
-- **Vector3**: 3Dベクトル値
-- **Vector4**: 4Dベクトル値
 - **Float**: 浮動小数点値
-- **Color**: 色値
+- **Vector3**: 3Dベクトル値 (X, Y, Z)
+- **Vector4**: 4Dベクトル値 (X, Y, Z, W)
+- **Color**: RGB色値
+- **Transform**: 位置・回転・スケール変換
+- **CombineTransform**: 複数のTransformを合成
 - **Add（加算）**: 値の加算
 - **Sub（減算）**: 値の減算
 - **Mul（乗算）**: 値の乗算
@@ -279,8 +276,11 @@ RayTraceVS/
 - **UIフレームワーク**: WPF + Canvasベース
 - **アーキテクチャ**: MVVM (CommunityToolkit.Mvvm)
 - **データバインディング**: ObservableCollection
-- **接続線描画**: ベジェ曲線
+- **接続線描画**: ベジェ曲線（互換性に応じた色表示）
 - **グラフ評価**: トポロジカルソート、依存関係解決
+- **Undo/Redo**: Commandパターンによる全操作対応
+- **複数選択**: 矩形選択、一括移動・削除対応
+- **FBXインポート**: Resource/Modelフォルダから自動読み込み
 
 ### パフォーマンス目安
 
@@ -315,18 +315,17 @@ RayTraceVS/
 
 ## 今後の拡張予定
 
-- [ ] メッシュインポート（.obj, .fbx）
 - [ ] テクスチャマッピング
 - [ ] 法線マップ
 - [ ] パストレーシング（より正確なGI）
 - [ ] アニメーション機能
 - [ ] リアルタイムプレビュー（低解像度）
-- [ ] アンドゥ/リドゥ（コマンドシステム基盤は実装済み）
 - [ ] 画像シーケンス出力
 - [ ] HDR画像出力
 
 ## 実装済みの主要機能
 
+### レンダリング
 - [x] NRDデノイザー統合（REBLUR + SIGMA）
 - [x] フォトンマッピングによるコースティクス（空間ハッシュ最適化）
 - [x] PBRマテリアルシステム（Metallic/Roughness/Transmission/IOR/Emission）
@@ -335,6 +334,14 @@ RayTraceVS/
 - [x] トーンマッピング（Reinhard / ACES Filmic）
 - [x] シェーダーキャッシュ（DXC + JSON管理）
 - [x] GGX-like roughness perturbation
+
+### ノードエディタ
+- [x] Undo/Redo（全操作対応、Ctrl+Z / Ctrl+Y）
+- [x] 複数選択（矩形選択）
+- [x] 複数ノードの一括移動・削除
+- [x] 接続の再配線（ドラッグで付け替え）
+- [x] ソケット型の互換性チェック
+- [x] FBXメッシュインポート（Resource/Modelフォルダから自動読み込み）
 
 ## ライセンス
 
