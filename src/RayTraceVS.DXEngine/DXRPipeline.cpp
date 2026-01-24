@@ -554,6 +554,8 @@ namespace RayTraceVS::DXEngine
                 gs.Padding3 = 0;
                 gs.Emission = mat.emission;
                 gs.Padding4 = 0;
+                gs.Absorption = mat.absorption;
+                gs.Padding5 = 0;
                 spheres.push_back(gs);
             }
             else if (auto plane = dynamic_cast<Plane*>(obj.get()))
@@ -571,6 +573,8 @@ namespace RayTraceVS::DXEngine
                 gp.Padding1 = 0;
                 gp.Emission = mat.emission;
                 gp.Padding2 = 0;
+                gp.Absorption = mat.absorption;
+                gp.Padding3 = 0;
                 planes.push_back(gp);
             }
             else if (auto box = dynamic_cast<Box*>(obj.get()))
@@ -599,6 +603,8 @@ namespace RayTraceVS::DXEngine
                 gb.Padding8 = 0;
                 gb.Emission = mat.emission;
                 gb.Padding9 = 0;
+                gb.Absorption = mat.absorption;
+                gb.Padding10 = 0;
                 
                 // DEBUG: Log box axes orthonormality check
                 char debugBuf[512];
@@ -692,8 +698,8 @@ namespace RayTraceVS::DXEngine
         int photonDebugMode = scene->GetPhotonDebugMode();
         if (photonDebugMode < 0)
             photonDebugMode = 0;
-        if (photonDebugMode > 2)
-            photonDebugMode = 2;
+        if (photonDebugMode > 4)
+            photonDebugMode = 4;
         mappedConstantData->PhotonDebugMode = static_cast<UINT>(photonDebugMode);
         float photonDebugScale = scene->GetPhotonDebugScale();
         if (photonDebugScale < 0.1f)
@@ -882,6 +888,8 @@ namespace RayTraceVS::DXEngine
                 mat.Emission = inst.material.emission;
                 mat.Padding3 = 0;
                 mat.Padding4 = 0;
+                mat.Absorption = inst.material.absorption;
+                mat.Padding5 = 0;
                 materials.push_back(mat);
             }
             
@@ -1656,20 +1664,11 @@ namespace RayTraceVS::DXEngine
         
         // Shader config
         auto shaderConfig = stateObjectDesc.CreateSubobject<CD3DX12_RAYTRACING_SHADER_CONFIG_SUBOBJECT>();
-        // RayPayload (with NRD + SIGMA fields):
-        //   Basic: float3 color (12) + uint depth (4) + uint hit (4) + float padding (4) = 24 bytes
-        //   NRD: float3 diffuseRadiance (12) + float hitDistance (4) = 16 bytes
-        //   NRD: float3 specularRadiance (12) + float roughness (4) = 16 bytes
-        //   NRD: float3 worldNormal (12) + float viewZ (4) = 16 bytes
-        //   NRD: float3 worldPosition (12) + float metallic (4) = 16 bytes
-        //   NRD: float3 albedo (12) + float shadowVisibility (4) = 16 bytes
-        //   SIGMA: float shadowPenumbra (4) + float shadowDistance (4) + float padding2 (4) = 12 bytes
-        //   Thickness query: 3 * uint (12) + uint hitObjectType (4) = 16 bytes
-        //   Colored shadow: float3 shadowColorAccum (12) + float shadowTransmissionAccum (4) = 16 bytes
-        //   Hit object info: uint hitObjectIndex (4) = 4 bytes
-        //   Loop-based: float4 x 3 (loopRayOrigin, loopRayDirection, loopThroughput) = 48 bytes
-        //   Total: 156 + 48 = 204, align to 8 -> 208
-        UINT payloadSize = 208;
+        // RayPayload (with queue-based path states + sky boost):
+        //   Total size must match HLSL RayPayload (see Common.hlsli)
+        //   Current layout includes child paths (2 * PathState = 160 bytes)
+        //   Total: 400 bytes (aligned to 8)
+        UINT payloadSize = 400;
         // ProceduralAttributes: float3 normal (12) + uint objectType (4) + uint objectIndex (4) = 20 bytes
         UINT attribSize = 12 + 4 + 4;   // 20 bytes
         shaderConfig->Config(payloadSize, attribSize);

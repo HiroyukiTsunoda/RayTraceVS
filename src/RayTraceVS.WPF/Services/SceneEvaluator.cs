@@ -310,7 +310,8 @@ namespace RayTraceVS.WPF.Services
                 Transmission = material.Transmission,
                 IOR = material.IOR,
                 Specular = material.Specular,
-                Emission = new InteropVector3(material.Emission.X, material.Emission.Y, material.Emission.Z)
+                Emission = new InteropVector3(material.Emission.X, material.Emission.Y, material.Emission.Z),
+                Absorption = new InteropVector3(material.Absorption.X, material.Absorption.Y, material.Absorption.Z)
             };
         }
 
@@ -348,7 +349,8 @@ namespace RayTraceVS.WPF.Services
                 Transmission = material.Transmission,
                 IOR = material.IOR,
                 Specular = material.Specular,
-                Emission = new InteropVector3(material.Emission.X, material.Emission.Y, material.Emission.Z)
+                Emission = new InteropVector3(material.Emission.X, material.Emission.Y, material.Emission.Z),
+                Absorption = new InteropVector3(material.Absorption.X, material.Absorption.Y, material.Absorption.Z)
             };
         }
 
@@ -369,7 +371,8 @@ namespace RayTraceVS.WPF.Services
                 Transmission = material.Transmission,
                 IOR = material.IOR,
                 Specular = material.Specular,
-                Emission = new InteropVector3(material.Emission.X, material.Emission.Y, material.Emission.Z)
+                Emission = new InteropVector3(material.Emission.X, material.Emission.Y, material.Emission.Z),
+                Absorption = new InteropVector3(material.Absorption.X, material.Absorption.Y, material.Absorption.Z)
             };
         }
 
@@ -444,7 +447,8 @@ namespace RayTraceVS.WPF.Services
                 Transmission = material.Transmission,
                 IOR = material.IOR,
                 Specular = material.Specular,
-                Emission = new InteropVector3(material.Emission.X, material.Emission.Y, material.Emission.Z)
+                Emission = new InteropVector3(material.Emission.X, material.Emission.Y, material.Emission.Z),
+                Absorption = new InteropVector3(material.Absorption.X, material.Absorption.Y, material.Absorption.Z)
             };
         }
 

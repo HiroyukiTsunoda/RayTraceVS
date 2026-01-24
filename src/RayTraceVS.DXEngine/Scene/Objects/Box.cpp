@@ -16,6 +16,7 @@ namespace RayTraceVS::DXEngine
         material.ior = 1.0f;
         material.specular = 0.5f;
         material.emission = XMFLOAT3(0.0f, 0.0f, 0.0f);
+        material.absorption = XMFLOAT3(0.0f, 0.0f, 0.0f);
     }
 
     Box::Box(const XMFLOAT3& center, const XMFLOAT3& size)
@@ -32,6 +33,7 @@ namespace RayTraceVS::DXEngine
         material.ior = 1.0f;
         material.specular = 0.5f;
         material.emission = XMFLOAT3(0.0f, 0.0f, 0.0f);
+        material.absorption = XMFLOAT3(0.0f, 0.0f, 0.0f);
     }
 
     Box::Box(const XMFLOAT3& center, const XMFLOAT3& size,
@@ -49,6 +51,7 @@ namespace RayTraceVS::DXEngine
         material.ior = 1.0f;
         material.specular = 0.5f;
         material.emission = XMFLOAT3(0.0f, 0.0f, 0.0f);
+        material.absorption = XMFLOAT3(0.0f, 0.0f, 0.0f);
     }
 
     void Box::SetAxes(const XMFLOAT3& axisX, const XMFLOAT3& axisY, const XMFLOAT3& axisZ)

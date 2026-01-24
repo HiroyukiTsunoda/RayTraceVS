@@ -103,7 +103,8 @@ namespace RayTraceVS.WPF.Models.Nodes
                 Transmission = 0.0f,
                 IOR = 1.5f,
                 Emission = emission,
-                Specular = 0.5f
+                Specular = 0.5f,
+                Absorption = Vector3.Zero
             };
         }
     }

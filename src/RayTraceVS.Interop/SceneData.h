@@ -28,7 +28,7 @@ namespace RayTraceVS::Interop
         Vector4(float x, float y, float z, float w) : X(x), Y(y), Z(z), W(w) {}
     };
 
-    // Sphere data (with PBR material) - 80 bytes, 16-byte aligned
+    // Sphere data (with PBR material) - 96 bytes, 16-byte aligned
     [StructLayout(LayoutKind::Sequential)]
     public value struct SphereData
     {
@@ -45,6 +45,8 @@ namespace RayTraceVS::Interop
         float Padding3;
         Vector3 Emission;   // Emissive color (self-illumination)
         float Padding4;
+        Vector3 Absorption; // Beer-Lambert sigmaA
+        float Padding5;
     };
 
     // Plane data (with PBR material)
@@ -62,9 +64,11 @@ namespace RayTraceVS::Interop
         float Padding1;     // Padding for 16-byte alignment
         Vector3 Emission;   // Emissive color (self-illumination)
         float Padding2;
+        Vector3 Absorption; // Beer-Lambert sigmaA
+        float Padding3;
     };
 
-    // Box data (with PBR material and rotation) - 144 bytes, 16-byte aligned
+    // Box data (with PBR material and rotation) - 160 bytes, 16-byte aligned
     // OBB (Oriented Bounding Box) support via local axes
     [StructLayout(LayoutKind::Sequential)]
     public value struct BoxData
@@ -91,6 +95,8 @@ namespace RayTraceVS::Interop
         float Padding8;
         Vector3 Emission;   // Emissive color (self-illumination)
         float Padding9;
+        Vector3 Absorption; // Beer-Lambert sigmaA
+        float Padding10;
     };
 
     // Camera data
@@ -169,6 +175,7 @@ namespace RayTraceVS::Interop
         float IOR;
         float Specular;
         Vector3 Emission;
+        Vector3 Absorption; // Beer-Lambert sigmaA
     };
 
     /// <summary>

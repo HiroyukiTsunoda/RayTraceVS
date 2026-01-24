@@ -119,6 +119,8 @@ namespace RayTraceVS::DXEngine
         float Padding3;         // 4  -> 64
         XMFLOAT3 Emission;      // 12
         float Padding4;         // 4  -> 80
+        XMFLOAT3 Absorption;    // 12 (sigmaA)
+        float Padding5;         // 4  -> 96
     };
 
     // GPU plane data (with PBR material) - 80 bytes, 16-byte aligned
@@ -135,6 +137,8 @@ namespace RayTraceVS::DXEngine
         float Padding1;         // 4  -> 64
         XMFLOAT3 Emission;      // 12
         float Padding2;         // 4  -> 80
+        XMFLOAT3 Absorption;    // 12 (sigmaA)
+        float Padding3;         // 4  -> 96
     };
 
     // GPU box data (with PBR material and rotation) - 144 bytes, 16-byte aligned
@@ -163,6 +167,8 @@ namespace RayTraceVS::DXEngine
         float Padding8;         // 4  -> 128
         XMFLOAT3 Emission;      // 12
         float Padding9;         // 4  -> 144
+        XMFLOAT3 Absorption;    // 12 (sigmaA)
+        float Padding10;        // 4  -> 160
     };
 
     // ============================================
@@ -201,6 +207,8 @@ namespace RayTraceVS::DXEngine
         float Padding2;         // 4
         float Padding3;         // 4
         float Padding4;         // 4  -> 64
+        XMFLOAT3 Absorption;    // 12 (sigmaA)
+        float Padding5;         // 4  -> 80
     };
 
     // GPU mesh instance info - 8 bytes (maps TLAS instance to mesh/material)

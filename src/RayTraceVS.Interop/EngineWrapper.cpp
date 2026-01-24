@@ -191,6 +191,9 @@ namespace RayTraceVS::Interop
                 safeSphere.Transmission = ClampFinite(safeSphere.Transmission, 0.0f, 1.0f, 0.0f, "Transmission", "Sphere", sphereIndex);
                 safeSphere.IOR = ClampFinite(safeSphere.IOR, 1.0f, 4.0f, 1.5f, "IOR", "Sphere", sphereIndex);
                 safeSphere.Specular = ClampFinite(safeSphere.Specular, 0.0f, 1.0f, 0.5f, "Specular", "Sphere", sphereIndex);
+                safeSphere.Absorption.X = ClampFinite(safeSphere.Absorption.X, 0.0f, 100.0f, 0.0f, "Absorption.X", "Sphere", sphereIndex);
+                safeSphere.Absorption.Y = ClampFinite(safeSphere.Absorption.Y, 0.0f, 100.0f, 0.0f, "Absorption.Y", "Sphere", sphereIndex);
+                safeSphere.Absorption.Z = ClampFinite(safeSphere.Absorption.Z, 0.0f, 100.0f, 0.0f, "Absorption.Z", "Sphere", sphereIndex);
                 
                 safeSphere.Emission.X = SanitizeFinite(safeSphere.Emission.X, 0.0f, "Emission.X", "Sphere", sphereIndex);
                 safeSphere.Emission.Y = SanitizeFinite(safeSphere.Emission.Y, 0.0f, "Emission.Y", "Sphere", sphereIndex);
@@ -244,6 +247,9 @@ namespace RayTraceVS::Interop
                 safePlane.Transmission = ClampFinite(safePlane.Transmission, 0.0f, 1.0f, 0.0f, "Transmission", "Plane", planeIndex);
                 safePlane.IOR = ClampFinite(safePlane.IOR, 1.0f, 4.0f, 1.5f, "IOR", "Plane", planeIndex);
                 safePlane.Specular = ClampFinite(safePlane.Specular, 0.0f, 1.0f, 0.5f, "Specular", "Plane", planeIndex);
+                safePlane.Absorption.X = ClampFinite(safePlane.Absorption.X, 0.0f, 100.0f, 0.0f, "Absorption.X", "Plane", planeIndex);
+                safePlane.Absorption.Y = ClampFinite(safePlane.Absorption.Y, 0.0f, 100.0f, 0.0f, "Absorption.Y", "Plane", planeIndex);
+                safePlane.Absorption.Z = ClampFinite(safePlane.Absorption.Z, 0.0f, 100.0f, 0.0f, "Absorption.Z", "Plane", planeIndex);
                 
                 safePlane.Emission.X = SanitizeFinite(safePlane.Emission.X, 0.0f, "Emission.X", "Plane", planeIndex);
                 safePlane.Emission.Y = SanitizeFinite(safePlane.Emission.Y, 0.0f, "Emission.Y", "Plane", planeIndex);
@@ -281,6 +287,9 @@ namespace RayTraceVS::Interop
                 safeBox.Transmission = ClampFinite(safeBox.Transmission, 0.0f, 1.0f, 0.0f, "Transmission", "Box", boxIndex);
                 safeBox.IOR = ClampFinite(safeBox.IOR, 1.0f, 4.0f, 1.5f, "IOR", "Box", boxIndex);
                 safeBox.Specular = ClampFinite(safeBox.Specular, 0.0f, 1.0f, 0.5f, "Specular", "Box", boxIndex);
+                safeBox.Absorption.X = ClampFinite(safeBox.Absorption.X, 0.0f, 100.0f, 0.0f, "Absorption.X", "Box", boxIndex);
+                safeBox.Absorption.Y = ClampFinite(safeBox.Absorption.Y, 0.0f, 100.0f, 0.0f, "Absorption.Y", "Box", boxIndex);
+                safeBox.Absorption.Z = ClampFinite(safeBox.Absorption.Z, 0.0f, 100.0f, 0.0f, "Absorption.Z", "Box", boxIndex);
                 
                 safeBox.Emission.X = SanitizeFinite(safeBox.Emission.X, 0.0f, "Emission.X", "Box", boxIndex);
                 safeBox.Emission.Y = SanitizeFinite(safeBox.Emission.Y, 0.0f, "Emission.Y", "Box", boxIndex);
@@ -398,6 +407,11 @@ namespace RayTraceVS::Interop
                     SanitizeFinite(instance.Emission.X, 0.0f, "Emission.X", "MeshInstance", i),
                     SanitizeFinite(instance.Emission.Y, 0.0f, "Emission.Y", "MeshInstance", i),
                     SanitizeFinite(instance.Emission.Z, 0.0f, "Emission.Z", "MeshInstance", i)
+                };
+                nativeInstance.material.absorption = {
+                    ClampFinite(instance.Absorption.X, 0.0f, 100.0f, 0.0f, "Absorption.X", "MeshInstance", i),
+                    ClampFinite(instance.Absorption.Y, 0.0f, 100.0f, 0.0f, "Absorption.Y", "MeshInstance", i),
+                    ClampFinite(instance.Absorption.Z, 0.0f, 100.0f, 0.0f, "Absorption.Z", "MeshInstance", i)
                 };
                 
                 if (nativeInstance.material.transmission >= 0.6f)

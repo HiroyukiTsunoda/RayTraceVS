@@ -76,7 +76,7 @@ cbuffer SceneConstants : register(b0)
     float Padding2;
 };
 
-// Sphere data (with PBR material)
+// Sphere data (with PBR material) - match GPUSphere layout
 struct Sphere
 {
     float3 Center;
@@ -86,9 +86,17 @@ struct Sphere
     float Roughness;
     float Transmission;
     float IOR;
+    float Specular;
+    float Padding1;
+    float Padding2;
+    float Padding3;
+    float3 Emission;
+    float Padding4;
+    float3 Absorption;
+    float Padding5;
 };
 
-// Plane data (with PBR material)
+// Plane data (with PBR material) - match GPUPlane layout
 struct Plane
 {
     float3 Position;
@@ -98,11 +106,15 @@ struct Plane
     float4 Color;
     float Transmission;
     float IOR;
+    float Specular;
     float Padding1;
+    float3 Emission;
     float Padding2;
+    float3 Absorption;
+    float Padding3;
 };
 
-// Box data (with PBR material)
+// Box data (with PBR material) - match GPUBox layout
 struct Box
 {
     float3 Center;
@@ -114,6 +126,14 @@ struct Box
     float Roughness;
     float Transmission;
     float IOR;
+    float Specular;
+    float Padding3;
+    float Padding4;
+    float Padding5;
+    float3 Emission;
+    float Padding6;
+    float3 Absorption;
+    float Padding7;
 };
 
 // Light type constants

@@ -491,10 +491,10 @@
       "Id": "9d7a6aa1-2ddb-4b27-91ce-81283d93a479",
       "Type": "FloatNode",
       "Title": "Float",
-      "PositionX": 955.2180193167833,
-      "PositionY": 1675.1897100416334,
+      "PositionX": 959.1204583411736,
+      "PositionY": 1693.7262954074872,
       "Properties": {
-        "Value": 0.8
+        "Value": 0.0
       }
     },
     {
@@ -588,8 +588,8 @@
       "Id": "1421c25d-c665-46e5-a66c-95e3cf7871ad",
       "Type": "MaterialBSDFNode",
       "Title": "Material BSDF",
-      "PositionX": 1751.7487271687592,
-      "PositionY": 1517.9642894541107,
+      "PositionX": 1750.7731174126618,
+      "PositionY": 1507.2325821370378,
       "Properties": {
         "BaseColor": {
           "X": 0.8,
@@ -606,6 +606,11 @@
           "Y": 0.0,
           "Z": 0.0,
           "W": 0.0
+        },
+        "Absorption": {
+          "X": 0.0,
+          "Y": 0.0,
+          "Z": 0.0
         }
       }
     },
@@ -613,10 +618,10 @@
       "Id": "aa2d2120-63f5-4cc0-baf5-1b93655bb36f",
       "Type": "FloatNode",
       "Title": "Float",
-      "PositionX": 959.6659350013194,
-      "PositionY": 1551.805226331171,
+      "PositionX": 960.641544757417,
+      "PositionY": 1561.5613238921464,
       "Properties": {
-        "Value": 0.0
+        "Value": 1.0
       }
     },
     {
@@ -773,6 +778,11 @@
           "Y": 0.0,
           "Z": 0.0,
           "W": 0.0
+        },
+        "Absorption": {
+          "X": 0.0,
+          "Y": 0.0,
+          "Z": 0.0
         }
       }
     },
@@ -794,9 +804,9 @@
       "Type": "FloatNode",
       "Title": "Float",
       "PositionX": 1385.5052239508511,
-      "PositionY": 1301.0478724519792,
+      "PositionY": 1300.0722626958818,
       "Properties": {
-        "Value": 1.1
+        "Value": 1.5
       }
     },
     {
@@ -821,6 +831,11 @@
           "Y": 0.0,
           "Z": 0.0,
           "W": 0.0
+        },
+        "Absorption": {
+          "X": 0.0,
+          "Y": 0.0,
+          "Z": 0.0
         }
       }
     },
@@ -963,6 +978,18 @@
             "Z": 0.0
           }
         }
+      }
+    },
+    {
+      "Id": "a51b02de-a879-4ad6-9e25-6ba1db75c1d4",
+      "Type": "Vector3Node",
+      "Title": "Vector3",
+      "PositionX": 1467.1766215714308,
+      "PositionY": 1701.8321198921715,
+      "Properties": {
+        "X": 0.0,
+        "Y": 0.0,
+        "Z": 0.0
       }
     }
   ],
@@ -1298,21 +1325,9 @@
       "InputSocketName": "Transform"
     },
     {
-      "OutputNodeId": "61dd6547-4fc4-4a4b-bf19-5d6b95b8a60d",
-      "OutputSocketName": "Material",
-      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-111111111111",
-      "InputSocketName": "Material"
-    },
-    {
       "OutputNodeId": "e95067f7-f296-46db-9088-6adaf7893999",
       "OutputSocketName": "Material",
       "InputNodeId": "dd915a63-04be-4e65-ae5a-efe250a86e3e",
-      "InputSocketName": "Material"
-    },
-    {
-      "OutputNodeId": "1421c25d-c665-46e5-a66c-95e3cf7871ad",
-      "OutputSocketName": "Material",
-      "InputNodeId": "d38ae94a-cab2-47e9-b086-7e48c9b4bdf0",
       "InputSocketName": "Material"
     },
     {
@@ -1374,12 +1389,30 @@
       "OutputSocketName": "Light",
       "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
       "InputSocketName": "Light3"
+    },
+    {
+      "OutputNodeId": "a51b02de-a879-4ad6-9e25-6ba1db75c1d4",
+      "OutputSocketName": "Vector",
+      "InputNodeId": "1421c25d-c665-46e5-a66c-95e3cf7871ad",
+      "InputSocketName": "Absorption"
+    },
+    {
+      "OutputNodeId": "61dd6547-4fc4-4a4b-bf19-5d6b95b8a60d",
+      "OutputSocketName": "Material",
+      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-111111111111",
+      "InputSocketName": "Material"
+    },
+    {
+      "OutputNodeId": "1421c25d-c665-46e5-a66c-95e3cf7871ad",
+      "OutputSocketName": "Material",
+      "InputNodeId": "d38ae94a-cab2-47e9-b086-7e48c9b4bdf0",
+      "InputSocketName": "Material"
     }
   ],
   "Viewport": {
-    "PanX": -1209.076894197332,
-    "PanY": -951.2321021943251,
-    "Zoom": 0.9400000000000001,
+    "PanX": -599.4175695238116,
+    "PanY": -548.1445014792655,
+    "Zoom": 0.8200000000000005,
     "IsLeftPanelVisible": true,
     "IsRightPanelVisible": true,
     "ExpanderStates": {

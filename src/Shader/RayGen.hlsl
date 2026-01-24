@@ -136,29 +136,69 @@ void RayGen()
         }
         
         // ============================================
-        // Loop-based ray tracing
+        // Queue-based ray tracing (RayGen-only TraceRay)
         // ============================================
-        float3 throughput = float3(1, 1, 1);
+        const uint maxQueueSize = 16;
+        const float throughputThreshold = 0.01;
+        PathState queue[maxQueueSize];
+        uint queueCount = 0;
+        uint processedRays = 0;
         float3 sampleColor = float3(0, 0, 0);
         float3 primaryContribution = float3(0, 0, 0);
-        float rayTMin = 0.001;
         bool primaryHitRecorded = false;
-        
-        bool loopTerminated = false;
         uint bounceCount = 0;
-        for (uint bounce = 0; bounce < maxBounces; bounce++)
+        
+        PathState primaryState;
+        primaryState.origin = rayOrigin;
+        primaryState.tMin = 0.001;
+        primaryState.direction = rayDir;
+        primaryState.depth = 0;
+        primaryState.throughput = float3(1, 1, 1);
+        primaryState.flags = 0;
+        primaryState.absorption = float3(0, 0, 0);
+        primaryState.padding = 0;
+        primaryState.skyBoost = 1.0;
+        primaryState.padding2 = float3(0, 0, 0);
+        queue[queueCount++] = primaryState;
+        
+        while (queueCount > 0)
         {
+            PathState state = queue[--queueCount];
+            if (processedRays >= maxRaysPerPixel && (state.flags & PATH_FLAG_SPECULAR) == 0)
+            {
+                continue;
+            }
+            processedRays++;
+            bounceCount = max(bounceCount, state.depth + 1);
+            
+            if (state.depth >= maxBounces)
+            {
+                float3 fallbackSky = state.throughput * GetSkyColor(state.direction);
+                sampleColor += fallbackSky;
+                if (state.depth == 0)
+                {
+                    primaryContribution += fallbackSky;
+                }
+                continue;
+            }
+            
+            float maxThroughput = max(state.throughput.r, max(state.throughput.g, state.throughput.b));
+            if (maxThroughput < throughputThreshold && (state.flags & PATH_FLAG_SPECULAR) == 0)
+            {
+                continue;
+            }
+            
             // レイディスクリプタ
             RayDesc ray;
-            ray.Origin = rayOrigin;
-            ray.Direction = rayDir;
-            ray.TMin = rayTMin;
+            ray.Origin = state.origin;
+            ray.Direction = state.direction;
+            ray.TMin = state.tMin;
             ray.TMax = 10000.0;
             
             // ペイロード初期化
             RayPayload payload;
             payload.color = float3(0, 0, 0);
-            payload.depth = bounce;
+            payload.depth = state.depth;
             payload.hit = 0;
             payload.padding = 0.0;
             payload.diffuseRadiance = float3(0, 0, 0);
@@ -181,6 +221,11 @@ void RayGen()
             payload.loopRayOrigin = float4(0, 0, 0, 0);
             payload.loopRayDirection = float4(0, 0, 0, 0.001);
             payload.loopThroughput = float4(1, 1, 1, 0);
+            payload.pathFlags = state.flags;
+            payload.pathAbsorption = state.absorption;
+            payload.pathSkyBoost = state.skyBoost;
+            payload.pathPadding = float3(0, 0, 0);
+            payload.childCount = 0;
             
             // レイトレーシング実行
             TraceRay(
@@ -192,10 +237,8 @@ void RayGen()
                 payload
             );
             
-            bounceCount = bounce + 1;
-
             // NaN/Inf guard: if any critical payload field is invalid,
-            // terminate the loop and fall back to sky for this ray.
+            // terminate the path and fall back to sky for this ray.
             bool invalidPayload =
                 HasNonFinite3(payload.color) ||
                 HasNonFinite4(payload.loopRayOrigin) ||
@@ -203,26 +246,32 @@ void RayGen()
                 HasNonFinite4(payload.loopThroughput);
             if (invalidPayload)
             {
-                float3 skyFallback = throughput * GetSkyColor(rayDir);
+                float3 skyFallback = state.throughput * GetSkyColor(state.direction);
                 sampleColor += skyFallback;
-                if (bounce == 0)
+                if (state.depth == 0)
                 {
                     primaryContribution += skyFallback;
                 }
-                loopTerminated = true;
-                break;
+                continue;
+            }
+            
+            // Beer-Lambert absorption inside medium (use hit distance)
+            if ((state.flags & PATH_FLAG_INSIDE) != 0 && payload.hit)
+            {
+                float3 absorption = exp(-state.absorption * payload.hitDistance);
+                state.throughput *= absorption;
             }
             
             // Accumulate color with throughput
-            float3 bounceColor = throughput * payload.color;
+            float3 bounceColor = state.throughput * payload.color;
             sampleColor += bounceColor;
-            if (bounce == 0)
+            if (state.depth == 0)
             {
                 primaryContribution += bounceColor;
             }
             
             // Record NRD data from first bounce only
-            if (bounce == 0 && !primaryHitRecorded)
+            if (state.depth == 0 && !primaryHitRecorded)
             {
                 accumulatedDiffuse += payload.diffuseRadiance;
                 accumulatedSpecular += payload.specularRadiance;
@@ -252,50 +301,55 @@ void RayGen()
                 primaryHitRecorded = true;
             }
             
-            // Check if we should continue tracing
-            if (payload.loopRayOrigin.w < 0.5)
+            // Enqueue children paths
+            uint childCount = min(payload.childCount, MAX_CHILD_PATHS);
+            [loop]
+            for (uint i = 0; i < childCount; i++)
             {
-                // Miss or terminal hit - add sky color if miss
-                if (!payload.hit)
+                PathState child = payload.childPaths[i];
+                child.throughput *= state.throughput;
+                float maxChildThroughput = max(child.throughput.r, max(child.throughput.g, child.throughput.b));
+                if (maxChildThroughput < throughputThreshold && (child.flags & PATH_FLAG_SPECULAR) == 0)
                 {
-                    float3 missSky = throughput * GetSkyColor(rayDir);
-                    sampleColor += missSky;
-                    if (bounce == 0)
+                    continue;
+                }
+                if (queueCount < maxQueueSize)
+                {
+                    queue[queueCount++] = child;
+                }
+                else if ((child.flags & PATH_FLAG_SPECULAR) != 0)
+                {
+                    // Keep specular chain: replace a non-specular entry if possible.
+                    // If all entries are specular, replace the weakest throughput.
+                    bool replaced = false;
+                    [loop]
+                    for (uint qi = 0; qi < queueCount; qi++)
                     {
-                        primaryContribution += missSky;
+                        if ((queue[qi].flags & PATH_FLAG_SPECULAR) == 0)
+                        {
+                            queue[qi] = child;
+                            replaced = true;
+                            break;
+                        }
+                    }
+                    if (!replaced)
+                    {
+                        uint replaceIndex = 0;
+                        float minThroughput = max(queue[0].throughput.r, max(queue[0].throughput.g, queue[0].throughput.b));
+                        [loop]
+                        for (uint qi = 1; qi < queueCount; qi++)
+                        {
+                            float t = max(queue[qi].throughput.r, max(queue[qi].throughput.g, queue[qi].throughput.b));
+                            if (t < minThroughput)
+                            {
+                                minThroughput = t;
+                                replaceIndex = qi;
+                            }
+                        }
+                        queue[replaceIndex] = child;
                     }
                 }
-                loopTerminated = true;
-                break;
             }
-            
-            // Update for next bounce
-            throughput *= payload.loopThroughput.xyz;
-            rayOrigin = payload.loopRayOrigin.xyz;
-            rayDir = payload.loopRayDirection.xyz;
-            rayTMin = payload.loopRayDirection.w;
-
-            // Russian roulette after 10 bounces to avoid TDR on high transmission
-            // (Allow up to 10 bounces without early termination)
-            if (bounce >= 10)
-            {
-                float survival = clamp(max(throughput.r, max(throughput.g, throughput.b)), 0.2, 0.95);
-                uint rrSeed = launchIndex.x * 1973u + launchIndex.y * 9277u + s * 26699u + bounce * 911u;
-                float rr = Hash(rrSeed);
-                if (rr > survival)
-                {
-                    loopTerminated = true;
-                    break;
-                }
-                throughput /= max(survival, 0.001);
-            }
-        }
-        
-        // If loop ended due to maxBounces (not break), add sky color as fallback
-        // This handles cases where glass keeps bouncing until limit
-        if (!loopTerminated && dot(throughput, float3(1, 1, 1)) > 0.01)
-        {
-            sampleColor += throughput * GetSkyColor(rayDir);
         }
         
         accumulatedColor += sampleColor;

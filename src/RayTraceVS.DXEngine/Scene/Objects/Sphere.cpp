@@ -13,6 +13,7 @@ namespace RayTraceVS::DXEngine
         material.ior = 1.5f;
         material.specular = 0.5f;
         material.emission = XMFLOAT3(0.0f, 0.0f, 0.0f);
+        material.absorption = XMFLOAT3(0.0f, 0.0f, 0.0f);
     }
 
     Sphere::Sphere(const XMFLOAT3& center, float radius)
@@ -26,5 +27,6 @@ namespace RayTraceVS::DXEngine
         material.ior = 1.5f;
         material.specular = 0.5f;
         material.emission = XMFLOAT3(0.0f, 0.0f, 0.0f);
+        material.absorption = XMFLOAT3(0.0f, 0.0f, 0.0f);
     }
 }

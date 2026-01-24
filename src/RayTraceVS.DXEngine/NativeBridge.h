@@ -45,6 +45,7 @@ namespace RayTraceVS::Interop::Bridge
         float ior;          // Index of Refraction (1.5 for glass)
         float specular;     // Specular intensity (0.0 = none, 1.0 = full)
         Vector3Native emission; // Emissive color (self-illumination)
+        Vector3Native absorption; // Beer-Lambert sigmaA
     };
 
     struct CameraDataNative

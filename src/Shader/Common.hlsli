@@ -40,6 +40,28 @@ struct PhotonHashCell
 };
 
 // レイペイロード (with NRD fields for denoising)
+// Queue-based path state for RayGen
+#define MAX_CHILD_PATHS 2
+#define PATH_FLAG_INSIDE 0x1
+#define PATH_FLAG_SPECULAR 0x2
+
+#define SKY_BOOST_GLASS 1.2
+#define SKY_BOOST_METAL 1.1
+
+struct PathState
+{
+    float3 origin;
+    float tMin;
+    float3 direction;
+    uint depth;
+    float3 throughput;
+    uint flags; // PATH_FLAG_*
+    float3 absorption; // sigmaA for current medium
+    uint padding;
+    float skyBoost; // Miss-only sky boost for specular paths
+    float3 padding2;
+};
+
 struct RayPayload
 {
     // Basic fields
@@ -80,6 +102,16 @@ struct RayPayload
     float4 loopRayOrigin;       // xyz = nextRayOrigin, w = continueTrace
     float4 loopRayDirection;    // xyz = nextRayDirection, w = nextRayTMin
     float4 loopThroughput;      // xyz = throughput, w = unused
+
+    // Current path state (input for hit shaders)
+    uint pathFlags;
+    float3 pathAbsorption;      // sigmaA for current medium
+    float pathSkyBoost;         // Miss-only sky boost
+    float3 pathPadding;
+
+    // Queue-based ray tracing (children paths for RayGen)
+    uint childCount;
+    PathState childPaths[MAX_CHILD_PATHS];
 };
 
 // シャドウレイ用ペイロード
@@ -161,6 +193,8 @@ struct SphereData
     float padding3;     // 4  -> 64
     float3 emission;    // 12
     float padding4;     // 4  -> 80
+    float3 absorption;  // 12 (sigmaA)
+    float padding5;     // 4  -> 96
 };
 
 // 平面データ (with PBR material, must match C++ GPUPlane) - 80 bytes
@@ -177,6 +211,8 @@ struct PlaneData
     float padding1;     // 4  -> 64
     float3 emission;    // 12
     float padding2;     // 4  -> 80
+    float3 absorption;  // 12 (sigmaA)
+    float padding3;     // 4  -> 96
 };
 
 // ボックスデータ (with PBR material and rotation, must match C++ GPUBox) - 144 bytes
@@ -205,6 +241,8 @@ struct BoxData
     float padding8;     // 4  -> 128
     float3 emission;    // 12
     float padding9;     // 4  -> 144
+    float3 absorption;  // 12 (sigmaA)
+    float padding10;    // 4  -> 160
 };
 
 // ライトデータ (must match C++ GPULight)
@@ -326,6 +364,8 @@ struct MeshMaterial
     float padding2;     // 4
     float padding3;     // 4
     float padding4;     // 4 -> 64
+    float3 absorption;  // 12 (sigmaA)
+    float padding5;     // 4 -> 80
 };
 
 // メッシュインスタンス情報（TLASインスタンスごと）- 8 bytes
@@ -517,8 +557,8 @@ float3 GetSkyColor(float3 direction)
         skyColor *= lerp(0.8, 0.4, groundFade);
     }
     
-    // Reduce sky intensity to avoid blown-out highlights under exposure
-    return skyColor * 0.7;
+    // Keep sky intensity; exposure/tone-map handles brightness
+    return skyColor;
 }
 
 // ============================================
@@ -769,6 +809,11 @@ float TraceSingleShadowRay(float3 rayOrigin, float3 rayDir, float maxDist, out f
         shadowPayload.loopRayOrigin = float4(0, 0, 0, 0);
         shadowPayload.loopRayDirection = float4(0, 0, 0, 0);
         shadowPayload.loopThroughput = float4(1, 1, 1, 0);
+        shadowPayload.pathFlags = 0;
+        shadowPayload.pathAbsorption = float3(0, 0, 0);
+        shadowPayload.pathSkyBoost = 1.0;
+        shadowPayload.pathPadding = float3(0, 0, 0);
+        shadowPayload.childCount = 0;
         
         TraceRay(SceneBVH, 
                  RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,

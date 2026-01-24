@@ -41,6 +41,7 @@ namespace RayTraceVS::Interop::Bridge
         material.ior = m.ior;
         material.specular = m.specular;
         material.emission = ToXMFLOAT3(m.emission);
+        material.absorption = ToXMFLOAT3(m.absorption);
         return material;
     }
 
@@ -213,6 +214,7 @@ namespace RayTraceVS::Interop::Bridge
         instance.material.ior = meshInstance.material.ior;
         instance.material.specular = meshInstance.material.specular;
         instance.material.emission = ToXMFLOAT3(meshInstance.material.emission);
+        instance.material.absorption = ToXMFLOAT3(meshInstance.material.absorption);
         
         scene->AddMeshInstance(instance);
     }

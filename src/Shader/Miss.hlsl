@@ -7,7 +7,7 @@ void Miss(inout RayPayload payload)
     float3 rayDir = normalize(WorldRayDirection());
     
     // Use the shared GetSkyColor function for consistent sky rendering
-    float3 sky = GetSkyColor(rayDir);
+    float3 sky = GetSkyColor(rayDir) * payload.pathSkyBoost;
     
     payload.color = sky;
     payload.diffuseRadiance = sky;  // NRD用：空の色をDiffuseに書き込む
