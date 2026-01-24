@@ -13,6 +13,7 @@ namespace RayTraceVS::DXEngine
         material.ior = 1.0f;
         material.specular = 0.5f;
         material.emission = XMFLOAT3(0.0f, 0.0f, 0.0f);
+        material.absorption = XMFLOAT3(0.0f, 0.0f, 0.0f);
     }
 
     Plane::Plane(const XMFLOAT3& position, const XMFLOAT3& normal)
@@ -26,5 +27,6 @@ namespace RayTraceVS::DXEngine
         material.ior = 1.0f;
         material.specular = 0.5f;
         material.emission = XMFLOAT3(0.0f, 0.0f, 0.0f);
+        material.absorption = XMFLOAT3(0.0f, 0.0f, 0.0f);
     }
 }

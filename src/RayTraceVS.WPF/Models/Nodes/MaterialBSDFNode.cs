@@ -17,6 +17,7 @@ namespace RayTraceVS.WPF.Models.Nodes
         private float _transmission = 0.0f;
         private float _ior = 1.5f;
         private Vector4 _emission = Vector4.Zero;
+        private Vector3 _absorption = Vector3.Zero;
 
         // ベースカラー（基本色）
         public Vector4 BaseColor
@@ -100,6 +101,21 @@ namespace RayTraceVS.WPF.Models.Nodes
             }
         }
 
+        // 吸収係数（Beer-Lambert sigmaA）
+        public Vector3 Absorption
+        {
+            get => _absorption;
+            set
+            {
+                if (_absorption != value)
+                {
+                    _absorption = value;
+                    OnPropertyChanged(nameof(Absorption));
+                    MarkDirty();
+                }
+            }
+        }
+
         public MaterialBSDFNode() : base("Material BSDF", NodeCategory.Material)
         {
             // 入力ソケット
@@ -109,6 +125,7 @@ namespace RayTraceVS.WPF.Models.Nodes
             AddInputSocket("Transmission", SocketType.Float);
             AddInputSocket("IOR", SocketType.Float);
             AddInputSocket("Emission", SocketType.Color);
+            AddInputSocket("Absorption", SocketType.Vector3);
 
             // 出力ソケット
             AddOutputSocket("Material", SocketType.Material);
@@ -127,12 +144,19 @@ namespace RayTraceVS.WPF.Models.Nodes
             
             var emissionInput = GetInputValue<Vector4?>("Emission", inputValues);
             var emission = emissionInput ?? Emission;
+            
+            var absorptionInput = GetInputValue<Vector3?>("Absorption", inputValues);
+            var absorption = absorptionInput ?? Absorption;
 
             // 値の範囲を制限
             metallic = Math.Clamp(metallic, 0.0f, 1.0f);
             roughness = Math.Clamp(roughness, 0.0f, 1.0f);
             transmission = Math.Clamp(transmission, 0.0f, 1.0f);
             ior = Math.Max(ior, 1.0f);
+            absorption = new Vector3(
+                Math.Max(0.0f, absorption.X),
+                Math.Max(0.0f, absorption.Y),
+                Math.Max(0.0f, absorption.Z));
 
             return new MaterialData
             {
@@ -141,7 +165,8 @@ namespace RayTraceVS.WPF.Models.Nodes
                 Roughness = roughness,
                 Transmission = transmission,
                 IOR = ior,
-                Emission = emission
+                Emission = emission,
+                Absorption = absorption
             };
         }
     }

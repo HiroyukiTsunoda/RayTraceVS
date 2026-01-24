@@ -439,7 +439,7 @@ namespace RayTraceVS.WPF.Views
         {
             if (e.Key == System.Windows.Input.Key.F2)
             {
-                photonDebugMode = (photonDebugMode + 1) % 3;
+                photonDebugMode = (photonDebugMode + 1) % 5;
                 UpdateInfo();
                 RequestRenderRefresh();
                 e.Handled = true;

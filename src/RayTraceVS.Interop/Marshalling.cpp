@@ -50,6 +50,7 @@ namespace RayTraceVS::Interop
         native.material.ior = managedSphere.IOR;
         native.material.specular = managedSphere.Specular;
         native.material.emission = { managedSphere.Emission.X, managedSphere.Emission.Y, managedSphere.Emission.Z };
+        native.material.absorption = { managedSphere.Absorption.X, managedSphere.Absorption.Y, managedSphere.Absorption.Z };
         return native;
     }
 
@@ -65,6 +66,7 @@ namespace RayTraceVS::Interop
         native.material.ior = managedPlane.IOR;
         native.material.specular = managedPlane.Specular;
         native.material.emission = { managedPlane.Emission.X, managedPlane.Emission.Y, managedPlane.Emission.Z };
+        native.material.absorption = { managedPlane.Absorption.X, managedPlane.Absorption.Y, managedPlane.Absorption.Z };
         return native;
     }
 
@@ -84,6 +86,7 @@ namespace RayTraceVS::Interop
         native.material.ior = managedBox.IOR;
         native.material.specular = managedBox.Specular;
         native.material.emission = { managedBox.Emission.X, managedBox.Emission.Y, managedBox.Emission.Z };
+        native.material.absorption = { managedBox.Absorption.X, managedBox.Absorption.Y, managedBox.Absorption.Z };
         return native;
     }
 }

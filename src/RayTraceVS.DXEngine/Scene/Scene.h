@@ -35,6 +35,7 @@ namespace RayTraceVS::DXEngine
         float ior = 1.5f;
         float specular = 0.5f;
         DirectX::XMFLOAT3 emission = { 0.0f, 0.0f, 0.0f };
+        DirectX::XMFLOAT3 absorption = { 0.0f, 0.0f, 0.0f };
     };
 
     // Transform for a mesh instance

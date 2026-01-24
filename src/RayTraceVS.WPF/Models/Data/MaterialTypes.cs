@@ -15,6 +15,7 @@ namespace RayTraceVS.WPF.Models.Data
         public float IOR;
         public Vector4 Emission;
         public float Specular;  // Specular intensity (0.0 = none, 1.0 = full)
+        public Vector3 Absorption; // Beer-Lambert sigmaA
 
         /// <summary>
         /// デフォルトマテリアル（白色Diffuse）
@@ -27,7 +28,8 @@ namespace RayTraceVS.WPF.Models.Data
             Transmission = 0.0f,
             IOR = 1.5f,
             Emission = Vector4.Zero,
-            Specular = 0.5f
+            Specular = 0.5f,
+            Absorption = Vector3.Zero
         };
     }
 }

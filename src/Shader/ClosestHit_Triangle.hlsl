@@ -41,6 +41,7 @@ void ClosestHit_Triangle(inout RayPayload payload, in BuiltInTriangleIntersectio
     payload.hit = 1;
     payload.hitDistance = RayTCurrent();
     payload.loopRayOrigin.w = 0.0;  // Default: terminate loop unless overridden
+    payload.childCount = 0;
     const bool debugSimplifyTriangle = false;
     
     // InstanceID() でインスタンス情報を取得
@@ -150,19 +151,41 @@ void ClosestHit_Triangle(inout RayPayload payload, in BuiltInTriangleIntersectio
     float ior = mat.ior;
     float specular = mat.specular;
     float3 emission = mat.emission;
+    float3 absorption = mat.absorption;
+
+    // Debug: visualize material values as grayscale
+    if (payload.depth == 0 && Scene.PhotonDebugMode == 3)
+    {
+        float t = saturate(transmission);
+        payload.color = t.xxx;
+        payload.diffuseRadiance = t.xxx;
+        payload.specularRadiance = float3(0, 0, 0);
+        payload.loopRayOrigin.w = 0.0;
+        return;
+    }
+    if (payload.depth == 0 && Scene.PhotonDebugMode == 4)
+    {
+        float m = saturate(metallic);
+        payload.color = m.xxx;
+        payload.diffuseRadiance = m.xxx;
+        payload.specularRadiance = float3(0, 0, 0);
+        payload.loopRayOrigin.w = 0.0;
+        return;
+    }
     
     // Treat transmission as glass regardless of metallic to avoid parameter lock
     bool isGlass = (transmission > 0.01);
     
     // Determine if ray is entering or exiting using FACE normal (works for thin shells)
     bool frontFace = dot(rayDir, faceNormal) < 0.0;
+    bool isInside = (payload.pathFlags & PATH_FLAG_INSIDE) != 0;
     // Final shading normal (ensure it faces the ray)
     float3 N = frontFace ? normal : -normal;
     
     // Glass with Fresnel - Loop-based stochastic selection
     if (isGlass)
     {
-        bool entering = frontFace;
+        bool entering = !isInside;
         float eta = entering ? (1.0 / ior) : ior;
         
         float cosTheta = saturate(dot(-rayDir, N));
@@ -203,41 +226,58 @@ void ClosestHit_Triangle(inout RayPayload payload, in BuiltInTriangleIntersectio
             fresnel = 1.0;
         }
         
-        // Stochastic selection for loop-based tracing
-        uint choiceSeed = seed ^ 0x9E3779B9u;
-        float choice = RandomFloat(choiceSeed);
-        bool chooseReflect = (choice < fresnel) || tir;
+        // Deterministic split for loop-based tracing (reflection + refraction)
+        float3 reflectThroughput = fresnel.xxx;
+        float transmittance = saturate(transmission);
+        float tintStrength = (payload.depth == 0) ? 1.0 : 0.7;
+        float3 refractThroughput = (1.0 - fresnel) * transmittance * lerp(float3(1, 1, 1), color.rgb, tintStrength);
+        reflectThroughput = clamp(reflectThroughput, 0.0, 1.0);
+        refractThroughput = clamp(refractThroughput, 0.0, 1.0);
         
-        // Set up next ray for loop continuation (traced path)
-        if (chooseReflect)
+        uint childCount = 0;
+        // Reflection child
+        PathState reflectChild;
+        reflectChild.origin = hitPosition + N * 0.002;
+        reflectChild.tMin = 0.001;
+        reflectChild.direction = reflectDir;
+        reflectChild.depth = payload.depth + 1;
+        reflectChild.throughput = reflectThroughput;
+        reflectChild.flags = payload.pathFlags | PATH_FLAG_SPECULAR;
+        reflectChild.absorption = payload.pathAbsorption;
+        reflectChild.padding = 0;
+        reflectChild.skyBoost = SKY_BOOST_GLASS;
+        reflectChild.padding2 = float3(0, 0, 0);
+        payload.childPaths[childCount++] = reflectChild;
+        
+        // Refraction child (skip when TIR)
+        if (!tir)
         {
-            // Reflection path
-            payload.loopRayOrigin.xyz = hitPosition + N * 0.002;
-            payload.loopRayDirection.xyz = reflectDir;
-            payload.loopRayDirection.w = 0.001;
-            payload.loopThroughput.xyz = float3(1, 1, 1);
-            payload.loopThroughput.xyz = clamp(payload.loopThroughput.xyz, 0.0, 1.0);
+            PathState refractChild;
+            refractChild.origin = hitPosition - N * 0.002;
+            refractChild.tMin = 0.001;
+            refractChild.direction = refractDir;
+            refractChild.depth = payload.depth + 1;
+            refractChild.throughput = refractThroughput;
+            if (entering)
+            {
+                refractChild.flags = payload.pathFlags | PATH_FLAG_INSIDE | PATH_FLAG_SPECULAR;
+                refractChild.absorption = absorption;
+            }
+            else
+            {
+                refractChild.flags = (payload.pathFlags & ~PATH_FLAG_INSIDE) | PATH_FLAG_SPECULAR;
+                refractChild.absorption = float3(0, 0, 0);
+            }
+            refractChild.padding = 0;
+            refractChild.skyBoost = SKY_BOOST_GLASS;
+            refractChild.padding2 = float3(0, 0, 0);
+            payload.childPaths[childCount++] = refractChild;
         }
-        else
-        {
-            // Refraction path - offset in opposite direction of normal
-            payload.loopRayOrigin.xyz = hitPosition - N * 0.002;
-            payload.loopRayDirection.xyz = refractDir;
-            payload.loopRayDirection.w = 0.001;
-            float tintStrength = (payload.depth == 0) ? 1.0 : 0.7;
-            payload.loopThroughput.xyz = lerp(float3(1, 1, 1), color.rgb, tintStrength);
-            payload.loopThroughput.xyz = clamp(payload.loopThroughput.xyz, 0.0, 1.0);
-        }
-        if (any(!isfinite(payload.loopThroughput.xyz)) || any(!isfinite(payload.loopRayDirection.xyz)))
-        {
-            payload.color = GetSkyColor(rayDir);
-            payload.loopRayOrigin.w = 0.0;
-            return;
-        }
+        payload.childCount = childCount;
         
         // Specular highlight (direct lighting on glass surface)
         float3 specularHighlight = float3(0, 0, 0);
-        if (specular > 0.01 && payload.depth == 0)
+        if (specular > 0.01)
         {
             float3 viewDir = -rayDir;
             for (uint li = 0; li < Scene.NumLights; li++)
@@ -273,9 +313,8 @@ void ClosestHit_Triangle(inout RayPayload payload, in BuiltInTriangleIntersectio
             specularHighlight *= specular * (1.0 - roughness);
         }
         
-        // Primary ray: loop-based continuation
+        // Primary ray: queue-based continuation
         payload.color = specularHighlight;
-        payload.loopRayOrigin.w = 1.0;  // Continue tracing
         
         // NRD outputs for glass (primary rays only)
         if (payload.depth == 0)
@@ -310,16 +349,26 @@ void ClosestHit_Triangle(inout RayPayload payload, in BuiltInTriangleIntersectio
         float2 reflectSeed = hitPosition.xy * 1000.0 + float2(payload.depth, payload.depth * 0.5);
         float3 perturbedDir = PerturbReflection(reflectDir, N, roughness, reflectSeed);
         
-        // Loop-based reflection: trace in RayGen, keep local contribution minimal
+        // Queue-based reflection: trace in RayGen, keep local contribution minimal
         float NdotV = saturate(dot(N, V));
         float3 F = Fresnel_Schlick3(NdotV, F0);
         float reflectScale = (1.0 - roughness * 0.5);
+        // Boost secondary metal reflections a bit to avoid overly dark chains
+        float boost = (payload.depth > 0) ? 1.5 : 1.0;
         
-        payload.loopRayOrigin.xyz = hitPosition + N * 0.002;
-        payload.loopRayDirection.xyz = perturbedDir;
-        payload.loopRayDirection.w = 0.001;
-        payload.loopThroughput.xyz = F * reflectScale;
-        payload.loopRayOrigin.w = 1.0;
+        PathState reflectChild;
+        reflectChild.origin = hitPosition + N * 0.002;
+        reflectChild.tMin = 0.001;
+        reflectChild.direction = perturbedDir;
+        reflectChild.depth = payload.depth + 1;
+        reflectChild.throughput = F * reflectScale * boost;
+        reflectChild.flags = payload.pathFlags | PATH_FLAG_SPECULAR;
+        reflectChild.absorption = payload.pathAbsorption;
+        reflectChild.padding = 0;
+        reflectChild.skyBoost = SKY_BOOST_METAL;
+        reflectChild.padding2 = float3(0, 0, 0);
+        payload.childPaths[0] = reflectChild;
+        payload.childCount = 1;
     }
     
     // Direct lighting
@@ -334,8 +383,8 @@ void ClosestHit_Triangle(inout RayPayload payload, in BuiltInTriangleIntersectio
     bestShadowForSigma.shadowColor = float3(1, 1, 1);
     float bestShadowWeight = -1.0;
     
-    // Skip direct lighting for pure metal (reflection handled by loop tracing)
-    bool skipDirectLighting = (metallic > 0.99 && transmission <= 0.01);
+    // Keep direct lighting even for pure metal to preserve color in reflections.
+    bool skipDirectLighting = false;
 
     // Process lights for primary and secondary hits
     if (Scene.NumLights > 0 && !skipDirectLighting)
@@ -490,21 +539,12 @@ void ClosestHit_Triangle(inout RayPayload payload, in BuiltInTriangleIntersectio
         }
     }
     
-    float3 finalColor;
-    if (metallic > 0.99 && transmission <= 0.01)
-    {
-        // Pure metal: reflection comes from loop, keep local lighting minimal
-        finalColor = emission;
-    }
-    else
-    {
-        finalColor = ambient 
-                   + directDiffuse * directWeight 
-                   + directSpecular 
-                   + reflectColor * reflectionWeight
-                   + photonCaustic
-                   + emission;
-    }
+    float3 finalColor = ambient 
+                      + directDiffuse * directWeight 
+                      + directSpecular 
+                      + reflectColor * reflectionWeight
+                      + photonCaustic
+                      + emission;
     
     payload.color = saturate(finalColor);
     
@@ -512,24 +552,11 @@ void ClosestHit_Triangle(inout RayPayload payload, in BuiltInTriangleIntersectio
     if (payload.depth == 0)
     {
         float hitDistance = RayTCurrent();
-        bool isPureMetal = (metallic >= 0.5);
-        if (isPureMetal)
-        {
-            // Reflection comes from loop (secondary), keep primary local output minimal
-            payload.diffuseRadiance = emission;
-            payload.specularRadiance = float3(0, 0, 0);
-            payload.shadowVisibility = 1.0;
-            payload.shadowPenumbra = 0.0;
-            payload.shadowDistance = NRD_FP16_MAX;
-        }
-        else
-        {
-            payload.diffuseRadiance = ambient + directDiffuse * directWeight + reflectColor * reflectionWeight + photonCaustic + emission;
-            payload.specularRadiance = directSpecular;
-            payload.shadowVisibility = bestShadowForSigma.visibility;
-            payload.shadowPenumbra = bestShadowForSigma.penumbra;
-            payload.shadowDistance = bestShadowForSigma.occluderDistance;
-        }
+        payload.diffuseRadiance = ambient + directDiffuse * directWeight + reflectColor * reflectionWeight + photonCaustic + emission;
+        payload.specularRadiance = directSpecular;
+        payload.shadowVisibility = bestShadowForSigma.visibility;
+        payload.shadowPenumbra = bestShadowForSigma.penumbra;
+        payload.shadowDistance = bestShadowForSigma.occluderDistance;
         payload.hitDistance = hitDistance;
         payload.worldNormal = N;
         payload.roughness = roughness;

@@ -222,6 +222,7 @@ namespace RayTraceVS.WPF.Services
                     properties["Transmission"] = material.Transmission;
                     properties["IOR"] = material.IOR;
                     properties["Emission"] = material.Emission;
+                    properties["Absorption"] = material.Absorption;
                     break;
 
                 case ColorNode color:
@@ -429,6 +430,8 @@ namespace RayTraceVS.WPF.Services
                         material.IOR = Convert.ToSingle(ior);
                     if (properties.TryGetValue("Emission", out var emission))
                         material.Emission = ConvertToVector4(emission);
+                    if (properties.TryGetValue("Absorption", out var absorption))
+                        material.Absorption = ConvertToVector3(absorption);
                     break;
 
                 case ColorNode color:

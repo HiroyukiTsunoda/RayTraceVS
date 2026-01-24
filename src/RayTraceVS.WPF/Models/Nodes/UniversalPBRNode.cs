@@ -93,7 +93,8 @@ namespace RayTraceVS.WPF.Models.Nodes
                 Transmission = 0.0f,       // 不透明（Phase 2で拡張予定）
                 IOR = 1.5f,
                 Emission = new Vector4(emissive.X, emissive.Y, emissive.Z, 1.0f),
-                Specular = 0.5f            // Universal PBRではF0が暗黙計算されるため使用しない
+                Specular = 0.5f,           // Universal PBRではF0が暗黙計算されるため使用しない
+                Absorption = Vector3.Zero
             };
         }
     }

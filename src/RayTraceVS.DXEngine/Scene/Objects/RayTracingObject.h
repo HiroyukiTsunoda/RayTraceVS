@@ -22,6 +22,7 @@ namespace RayTraceVS::DXEngine
         float ior;          // Index of Refraction (default 1.5 for glass)
         float specular;     // Specular intensity (0.0 = none, 1.0 = full)
         XMFLOAT3 emission;  // Emissive color (self-illumination)
+        XMFLOAT3 absorption; // Beer-Lambert sigmaA
     };
 
     class RayTracingObject
