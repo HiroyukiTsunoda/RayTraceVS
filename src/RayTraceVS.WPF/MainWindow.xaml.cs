@@ -189,37 +189,11 @@ namespace RayTraceVS.WPF
                 return;
             }
             
-            // Ctrl+Shift+Z: Redo（Ctrl+Zより先に判定）
-            if (e.Key == System.Windows.Input.Key.Z && 
-                e.KeyboardDevice.Modifiers == (System.Windows.Input.ModifierKeys.Control | System.Windows.Input.ModifierKeys.Shift))
-            {
-                if (viewModel != null && viewModel.CommandManager.CanRedo)
-                {
-                    viewModel.CommandManager.Redo();
-                    // 接続線とノード値の更新
-                    NodeEditor.RefreshConnectionLines();
-                    NodeEditor.RefreshNodeTextBoxValues();
-                }
-                e.Handled = true;
-                return;
-            }
-            
             // キーボードショートカット
             if (e.KeyboardDevice.Modifiers == System.Windows.Input.ModifierKeys.Control)
             {
                 switch (e.Key)
                 {
-                    case System.Windows.Input.Key.Z:
-                        // Ctrl+Z: Undo
-                        if (viewModel != null && viewModel.CommandManager.CanUndo)
-                        {
-                            viewModel.CommandManager.Undo();
-                            // 接続線とノード値の更新
-                            NodeEditor.RefreshConnectionLines();
-                            NodeEditor.RefreshNodeTextBoxValues();
-                        }
-                        e.Handled = true;
-                        break;
                     case System.Windows.Input.Key.N:
                         NewScene_Click(this, new RoutedEventArgs());
                         e.Handled = true;
@@ -254,6 +228,36 @@ namespace RayTraceVS.WPF
         private void SaveAsCommand_Executed(object sender, System.Windows.Input.ExecutedRoutedEventArgs e)
         {
             SaveSceneAs_Click(this, new RoutedEventArgs());
+        }
+
+        private void UndoCommand_CanExecute(object sender, System.Windows.Input.CanExecuteRoutedEventArgs e)
+        {
+            e.CanExecute = viewModel != null && viewModel.CommandManager.CanUndo;
+        }
+
+        private void UndoCommand_Executed(object sender, System.Windows.Input.ExecutedRoutedEventArgs e)
+        {
+            if (viewModel != null && viewModel.CommandManager.CanUndo)
+            {
+                viewModel.CommandManager.Undo();
+                NodeEditor.RefreshConnectionLines();
+                NodeEditor.RefreshNodeTextBoxValues();
+            }
+        }
+
+        private void RedoCommand_CanExecute(object sender, System.Windows.Input.CanExecuteRoutedEventArgs e)
+        {
+            e.CanExecute = viewModel != null && viewModel.CommandManager.CanRedo;
+        }
+
+        private void RedoCommand_Executed(object sender, System.Windows.Input.ExecutedRoutedEventArgs e)
+        {
+            if (viewModel != null && viewModel.CommandManager.CanRedo)
+            {
+                viewModel.CommandManager.Redo();
+                NodeEditor.RefreshConnectionLines();
+                NodeEditor.RefreshNodeTextBoxValues();
+            }
         }
         
         private void LoadLastScene()
