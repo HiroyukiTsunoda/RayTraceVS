@@ -2,10 +2,20 @@ using RayTraceVS.WPF.Utils;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Linq;
 
 namespace RayTraceVS.WPF.Models
 {
+    /// <summary>
+    /// ノードグラフ操作時の例外
+    /// </summary>
+    public class NodeGraphException : Exception
+    {
+        public NodeGraphException(string message) : base(message) { }
+        public NodeGraphException(string message, Exception innerException) : base(message, innerException) { }
+    }
+
     public class NodeGraph
     {
         private readonly Dictionary<Guid, Node> nodes;
@@ -40,38 +50,79 @@ namespace RayTraceVS.WPF.Models
 
         public void AddNode(Node node)
         {
-            if (!nodes.ContainsKey(node.Id))
+            if (node == null)
             {
-                nodes[node.Id] = node;
-                
-                // ノードのプロパティ変更を監視
-                node.PropertyChanged += OnNodePropertyChanged;
-                
-                NotifySceneChanged();
+                throw new ArgumentNullException(nameof(node), "追加するノードがnullです");
+            }
+
+            try
+            {
+                if (!nodes.ContainsKey(node.Id))
+                {
+                    nodes[node.Id] = node;
+                    
+                    // ノードのプロパティ変更を監視
+                    node.PropertyChanged += OnNodePropertyChanged;
+                    
+                    NotifySceneChanged();
+                }
+                else
+                {
+                    Debug.WriteLine($"NodeGraph.AddNode: ノード {node.Id} ({node.Title}) は既に存在します");
+                }
+            }
+            catch (Exception ex) when (ex is not ArgumentNullException)
+            {
+                Debug.WriteLine($"NodeGraph.AddNode: エラー - {ex.Message}");
+                throw new NodeGraphException($"ノード '{node.Title}' の追加に失敗しました", ex);
             }
         }
 
         public void RemoveNode(Node node)
         {
-            if (nodes.ContainsKey(node.Id))
+            if (node == null)
             {
-                // ノードのプロパティ変更監視を解除
-                node.PropertyChanged -= OnNodePropertyChanged;
-                
-                // ノードに接続されている接続を削除
-                var connectionsToRemove = connections.Values
-                    .Where(c => c.InputSocket?.ParentNode?.Id == node.Id || 
-                               c.OutputSocket?.ParentNode?.Id == node.Id)
-                    .ToList();
+                throw new ArgumentNullException(nameof(node), "削除するノードがnullです");
+            }
 
-                foreach (var connection in connectionsToRemove)
+            try
+            {
+                if (nodes.ContainsKey(node.Id))
                 {
-                    connection.Dispose(); // IDisposable対応
-                    connections.Remove(connection.Id);
-                }
+                    // ノードのプロパティ変更監視を解除
+                    node.PropertyChanged -= OnNodePropertyChanged;
+                    
+                    // ノードに接続されている接続を削除
+                    var connectionsToRemove = connections.Values
+                        .Where(c => c.InputSocket?.ParentNode?.Id == node.Id || 
+                                   c.OutputSocket?.ParentNode?.Id == node.Id)
+                        .ToList();
 
-                nodes.Remove(node.Id);
-                NotifySceneChanged();
+                    foreach (var connection in connectionsToRemove)
+                    {
+                        try
+                        {
+                            connection.Dispose(); // IDisposable対応
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"NodeGraph.RemoveNode: 接続 {connection.Id} のDisposeに失敗 - {ex.Message}");
+                        }
+                        connections.Remove(connection.Id);
+                    }
+
+                    nodes.Remove(node.Id);
+                    NotifySceneChanged();
+                }
+                else
+                {
+                    Debug.WriteLine($"NodeGraph.RemoveNode: ノード {node.Id} ({node.Title}) は存在しません");
+                }
+            }
+            catch (Exception ex) when (ex is not ArgumentNullException)
+            {
+                Debug.WriteLine($"NodeGraph.RemoveNode: エラー - {ex.Message}");
+                throw new NodeGraphException($"ノード '{node.Title}' の削除に失敗しました", ex);
             }
         }
 
@@ -140,33 +191,81 @@ namespace RayTraceVS.WPF.Models
 
         public void AddConnection(NodeConnection connection)
         {
-            if (!connections.ContainsKey(connection.Id))
+            if (connection == null)
             {
-                connections[connection.Id] = connection;
-                
-                // 接続が追加されたら、入力側のノードをDirtyにする
-                if (connection.InputSocket?.ParentNode != null)
+                throw new ArgumentNullException(nameof(connection), "追加する接続がnullです");
+            }
+
+            try
+            {
+                if (!connections.ContainsKey(connection.Id))
                 {
-                    _dirtyTracker.MarkDirty(connection.InputSocket.ParentNode);
+                    // 接続の妥当性を検証
+                    if (connection.OutputSocket == null || connection.InputSocket == null)
+                    {
+                        throw new NodeGraphException("接続のソケットが不正です（OutputSocketまたはInputSocketがnull）");
+                    }
+
+                    connections[connection.Id] = connection;
+                    
+                    // 接続が追加されたら、入力側のノードをDirtyにする
+                    if (connection.InputSocket?.ParentNode != null)
+                    {
+                        _dirtyTracker.MarkDirty(connection.InputSocket.ParentNode);
+                    }
+                    
+                    NotifySceneChanged();
                 }
-                
-                NotifySceneChanged();
+                else
+                {
+                    Debug.WriteLine($"NodeGraph.AddConnection: 接続 {connection.Id} は既に存在します");
+                }
+            }
+            catch (Exception ex) when (ex is not ArgumentNullException && ex is not NodeGraphException)
+            {
+                Debug.WriteLine($"NodeGraph.AddConnection: エラー - {ex.Message}");
+                throw new NodeGraphException("接続の追加に失敗しました", ex);
             }
         }
 
         public void RemoveConnection(NodeConnection connection)
         {
-            if (connections.ContainsKey(connection.Id))
+            if (connection == null)
             {
-                // 接続が削除される前に、入力側のノードをDirtyにする
-                if (connection.InputSocket?.ParentNode != null)
+                throw new ArgumentNullException(nameof(connection), "削除する接続がnullです");
+            }
+
+            try
+            {
+                if (connections.ContainsKey(connection.Id))
                 {
-                    _dirtyTracker.MarkDirty(connection.InputSocket.ParentNode);
+                    // 接続が削除される前に、入力側のノードをDirtyにする
+                    if (connection.InputSocket?.ParentNode != null)
+                    {
+                        _dirtyTracker.MarkDirty(connection.InputSocket.ParentNode);
+                    }
+                    
+                    try
+                    {
+                        connection.Dispose(); // IDisposable対応
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"NodeGraph.RemoveConnection: 接続 {connection.Id} のDisposeに失敗 - {ex.Message}");
+                    }
+                    
+                    connections.Remove(connection.Id);
+                    NotifySceneChanged();
                 }
-                
-                connection.Dispose(); // IDisposable対応
-                connections.Remove(connection.Id);
-                NotifySceneChanged();
+                else
+                {
+                    Debug.WriteLine($"NodeGraph.RemoveConnection: 接続 {connection.Id} は存在しません");
+                }
+            }
+            catch (Exception ex) when (ex is not ArgumentNullException)
+            {
+                Debug.WriteLine($"NodeGraph.RemoveConnection: エラー - {ex.Message}");
+                throw new NodeGraphException("接続の削除に失敗しました", ex);
             }
         }
 

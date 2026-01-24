@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using System;
 using System.Collections.ObjectModel;
 using RayTraceVS.WPF.Commands;
 using RayTraceVS.WPF.Models;
@@ -40,61 +41,140 @@ namespace RayTraceVS.WPF.ViewModels
 
         public void AddNode(Node node)
         {
-            // ノードの作成順序を設定（描画順序に使用）
-            node.CreationIndex = _nodeCreationCounter++;
-            nodes.Add(node);
-            nodeGraph.AddNode(node);
+            if (node == null)
+            {
+                throw new ArgumentNullException(nameof(node), "追加するノードがnullです");
+            }
+
+            try
+            {
+                // ノードの作成順序を設定（描画順序に使用）
+                node.CreationIndex = _nodeCreationCounter++;
+                nodes.Add(node);
+                nodeGraph.AddNode(node);
+            }
+            catch (NodeGraphException)
+            {
+                // NodeGraph側で既にログ出力済み、そのまま再スロー
+                throw;
+            }
+            catch (Exception ex) when (ex is not ArgumentNullException)
+            {
+                Debug.WriteLine($"MainViewModel.AddNode: エラー - {ex.Message}");
+                throw new NodeGraphException($"ノード '{node.Title}' の追加に失敗しました", ex);
+            }
         }
 
         public void RemoveNode(Node node)
         {
-            // ノードに接続されている接続を削除
-            var connectionsToRemove = connections
-                .Where(c => c.InputSocket?.ParentNode?.Id == node.Id || 
-                           c.OutputSocket?.ParentNode?.Id == node.Id)
-                .ToList();
-
-            foreach (var connection in connectionsToRemove)
+            if (node == null)
             {
-                connection.Dispose(); // イベント購読解除
-                connections.Remove(connection);
+                throw new ArgumentNullException(nameof(node), "削除するノードがnullです");
             }
 
-            nodes.Remove(node);
-            nodeGraph.RemoveNode(node);
+            try
+            {
+                // ノードに接続されている接続を削除
+                var connectionsToRemove = connections
+                    .Where(c => c.InputSocket?.ParentNode?.Id == node.Id || 
+                               c.OutputSocket?.ParentNode?.Id == node.Id)
+                    .ToList();
+
+                foreach (var connection in connectionsToRemove)
+                {
+                    try
+                    {
+                        connection.Dispose(); // イベント購読解除
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"MainViewModel.RemoveNode: 接続 {connection.Id} のDisposeに失敗 - {ex.Message}");
+                    }
+                    connections.Remove(connection);
+                }
+
+                nodes.Remove(node);
+                nodeGraph.RemoveNode(node);
+            }
+            catch (NodeGraphException)
+            {
+                // NodeGraph側で既にログ出力済み、そのまま再スロー
+                throw;
+            }
+            catch (Exception ex) when (ex is not ArgumentNullException)
+            {
+                Debug.WriteLine($"MainViewModel.RemoveNode: エラー - {ex.Message}");
+                throw new NodeGraphException($"ノード '{node.Title}' の削除に失敗しました", ex);
+            }
         }
 
         public void AddConnection(NodeConnection connection)
         {
-            connections.Add(connection);
-            nodeGraph.AddConnection(connection);
-            
-            // 入力ソケットの接続状態を更新
-            if (connection.InputSocket != null)
+            if (connection == null)
             {
-                connection.InputSocket.IsConnected = true;
+                throw new ArgumentNullException(nameof(connection), "追加する接続がnullです");
+            }
+
+            try
+            {
+                connections.Add(connection);
+                nodeGraph.AddConnection(connection);
+                
+                // 入力ソケットの接続状態を更新
+                if (connection.InputSocket != null)
+                {
+                    connection.InputSocket.IsConnected = true;
+                }
+            }
+            catch (NodeGraphException)
+            {
+                // NodeGraph側で既にログ出力済み、そのまま再スロー
+                throw;
+            }
+            catch (Exception ex) when (ex is not ArgumentNullException)
+            {
+                Debug.WriteLine($"MainViewModel.AddConnection: エラー - {ex.Message}");
+                throw new NodeGraphException("接続の追加に失敗しました", ex);
             }
         }
 
         public void RemoveConnection(NodeConnection connection)
         {
-            // 入力ソケットの接続状態を更新（削除前に取得）
-            var inputSocket = connection.InputSocket;
-            
-            connections.Remove(connection);
-            nodeGraph.RemoveConnection(connection);
-            
-            // 入力ソケットの接続状態を更新
-            if (inputSocket != null)
+            if (connection == null)
             {
-                // 同じソケットへの他の接続がないか確認
-                inputSocket.IsConnected = connections.Any(c => c.InputSocket == inputSocket);
+                throw new ArgumentNullException(nameof(connection), "削除する接続がnullです");
             }
-            
-            // シーンノードの場合、未使用のソケットを削除（最後の1つは残す）
-            if (inputSocket?.ParentNode is Models.Nodes.SceneNode sceneNode)
+
+            try
             {
-                CleanupSceneNodeSockets(sceneNode);
+                // 入力ソケットの接続状態を更新（削除前に取得）
+                var inputSocket = connection.InputSocket;
+                
+                connections.Remove(connection);
+                nodeGraph.RemoveConnection(connection);
+                
+                // 入力ソケットの接続状態を更新
+                if (inputSocket != null)
+                {
+                    // 同じソケットへの他の接続がないか確認
+                    inputSocket.IsConnected = connections.Any(c => c.InputSocket == inputSocket);
+                }
+                
+                // シーンノードの場合、未使用のソケットを削除（最後の1つは残す）
+                if (inputSocket?.ParentNode is Models.Nodes.SceneNode sceneNode)
+                {
+                    CleanupSceneNodeSockets(sceneNode);
+                }
+            }
+            catch (NodeGraphException)
+            {
+                // NodeGraph側で既にログ出力済み、そのまま再スロー
+                throw;
+            }
+            catch (Exception ex) when (ex is not ArgumentNullException)
+            {
+                Debug.WriteLine($"MainViewModel.RemoveConnection: エラー - {ex.Message}");
+                throw new NodeGraphException("接続の削除に失敗しました", ex);
             }
         }
         

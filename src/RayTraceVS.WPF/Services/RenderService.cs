@@ -17,8 +17,10 @@ namespace RayTraceVS.WPF.Services
                 isInitialized = engineWrapper.IsInitialized();
                 return isInitialized;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine($"RenderService.Initialize failed: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"StackTrace: {ex.StackTrace}");
                 return false;
             }
         }
@@ -53,9 +55,10 @@ namespace RayTraceVS.WPF.Services
                     meshCaches ?? Array.Empty<MeshCacheData>(),
                     samplesPerPixel, maxBounces, traceRecursionDepth, exposure, toneMapOperator, denoiserStabilization, shadowStrength, enableDenoiser, gamma, photonDebugMode, photonDebugScale);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // Silently handle errors
+                System.Diagnostics.Debug.WriteLine($"RenderService.UpdateScene failed: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"StackTrace: {ex.StackTrace}");
             }
         }
 
@@ -68,9 +71,10 @@ namespace RayTraceVS.WPF.Services
             {
                 engineWrapper.Render();
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // Silently handle errors
+                System.Diagnostics.Debug.WriteLine($"RenderService.Render failed: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"StackTrace: {ex.StackTrace}");
             }
         }
 
