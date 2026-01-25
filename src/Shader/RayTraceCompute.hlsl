@@ -576,13 +576,8 @@ void CSMain(uint3 DTid : SV_DispatchThreadID)
     else
     {
         // Determine material type and shade accordingly
-        // Enforce mutual exclusivity: metals are opaque
-        if (hit.Metallic >= 0.5)
-        {
-            hit.Transmission = 0.0;
-        }
-        bool isGlass = (hit.Transmission > 0.01) && (hit.Metallic < 0.5);
-        bool isMetal = hit.Metallic >= 0.5;
+        bool isGlass = (hit.Transmission > 0.01);
+        bool isMetal = !isGlass && (hit.Metallic >= 0.5);
         
         if (isGlass)
         {

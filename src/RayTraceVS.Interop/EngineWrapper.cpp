@@ -152,6 +152,7 @@ namespace RayTraceVS::Interop
         int toneMapOperator,
         float denoiserStabilization,
         float shadowStrength,
+        float shadowAbsorptionScale,
         bool enableDenoiser,
         float gamma,
         int photonDebugMode,
@@ -168,7 +169,7 @@ namespace RayTraceVS::Interop
         Bridge::SetCamera(nativeScene, nativeCamera);
 
         // Set render settings
-        Bridge::SetRenderSettings(nativeScene, samplesPerPixel, maxBounces, traceRecursionDepth, exposure, toneMapOperator, denoiserStabilization, shadowStrength, enableDenoiser, gamma, photonDebugMode, photonDebugScale);
+        Bridge::SetRenderSettings(nativeScene, samplesPerPixel, maxBounces, traceRecursionDepth, exposure, toneMapOperator, denoiserStabilization, shadowStrength, shadowAbsorptionScale, enableDenoiser, gamma, photonDebugMode, photonDebugScale);
 
         // Add spheres
         if (spheres != nullptr)

@@ -609,7 +609,8 @@ namespace RayTraceVS::DXEngine
         // Build geometry descriptor for triangle BLAS
         D3D12_RAYTRACING_GEOMETRY_DESC geometryDesc = {};
         geometryDesc.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
-        geometryDesc.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
+        // Allow any-hit for triangle meshes (needed for translucent/colored shadows)
+        geometryDesc.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_NONE;
         geometryDesc.Triangles.VertexBuffer.StartAddress = entry.vertexBuffer->GetGPUVirtualAddress();
         geometryDesc.Triangles.VertexBuffer.StrideInBytes = 32;  // 8 floats * 4 bytes = 32 bytes per vertex
         geometryDesc.Triangles.VertexCount = entry.vertexCount;
@@ -695,7 +696,7 @@ namespace RayTraceVS::DXEngine
             proceduralInst.Transform[2][2] = 1.0f;
             proceduralInst.InstanceID = 0;  // Not used for procedural
             proceduralInst.InstanceMask = 0xFF;
-            proceduralInst.InstanceContributionToHitGroupIndex = 0;  // Hit groups 0-2 (procedural)
+            proceduralInst.InstanceContributionToHitGroupIndex = 0;  // Hit groups 0-3 (procedural)
             proceduralInst.Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
             proceduralInst.AccelerationStructure = bottomLevelAS->GetGPUVirtualAddress();
             instanceDescs.push_back(proceduralInst);
@@ -773,8 +774,9 @@ namespace RayTraceVS::DXEngine
             
             meshInstDesc.InstanceID = meshInstanceIndex++;  // Used in shader to lookup material
             meshInstDesc.InstanceMask = 0xFF;
-            meshInstDesc.InstanceContributionToHitGroupIndex = 3;  // Hit groups 3-5 (triangle)
-            meshInstDesc.Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
+            meshInstDesc.InstanceContributionToHitGroupIndex = 4;  // Hit groups 4-7 (triangle)
+            // Disable backface culling for thin meshes (e.g., glass) so shadow rays hit both sides.
+            meshInstDesc.Flags = D3D12_RAYTRACING_INSTANCE_FLAG_TRIANGLE_CULL_DISABLE;
             meshInstDesc.AccelerationStructure = blasEntry->blas->GetGPUVirtualAddress();
             instanceDescs.push_back(meshInstDesc);
         }

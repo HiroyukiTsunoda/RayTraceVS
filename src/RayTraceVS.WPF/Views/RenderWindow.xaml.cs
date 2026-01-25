@@ -29,6 +29,7 @@ namespace RayTraceVS.WPF.Views
         int ToneMapOperator,
         float DenoiserStabilization,
         float ShadowStrength,
+        float ShadowAbsorptionScale,
         bool EnableDenoiser,
         float Gamma,
         int PhotonDebugMode,
@@ -95,7 +96,7 @@ namespace RayTraceVS.WPF.Views
                 evaluated.Item6, evaluated.Item7,  // MeshInstances, MeshCaches
                 evaluated.SamplesPerPixel, evaluated.MaxBounces, evaluated.TraceRecursionDepth,
                 evaluated.Exposure, evaluated.ToneMapOperator,
-                evaluated.DenoiserStabilization, evaluated.ShadowStrength,
+                evaluated.DenoiserStabilization, evaluated.ShadowStrength, evaluated.ShadowAbsorptionScale,
                 evaluated.EnableDenoiser, evaluated.Gamma,
                 photonDebugMode, photonDebugScale);
 
@@ -236,7 +237,7 @@ namespace RayTraceVS.WPF.Views
                 evaluated.Item6, evaluated.Item7,  // MeshInstances, MeshCaches
                 evaluated.SamplesPerPixel, evaluated.MaxBounces, evaluated.TraceRecursionDepth,
                 evaluated.Exposure, evaluated.ToneMapOperator,
-                evaluated.DenoiserStabilization, evaluated.ShadowStrength,
+                evaluated.DenoiserStabilization, evaluated.ShadowStrength, evaluated.ShadowAbsorptionScale,
                 evaluated.EnableDenoiser, evaluated.Gamma,
                 photonDebugMode, photonDebugScale);
 
@@ -286,7 +287,7 @@ namespace RayTraceVS.WPF.Views
                                 sceneParams.MeshInstances, sceneParams.MeshCaches,
                                 sceneParams.SamplesPerPixel, sceneParams.MaxBounces, sceneParams.TraceRecursionDepth,
                                 sceneParams.Exposure, sceneParams.ToneMapOperator,
-                                sceneParams.DenoiserStabilization, sceneParams.ShadowStrength,
+                                sceneParams.DenoiserStabilization, sceneParams.ShadowStrength, sceneParams.ShadowAbsorptionScale,
                                 sceneParams.EnableDenoiser, sceneParams.Gamma,
                                 sceneParams.PhotonDebugMode, sceneParams.PhotonDebugScale);
                             
@@ -479,7 +480,7 @@ namespace RayTraceVS.WPF.Views
                 evaluated.Item6, evaluated.Item7,
                 evaluated.SamplesPerPixel, evaluated.MaxBounces, evaluated.TraceRecursionDepth,
                 evaluated.Exposure, evaluated.ToneMapOperator,
-                evaluated.DenoiserStabilization, evaluated.ShadowStrength,
+                evaluated.DenoiserStabilization, evaluated.ShadowStrength, evaluated.ShadowAbsorptionScale,
                 evaluated.EnableDenoiser, evaluated.Gamma,
                 photonDebugMode, photonDebugScale);
 
