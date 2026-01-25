@@ -12,6 +12,37 @@ float Hash(uint seed)
     return float(seed) / 4294967295.0;
 }
 
+float Hash2(float2 p)
+{
+    float3 p3 = frac(float3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return frac((p3.x + p3.y) * p3.z);
+}
+
+float3 PerturbReflection(float3 reflectDir, float3 normal, float roughness, float2 seed)
+{
+    if (roughness < 0.01)
+        return reflectDir;
+    
+    float r1 = Hash2(seed);
+    float r2 = Hash2(seed + float2(17.3, 31.7));
+    
+    float3 tangent = abs(normal.x) > 0.9 ? float3(0, 1, 0) : float3(1, 0, 0);
+    tangent = normalize(cross(normal, tangent));
+    float3 bitangent = cross(normal, tangent);
+    
+    float angle = r1 * 6.28318;
+    float radius = roughness * roughness * r2;
+    
+    float3 offset = (cos(angle) * tangent + sin(angle) * bitangent) * radius;
+    float3 perturbed = normalize(reflectDir + offset);
+    
+    if (dot(perturbed, normal) < 0.0)
+        perturbed = reflect(perturbed, normal);
+    
+    return perturbed;
+}
+
 // Generate random offset for anti-aliasing
 float2 RandomInPixel(uint2 pixel, uint sampleIndex)
 {
@@ -85,8 +116,6 @@ void RayGen()
     float3 primaryNormal = float3(0, 1, 0);
     float primaryRoughness = 1.0;
     float3 primaryPosition = float3(0, 0, 0);
-    float primaryViewZ = 10000.0;
-    float primaryMetallic = 0.0;
     float3 primaryAlbedo = float3(0, 0, 0);
     bool anyHit = false;
     
@@ -136,19 +165,20 @@ void RayGen()
         }
         
         // ============================================
-        // Queue-based ray tracing (RayGen-only TraceRay)
+        // WorkItem queue (per-pixel, stored in UAV)
         // ============================================
-        const uint maxQueueSize = 16;
         const float throughputThreshold = 0.01;
-        PathState queue[maxQueueSize];
+        uint pixelIndex = launchIndex.y * launchDim.x + launchIndex.x;
+        uint baseIndex = pixelIndex * WORK_QUEUE_STRIDE;
         uint queueCount = 0;
+        WorkQueueCount[pixelIndex] = 0;
         uint processedRays = 0;
         float3 sampleColor = float3(0, 0, 0);
         float3 primaryContribution = float3(0, 0, 0);
         bool primaryHitRecorded = false;
         uint bounceCount = 0;
         
-        PathState primaryState;
+        WorkItem primaryState;
         primaryState.origin = rayOrigin;
         primaryState.tMin = 0.001;
         primaryState.direction = rayDir;
@@ -158,12 +188,16 @@ void RayGen()
         primaryState.absorption = float3(0, 0, 0);
         primaryState.pathType = PATH_TYPE_RADIANCE;
         primaryState.skyBoost = 1.0;
-        primaryState.padding2 = float3(0, 0, 0);
-        queue[queueCount++] = primaryState;
+        primaryState.specularDepth = 0;
+        primaryState.diffuseDepth = 0;
+        primaryState.kind = 0;
+        primaryState.padding = 0;
+        WorkQueue[baseIndex + queueCount++] = primaryState;
+        WorkQueueCount[pixelIndex] = queueCount;
         
         while (queueCount > 0)
         {
-            PathState state = queue[--queueCount];
+            WorkItem state = WorkQueue[baseIndex + (--queueCount)];
             if (processedRays >= maxRaysPerPixel && (state.flags & PATH_FLAG_SPECULAR) == 0)
             {
                 continue;
@@ -200,36 +234,25 @@ void RayGen()
             payload.color = float3(0, 0, 0);
             payload.depth = state.depth;
             payload.hit = 0;
-            payload.padding = 0.0;
-            payload.diffuseRadiance = float3(0, 0, 0);
-            payload.specularRadiance = float3(0, 0, 0);
             payload.hitDistance = 10000.0;
-            payload.worldNormal = float3(0, 1, 0);
-            payload.roughness = 1.0;
-            payload.worldPosition = float3(0, 0, 0);
-            payload.viewZ = 10000.0;
-            payload.metallic = 0.0;
+            payload.diffuseRadiance = float3(0, 0, 0);
+            payload.specularHitDistance = NRD_FP16_MAX;
+            payload.specularRadiance = float3(0, 0, 0);
+            payload.packedNormal = PackNormalOctahedron(float3(0, 1, 0));
+            payload.packedMaterial0 = PackHalf2(float2(1.0, 0.0)); // roughness, metallic
+            payload.packedMaterial1 = PackHalf2(float2(0.5, 0.0)); // specular, transmission
+            payload.packedMaterial2 = PackHalf2(float2(1.5, 0.0)); // ior, unused
             payload.albedo = float3(0, 0, 0);
             payload.shadowVisibility = 1.0;
             payload.shadowPenumbra = 0.0;
             payload.shadowDistance = NRD_FP16_MAX;
-            payload.targetObjectType = 0;
-            payload.targetObjectIndex = 0;
-            payload.thicknessQuery = 0;
-            payload.transmission = 0.0;
-            payload.ior = 1.5;
-            payload.specular = 0.5;
-            payload.materialPadding = 0.0;
             payload.emission = float3(0, 0, 0);
-            payload.emissionPadding = 0.0;
-            payload.loopRayOrigin = float4(0, 0, 0, 0);
-            payload.loopRayDirection = float4(0, 0, 0, 0.001);
-            payload.loopThroughput = float4(1, 1, 1, 0);
+            payload.absorption = float3(0, 0, 0);
             payload.pathFlags = state.flags;
             payload.pathAbsorption = state.absorption;
             payload.pathSkyBoost = state.skyBoost;
-            payload.pathPadding = float3(0, 0, 0);
-            payload.childCount = 0;
+            payload.payloadPadding0 = 0;
+            payload.payloadPadding1 = 0;
             
             // レイトレーシング実行
             TraceRay(
@@ -243,11 +266,7 @@ void RayGen()
             
             // NaN/Inf guard: if any critical payload field is invalid,
             // terminate the path and fall back to sky for this ray.
-            bool invalidPayload =
-                HasNonFinite3(payload.color) ||
-                HasNonFinite4(payload.loopRayOrigin) ||
-                HasNonFinite4(payload.loopRayDirection) ||
-                HasNonFinite4(payload.loopThroughput);
+            bool invalidPayload = HasNonFinite3(payload.color);
             if (invalidPayload)
             {
                 float3 skyFallback = state.throughput * GetSkyColor(state.direction);
@@ -266,24 +285,26 @@ void RayGen()
                 state.throughput *= absorption;
             }
 
+            float3 hitPosition = state.origin + state.direction * payload.hitDistance;
+            float3 N = UnpackNormalOctahedron(payload.packedNormal);
+            float2 rm = UnpackHalf2(payload.packedMaterial0);
+            float2 st = UnpackHalf2(payload.packedMaterial1);
+            float2 io = UnpackHalf2(payload.packedMaterial2);
+            float roughness = rm.x;
+            float metallic = rm.y;
+            float specular = st.x;
+            float transmission = st.y;
+            float ior = io.x;
+            uint seed = asuint(hitPosition.x * 1000.0) ^ asuint(hitPosition.y * 2000.0) ^ asuint(hitPosition.z * 3000.0);
+            seed = WangHash(seed + payload.depth * 7919);
+            
             // Shade in RayGen to keep TraceRay calls centralized here.
             if (payload.hit && !(payload.depth == 0 && (Scene.PhotonDebugMode == 3 || Scene.PhotonDebugMode == 4)))
             {
-                float3 hitPosition = payload.worldPosition;
-                float3 N = normalize(payload.worldNormal);
                 float3 V = -state.direction;
-                float metallic = payload.metallic;
-                float roughness = payload.roughness;
-                float transmission = payload.transmission;
-                float ior = payload.ior;
-                float specular = payload.specular;
                 float3 baseColor = payload.albedo;
                 float3 emission = payload.emission;
                 bool isGlass = (transmission > 0.01);
-
-                // Seed for shadow sampling (matches ClosestHit)
-                uint seed = asuint(hitPosition.x * 1000.0) ^ asuint(hitPosition.y * 2000.0) ^ asuint(hitPosition.z * 3000.0);
-                seed = WangHash(seed + payload.depth * 7919);
 
                 if (isGlass)
                 {
@@ -527,11 +548,9 @@ void RayGen()
                 // Record first hit data for NRD
                 if (payload.hit && !anyHit)
                 {
-                    primaryNormal = payload.worldNormal;
-                    primaryRoughness = payload.roughness;
-                    primaryPosition = payload.worldPosition;
-                    primaryViewZ = payload.viewZ;
-                    primaryMetallic = payload.metallic;
+                    primaryNormal = N;
+                    primaryRoughness = roughness;
+                    primaryPosition = hitPosition;
                     primaryAlbedo = payload.albedo;
                     primaryShadowVisibility = payload.shadowVisibility;
                     primaryShadowPenumbra = payload.shadowPenumbra;
@@ -541,52 +560,195 @@ void RayGen()
                 primaryHitRecorded = true;
             }
             
-            // Enqueue children paths
-            uint childCount = min(payload.childCount, MAX_CHILD_PATHS);
-            [loop]
-            for (uint i = 0; i < childCount; i++)
+            // Enqueue next paths (WorkItem queue)
+            if (payload.hit && state.depth < maxBounces)
             {
-                PathState child = payload.childPaths[i];
-                child.throughput *= state.throughput;
-                float maxChildThroughput = max(child.throughput.r, max(child.throughput.g, child.throughput.b));
-                if (maxChildThroughput < throughputThreshold && (child.flags & PATH_FLAG_SPECULAR) == 0)
+                float3 baseColor = payload.albedo;
+                bool isGlass = (transmission > 0.01);
+                bool isMetal = (metallic > 0.1);
+                bool useRR = (state.specularDepth > 6) && (state.diffuseDepth >= 2) && (Luminance(state.throughput) < 0.25);
+                
+                if (isGlass)
                 {
-                    continue;
-                }
-                if (queueCount < maxQueueSize)
-                {
-                    queue[queueCount++] = child;
-                }
-                else if ((child.flags & PATH_FLAG_SPECULAR) != 0)
-                {
-                    // Keep specular chain: replace a non-specular entry if possible.
-                    // If all entries are specular, replace the weakest throughput.
-                    bool replaced = false;
-                    [loop]
-                    for (uint qi = 0; qi < queueCount; qi++)
+                    bool entering = (state.flags & PATH_FLAG_INSIDE) == 0;
+                    float eta = entering ? (1.0 / ior) : ior;
+                    float3 reflectDir = normalize(reflect(state.direction, N));
+                    float3 refractDir = refract(state.direction, N, eta);
+                    bool tir = dot(refractDir, refractDir) < 1e-6;
+                    if (!tir)
                     {
-                        if ((queue[qi].flags & PATH_FLAG_SPECULAR) == 0)
+                        refractDir = normalize(refractDir);
+                    }
+                    
+                    if (roughness > 0.01 && state.depth == 0)
+                    {
+                        float2 roughSeed = hitPosition.xy * 1000.0 + float2(state.depth, state.depth * 0.5);
+                        reflectDir = PerturbReflection(reflectDir, N, roughness, roughSeed);
+                        if (!tir)
                         {
-                            queue[qi] = child;
-                            replaced = true;
-                            break;
+                            float2 refractSeed = roughSeed + float2(123.456, 789.012);
+                            refractDir = PerturbReflection(refractDir, -N, roughness, refractSeed);
                         }
                     }
-                    if (!replaced)
+                    
+                    float cosTheta = saturate(dot(-state.direction, N));
+                    float f0 = pow((ior - 1.0) / (ior + 1.0), 2.0);
+                    float fresnel = FresnelSchlick(cosTheta, f0);
+                    if (tir)
                     {
-                        uint replaceIndex = 0;
-                        float minThroughput = max(queue[0].throughput.r, max(queue[0].throughput.g, queue[0].throughput.b));
-                        [loop]
-                        for (uint qi = 1; qi < queueCount; qi++)
+                        fresnel = 1.0;
+                    }
+                    
+                    float3 reflectThroughput = fresnel.xxx;
+                    float transmittance = saturate(transmission);
+                    float tintStrength = (state.depth == 0) ? 1.0 : 0.7;
+                    float3 refractThroughput = (1.0 - fresnel) * transmittance * lerp(float3(1, 1, 1), baseColor, tintStrength);
+                    reflectThroughput = clamp(reflectThroughput, 0.0, 1.0);
+                    refractThroughput = clamp(refractThroughput, 0.0, 1.0);
+                    
+                    float reflectWeight = max(reflectThroughput.r, max(reflectThroughput.g, reflectThroughput.b));
+                    float refractWeight = (!tir)
+                        ? max(refractThroughput.r, max(refractThroughput.g, refractThroughput.b))
+                        : 0.0;
+                    float weightSum = reflectWeight + refractWeight;
+                    
+                    if (useRR)
+                    {
+                        float rr = Hash(seed ^ (seed << 1));
+                        bool chooseReflect = tir || (rr < (reflectWeight / max(weightSum, 1e-6)));
+                        float chosenWeight = chooseReflect ? reflectWeight : refractWeight;
+                        float3 nextThroughput = chooseReflect ? reflectThroughput : refractThroughput;
+                        nextThroughput *= weightSum / max(chosenWeight, 1e-6);
+                        
+                        WorkItem child;
+                        child.origin = chooseReflect ? (hitPosition + N * 0.002) : (hitPosition + refractDir * 0.002);
+                        child.tMin = 0.001;
+                        child.direction = chooseReflect ? reflectDir : refractDir;
+                        child.depth = state.depth + 1;
+                        child.throughput = nextThroughput * state.throughput;
+                        child.flags = state.flags | PATH_FLAG_SPECULAR;
+                        child.absorption = state.absorption;
+                        if (!chooseReflect)
                         {
-                            float t = max(queue[qi].throughput.r, max(queue[qi].throughput.g, queue[qi].throughput.b));
-                            if (t < minThroughput)
+                            if (entering)
                             {
-                                minThroughput = t;
-                                replaceIndex = qi;
+                                child.flags = state.flags | PATH_FLAG_INSIDE | PATH_FLAG_SPECULAR;
+                                child.absorption = payload.absorption;
+                            }
+                            else
+                            {
+                                child.flags = (state.flags & ~PATH_FLAG_INSIDE) | PATH_FLAG_SPECULAR;
+                                child.absorption = float3(0, 0, 0);
                             }
                         }
-                        queue[replaceIndex] = child;
+                        child.pathType = PATH_TYPE_RADIANCE;
+                        child.skyBoost = SKY_BOOST_GLASS;
+                        child.specularDepth = state.specularDepth + 1;
+                        child.diffuseDepth = state.diffuseDepth;
+                        child.kind = chooseReflect ? 1 : 2;
+                        child.padding = 0;
+                        
+                        float maxChildThroughput = max(child.throughput.r, max(child.throughput.g, child.throughput.b));
+                        if (maxChildThroughput >= throughputThreshold || (child.flags & PATH_FLAG_SPECULAR) != 0)
+                        {
+                            if (queueCount < WORK_QUEUE_STRIDE)
+                            {
+                                WorkQueue[baseIndex + queueCount++] = child;
+                                WorkQueueCount[pixelIndex] = queueCount;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        WorkItem reflectChild;
+                        reflectChild.origin = hitPosition + N * 0.002;
+                        reflectChild.tMin = 0.001;
+                        reflectChild.direction = reflectDir;
+                        reflectChild.depth = state.depth + 1;
+                        reflectChild.throughput = reflectThroughput * state.throughput;
+                        reflectChild.flags = state.flags | PATH_FLAG_SPECULAR;
+                        reflectChild.absorption = state.absorption;
+                        reflectChild.pathType = PATH_TYPE_RADIANCE;
+                        reflectChild.skyBoost = SKY_BOOST_GLASS;
+                        reflectChild.specularDepth = state.specularDepth + 1;
+                        reflectChild.diffuseDepth = state.diffuseDepth;
+                        reflectChild.kind = 1;
+                        reflectChild.padding = 0;
+                        
+                        if (queueCount < WORK_QUEUE_STRIDE)
+                        {
+                            WorkQueue[baseIndex + queueCount++] = reflectChild;
+                            WorkQueueCount[pixelIndex] = queueCount;
+                        }
+                        
+                        if (!tir)
+                        {
+                            WorkItem refractChild;
+                            refractChild.origin = hitPosition + refractDir * 0.002;
+                            refractChild.tMin = 0.001;
+                            refractChild.direction = refractDir;
+                            refractChild.depth = state.depth + 1;
+                            refractChild.throughput = refractThroughput * state.throughput;
+                            if (entering)
+                            {
+                                refractChild.flags = state.flags | PATH_FLAG_INSIDE | PATH_FLAG_SPECULAR;
+                                refractChild.absorption = payload.absorption;
+                            }
+                            else
+                            {
+                                refractChild.flags = (state.flags & ~PATH_FLAG_INSIDE) | PATH_FLAG_SPECULAR;
+                                refractChild.absorption = float3(0, 0, 0);
+                            }
+                            refractChild.pathType = PATH_TYPE_RADIANCE;
+                            refractChild.skyBoost = SKY_BOOST_GLASS;
+                            refractChild.specularDepth = state.specularDepth + 1;
+                            refractChild.diffuseDepth = state.diffuseDepth;
+                            refractChild.kind = 2;
+                            refractChild.padding = 0;
+                            
+                            if (queueCount < WORK_QUEUE_STRIDE)
+                            {
+                                WorkQueue[baseIndex + queueCount++] = refractChild;
+                                WorkQueueCount[pixelIndex] = queueCount;
+                            }
+                        }
+                    }
+                }
+                else if (isMetal)
+                {
+                    float3 F0 = lerp(0.04.xxx, baseColor, metallic);
+                    float3 reflectDir = reflect(state.direction, N);
+                    float2 reflectSeed = hitPosition.xy * 1000.0 + float2(state.depth, state.depth * 0.5);
+                    float3 perturbedDir = PerturbReflection(reflectDir, N, roughness, reflectSeed);
+                    
+                    float NdotV = saturate(dot(N, -state.direction));
+                    float3 F = Fresnel_Schlick3(NdotV, F0);
+                    float reflectScale = (1.0 - roughness * 0.5);
+                    float boost = (state.depth > 0) ? 1.5 : 1.0;
+                    
+                    WorkItem reflectChild;
+                    reflectChild.origin = hitPosition + N * 0.002;
+                    reflectChild.tMin = 0.001;
+                    reflectChild.direction = perturbedDir;
+                    reflectChild.depth = state.depth + 1;
+                    reflectChild.throughput = (F * reflectScale * boost) * state.throughput;
+                    reflectChild.flags = state.flags | PATH_FLAG_SPECULAR;
+                    reflectChild.absorption = state.absorption;
+                    reflectChild.pathType = PATH_TYPE_RADIANCE;
+                    reflectChild.skyBoost = SKY_BOOST_METAL;
+                    reflectChild.specularDepth = state.specularDepth + 1;
+                    reflectChild.diffuseDepth = state.diffuseDepth;
+                    reflectChild.kind = 1;
+                    reflectChild.padding = 0;
+                    
+                    float maxChildThroughput = max(reflectChild.throughput.r, max(reflectChild.throughput.g, reflectChild.throughput.b));
+                    if (maxChildThroughput >= throughputThreshold || (reflectChild.flags & PATH_FLAG_SPECULAR) != 0)
+                    {
+                        if (queueCount < WORK_QUEUE_STRIDE)
+                        {
+                            WorkQueue[baseIndex + queueCount++] = reflectChild;
+                            WorkQueueCount[pixelIndex] = queueCount;
+                        }
                     }
                 }
             }

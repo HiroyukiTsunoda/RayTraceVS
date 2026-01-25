@@ -6,15 +6,5 @@
 [shader("anyhit")]
 void AnyHit_SkipSelf(inout RadiancePayload payload, in ProceduralAttributes attribs)
 {
-    // If targetObjectType is set (non-zero) and matches current hit, skip it
-    if (payload.targetObjectType != 0 &&
-        payload.targetObjectType == attribs.objectType &&
-        payload.targetObjectIndex == attribs.objectIndex)
-    {
-        // Ignore this hit and continue searching for next intersection
-        IgnoreHit();
-        return;
-    }
-    
-    // Accept this hit (default behavior)
+    // Self-skip disabled (no per-ray skip data in payload).
 }

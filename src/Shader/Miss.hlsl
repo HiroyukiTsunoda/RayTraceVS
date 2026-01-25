@@ -16,13 +16,8 @@ void Miss(inout RadiancePayload payload)
     payload.shadowPenumbra = 0.0;
     payload.shadowDistance = NRD_FP16_MAX;
     payload.hit = 0;  // 明示的にヒットなしを設定
-    payload.targetObjectType = 0;
-    payload.targetObjectIndex = 0;
-    payload.thicknessQuery = 0;
     
-    // Loop-based: terminate ray trace loop
-    payload.loopRayOrigin.w = 0.0;
-    payload.loopThroughput.xyz = float3(0, 0, 0);
+    // No further rays for miss
 }
 
 [shader("miss")]

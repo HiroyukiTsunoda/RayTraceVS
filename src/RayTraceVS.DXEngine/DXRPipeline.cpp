@@ -1361,9 +1361,10 @@ namespace RayTraceVS::DXEngine
         // [8] UAV - Photon counter (u2)
         // [9-16] UAV - G-Buffer for NRD (u3-u10)
         // [17] UAV - Photon hash table (u11)
-        // [18-22] SRV - Mesh buffers (t5-t9)
+        // [18-19] UAV - WorkItem queue (u12-u13)
+        // [20-24] SRV - Mesh buffers (t5-t9)
         
-        CD3DX12_DESCRIPTOR_RANGE1 ranges[23];
+        CD3DX12_DESCRIPTOR_RANGE1 ranges[25];
         ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);  // u0 - Output
         ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);  // t0 - TLAS
         ranges[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0);  // b0 - Constants
@@ -1383,15 +1384,17 @@ namespace RayTraceVS::DXEngine
         ranges[15].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 9);  // u9 - ShadowData
         ranges[16].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 10); // u10 - ShadowTranslucency
         ranges[17].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 11); // u11 - PhotonHashTable
+        ranges[18].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 12); // u12 - WorkQueue
+        ranges[19].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 13); // u13 - WorkQueueCount
         // Mesh buffers for FBX support
-        ranges[18].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 5);  // t5 - MeshVertices
-        ranges[19].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 6);  // t6 - MeshIndices
-        ranges[20].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 7);  // t7 - MeshMaterials
-        ranges[21].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 8);  // t8 - MeshInfos
-        ranges[22].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 9);  // t9 - MeshInstances
+        ranges[20].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 5);  // t5 - MeshVertices
+        ranges[21].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 6);  // t6 - MeshIndices
+        ranges[22].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 7);  // t7 - MeshMaterials
+        ranges[23].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 8);  // t8 - MeshInfos
+        ranges[24].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 9);  // t9 - MeshInstances
         
-        CD3DX12_ROOT_PARAMETER1 rootParameters[23];
-        for (int i = 0; i < 23; i++)
+        CD3DX12_ROOT_PARAMETER1 rootParameters[25];
+        for (int i = 0; i < 25; i++)
         {
             rootParameters[i].InitAsDescriptorTable(1, &ranges[i]);
         }
@@ -1711,14 +1714,16 @@ namespace RayTraceVS::DXEngine
         const std::wstring commonPath = shaderSourcePath + L"Common.hlsli";
         uint32_t radiancePayloadSize = 0;
         uint32_t shadowPayloadSize = 0;
+        uint32_t thicknessPayloadSize = 0;
         if (!shaderCache->TryGetHlslDefineUInt(commonPath, "RADIANCE_PAYLOAD_SIZE", &radiancePayloadSize) ||
-            !shaderCache->TryGetHlslDefineUInt(commonPath, "SHADOW_PAYLOAD_SIZE", &shadowPayloadSize))
+            !shaderCache->TryGetHlslDefineUInt(commonPath, "SHADOW_PAYLOAD_SIZE", &shadowPayloadSize) ||
+            !shaderCache->TryGetHlslDefineUInt(commonPath, "THICKNESS_PAYLOAD_SIZE", &thicknessPayloadSize))
         {
             LOG_ERROR("Failed to read payload size defines from Common.hlsli");
             return false;
         }
-        if (radiancePayloadSize == 0 || shadowPayloadSize == 0 ||
-            (radiancePayloadSize % 8) != 0 || (shadowPayloadSize % 8) != 0 ||
+        if (radiancePayloadSize == 0 || shadowPayloadSize == 0 || thicknessPayloadSize == 0 ||
+            (radiancePayloadSize % 8) != 0 || (shadowPayloadSize % 8) != 0 || (thicknessPayloadSize % 8) != 0 ||
             shadowPayloadSize > radiancePayloadSize)
         {
             LOG_ERROR("Invalid payload size defines (check Common.hlsli)");
@@ -1768,9 +1773,10 @@ namespace RayTraceVS::DXEngine
         // [7-8] UAVs: photon map, photon counter (u1-u2)
         // [9-16] UAVs: G-Buffer for NRD (u3-u10)
         // [17] UAV: Photon hash table (u11)
-        // [18-22] SRVs: Mesh buffers (t5-t9)
+        // [18-19] UAVs: WorkItem queue (u12-u13)
+        // [20-24] SRVs: Mesh buffers (t5-t9)
         D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
-        heapDesc.NumDescriptors = 23;  // 18 + 5 for mesh buffers
+        heapDesc.NumDescriptors = 25;  // 18 + 2 + 5 for mesh buffers
         heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
         heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
@@ -1907,6 +1913,50 @@ namespace RayTraceVS::DXEngine
     void DXRPipeline::UpdateDXRDescriptors(RenderTarget* renderTarget)
     {
         auto device = dxContext->GetDevice();
+        UINT width = renderTarget->GetWidth();
+        UINT height = renderTarget->GetHeight();
+        UINT64 requiredWorkItems = static_cast<UINT64>(width) * height * WORK_QUEUE_STRIDE;
+        UINT64 requiredWorkCounts = static_cast<UINT64>(width) * height;
+        if (!workQueueBuffer || workQueueCapacity < requiredWorkItems)
+        {
+            workQueueBuffer.Reset();
+            CD3DX12_HEAP_PROPERTIES defaultHeapProps(D3D12_HEAP_TYPE_DEFAULT);
+            CD3DX12_RESOURCE_DESC workQueueDesc = CD3DX12_RESOURCE_DESC::Buffer(
+                requiredWorkItems * sizeof(GPUWorkItem), D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+            HRESULT hr = device->CreateCommittedResource(
+                &defaultHeapProps,
+                D3D12_HEAP_FLAG_NONE,
+                &workQueueDesc,
+                D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                nullptr,
+                IID_PPV_ARGS(&workQueueBuffer));
+            if (FAILED(hr))
+            {
+                LOG_ERROR_HR("Failed to create work queue buffer", hr);
+                return;
+            }
+            workQueueCapacity = requiredWorkItems;
+        }
+        if (!workQueueCountBuffer || workQueueCountCapacity < requiredWorkCounts)
+        {
+            workQueueCountBuffer.Reset();
+            CD3DX12_HEAP_PROPERTIES defaultHeapProps(D3D12_HEAP_TYPE_DEFAULT);
+            CD3DX12_RESOURCE_DESC workCountDesc = CD3DX12_RESOURCE_DESC::Buffer(
+                requiredWorkCounts * sizeof(UINT), D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+            HRESULT hr = device->CreateCommittedResource(
+                &defaultHeapProps,
+                D3D12_HEAP_FLAG_NONE,
+                &workCountDesc,
+                D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                nullptr,
+                IID_PPV_ARGS(&workQueueCountBuffer));
+            if (FAILED(hr))
+            {
+                LOG_ERROR_HR("Failed to create work queue count buffer", hr);
+                return;
+            }
+            workQueueCountCapacity = requiredWorkCounts;
+        }
         CD3DX12_CPU_DESCRIPTOR_HANDLE cpuHandle(dxrSrvUavHeap->GetCPUDescriptorHandleForHeapStart());
         
         // [0] UAV for output texture
@@ -2096,14 +2146,37 @@ namespace RayTraceVS::DXEngine
         }
         cpuHandle.Offset(1, dxrDescriptorSize);
         
-        // [18-22] SRVs for mesh buffers (t5-t9)
+        // [18] UAV for WorkItem queue (u12)
+        {
+            D3D12_UNORDERED_ACCESS_VIEW_DESC workQueueUavDesc = {};
+            workQueueUavDesc.Format = DXGI_FORMAT_UNKNOWN;
+            workQueueUavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+            workQueueUavDesc.Buffer.FirstElement = 0;
+            workQueueUavDesc.Buffer.NumElements = static_cast<UINT>(workQueueCapacity);
+            workQueueUavDesc.Buffer.StructureByteStride = sizeof(GPUWorkItem);
+            device->CreateUnorderedAccessView(workQueueBuffer.Get(), nullptr, &workQueueUavDesc, cpuHandle);
+        }
+        cpuHandle.Offset(1, dxrDescriptorSize);
+
+        // [19] UAV for WorkItem queue counts (u13)
+        {
+            D3D12_UNORDERED_ACCESS_VIEW_DESC workCountUavDesc = {};
+            workCountUavDesc.Format = DXGI_FORMAT_R32_UINT;
+            workCountUavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+            workCountUavDesc.Buffer.FirstElement = 0;
+            workCountUavDesc.Buffer.NumElements = static_cast<UINT>(workQueueCountCapacity);
+            device->CreateUnorderedAccessView(workQueueCountBuffer.Get(), nullptr, &workCountUavDesc, cpuHandle);
+        }
+        cpuHandle.Offset(1, dxrDescriptorSize);
+        
+        // [20-24] SRVs for mesh buffers (t5-t9)
         D3D12_SHADER_RESOURCE_VIEW_DESC meshSrvDesc = {};
         meshSrvDesc.Format = DXGI_FORMAT_UNKNOWN;
         meshSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
         meshSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
         meshSrvDesc.Buffer.FirstElement = 0;
         
-        // [18] t5 - MeshVertices (GPUMeshVertex = 32 bytes)
+        // [20] t5 - MeshVertices (GPUMeshVertex = 32 bytes)
         if (meshVertexBuffer)
         {
             D3D12_RESOURCE_DESC desc = meshVertexBuffer->GetDesc();
@@ -2120,7 +2193,7 @@ namespace RayTraceVS::DXEngine
         }
         cpuHandle.Offset(1, dxrDescriptorSize);
         
-        // [19] t6 - MeshIndices (uint = 4 bytes)
+        // [21] t6 - MeshIndices (uint = 4 bytes)
         if (meshIndexBuffer)
         {
             D3D12_RESOURCE_DESC desc = meshIndexBuffer->GetDesc();
@@ -2136,7 +2209,7 @@ namespace RayTraceVS::DXEngine
         }
         cpuHandle.Offset(1, dxrDescriptorSize);
         
-        // [20] t7 - MeshMaterials (GPUMeshMaterial = 64 bytes)
+        // [22] t7 - MeshMaterials (GPUMeshMaterial = 64 bytes)
         if (meshMaterialBuffer)
         {
             D3D12_RESOURCE_DESC desc = meshMaterialBuffer->GetDesc();
@@ -2152,7 +2225,7 @@ namespace RayTraceVS::DXEngine
         }
         cpuHandle.Offset(1, dxrDescriptorSize);
         
-        // [21] t8 - MeshInfos (GPUMeshInfo = 16 bytes)
+        // [23] t8 - MeshInfos (GPUMeshInfo = 16 bytes)
         if (meshInfoBuffer)
         {
             D3D12_RESOURCE_DESC desc = meshInfoBuffer->GetDesc();
@@ -2168,7 +2241,7 @@ namespace RayTraceVS::DXEngine
         }
         cpuHandle.Offset(1, dxrDescriptorSize);
         
-        // [22] t9 - MeshInstances (GPUMeshInstanceInfo = 8 bytes)
+        // [24] t9 - MeshInstances (GPUMeshInstanceInfo = 8 bytes)
         if (meshInstanceBuffer)
         {
             D3D12_RESOURCE_DESC desc = meshInstanceBuffer->GetDesc();
@@ -2268,7 +2341,7 @@ namespace RayTraceVS::DXEngine
         commandList->SetComputeRootSignature(globalRootSignature.Get());
         
         CD3DX12_GPU_DESCRIPTOR_HANDLE gpuHandle(dxrSrvUavHeap->GetGPUDescriptorHandleForHeapStart());
-        for (int i = 0; i < 23; i++)
+        for (int i = 0; i < 25; i++)
         {
             commandList->SetComputeRootDescriptorTable(i, gpuHandle);
             gpuHandle.Offset(1, dxrDescriptorSize);
