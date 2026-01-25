@@ -105,12 +105,21 @@ void ClosestHit(inout RadiancePayload payload, in ProceduralAttributes attribs)
         // Use hitPosition.xz directly for horizontal floor
         float2 uv = hitPosition.xz;
         
+        // Distance-based checker filtering (mip-like) to reduce aliasing
+        float viewZ = dot(hitPosition - Scene.CameraPosition, Scene.CameraForward);
+        viewZ = max(viewZ, 0.0);
+        float fogStart = 30.0;
+        float fogEnd = 80.0;
+        float dist = saturate((viewZ - fogStart) / max(fogEnd - fogStart, 0.001));
+        float contrast = lerp(1.0, 0.3, dist);
+        
         // Use bitwise AND for correct handling of negative coordinates
         // fmod doesn't work correctly with negative numbers
         int ix = (int)floor(uv.x);
         int iy = (int)floor(uv.y);
         int checker = (ix + iy) & 1;
-        color.rgb = checker ? float3(0.9, 0.9, 0.9) : float3(0.1, 0.1, 0.1);
+        float checkerValue = lerp(0.5, (float)checker, contrast);
+        color.rgb = lerp(float3(0.1, 0.1, 0.1), float3(0.9, 0.9, 0.9), checkerValue);
     }
     else // OBJECT_TYPE_BOX
     {
