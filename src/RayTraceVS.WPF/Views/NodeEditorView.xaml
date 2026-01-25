@@ -100,8 +100,9 @@
                                                              StrokeThickness="2"
                                                              Cursor="Cross"
                                                              DataContext="{Binding}"
-                                                             ToolTip="{Binding SocketType}"
-                                                             Loaded="Socket_Loaded"/>
+                                                             Loaded="Socket_Loaded"
+                                                             MouseEnter="Socket_MouseEnter"
+                                                             MouseLeave="Socket_MouseLeave"/>
                                                     <TextBlock Text="{Binding Name}" 
                                                                Foreground="{StaticResource TextBrush}"
                                                                FontSize="10"
@@ -209,8 +210,9 @@
                                                              StrokeThickness="2"
                                                              Cursor="Cross"
                                                              DataContext="{Binding}"
-                                                             ToolTip="{Binding SocketType}"
-                                                             Loaded="Socket_Loaded"/>
+                                                             Loaded="Socket_Loaded"
+                                                             MouseEnter="Socket_MouseEnter"
+                                                             MouseLeave="Socket_MouseLeave"/>
                                                 </StackPanel>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
@@ -260,5 +262,25 @@
                 </TextBlock>
             </StackPanel>
         </Border>
+
+        <!-- ソケット型表示用ポップアップ -->
+        <Popup x:Name="SocketTypePopup"
+               AllowsTransparency="True"
+               StaysOpen="True"
+               Placement="Mouse"
+               PopupAnimation="None"
+               IsHitTestVisible="False">
+            <Border Background="#E0333333"
+                    BorderBrush="#888888"
+                    BorderThickness="1"
+                    CornerRadius="3"
+                    Padding="8,4"
+                    IsHitTestVisible="False">
+                <TextBlock x:Name="SocketTypeText"
+                           Foreground="White"
+                           FontSize="12"
+                           IsHitTestVisible="False"/>
+            </Border>
+        </Popup>
     </Grid>
 </UserControl>

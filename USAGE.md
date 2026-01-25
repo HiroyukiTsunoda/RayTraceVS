@@ -40,40 +40,59 @@
 ### 使用可能なノード
 
 #### オブジェクトノード
-- **球（Sphere）**: 球体オブジェクト
-  - プロパティ: 位置、半径、色、PBRマテリアル（Metallic/Roughness/Transmission/IOR/Emission）
-- **平面（Plane）**: 無限平面
-  - プロパティ: 位置、法線、色、PBRマテリアル
-- **ボックス（Box）**: 直方体オブジェクト
-  - プロパティ: 位置、サイズ、色、PBRマテリアル
+- **Sphere（球）**: 球体オブジェクト
+  - 入力: Transform、Material、Radius
+  - プロパティ: 半径（デフォルト1.0）
+- **Plane（平面）**: 無限平面（チェッカーパターン付き）
+  - 入力: Transform、Material
+- **Box（ボックス）**: 直方体オブジェクト（OBB回転対応）
+  - 入力: Transform、Material、Size
+  - プロパティ: サイズ（half-extents）
+- **FBXMesh**: FBXメッシュオブジェクト
+  - 入力: Transform、Material
+  - プロパティ: MeshName（Resource/Modelフォルダから自動読み込み）
+  - 表示: 頂点数、三角形数、バウンディングサイズ
 
 #### マテリアルノード
-- **DiffuseMaterial**: 拡散反射マテリアル
-- **MetalMaterial**: 金属マテリアル（反射、GGX-like roughness）
-- **GlassMaterial**: ガラスマテリアル（屈折）
-- **EmissionMaterial**: 発光マテリアル
+- **Universal PBR**: 標準PBRマテリアル（Metallic-Roughnessワークフロー）
+  - 入力: Base Color、Metallic、Roughness、Emissive
+  - 用途: 基本的な不透明マテリアル
+- **Material BSDF**: フル機能BSDFマテリアル（Principled BSDF風）
+  - 入力: Base Color、Metallic、Roughness、Transmission、IOR、Emission、Absorption
+  - 用途: ガラス、液体、カラーシャドウなど高度なマテリアル
+- **Emission Material**: 発光専用マテリアル
+  - 入力: Emission Color、Intensity
+  - 用途: ライトソースとして機能するオブジェクト
 
 #### カメラノード
-- **カメラ**: 視点設定
-  - プロパティ: 位置、注視点、上方向ベクトル、視野角、被写界深度（ApertureSize/FocusDistance）
+- **Camera**: 視点設定
+  - プロパティ: Position、LookAt、Up、FOV
+  - 被写界深度: ApertureSize（0=無効）、FocusDistance
 
 #### ライトノード
-- **ポイントライト**: 点光源（ソフトシャドウ対応）
-  - プロパティ: 位置、色、強度、半径
-- **ディレクショナルライト**: 方向性ライト（太陽光など）
-  - プロパティ: 方向、色、強度
-- **アンビエントライト**: 環境光
-  - プロパティ: 色、強度
+- **Point Light**: 点光源（ソフトシャドウ対応）
+  - プロパティ: Position、Color、Intensity、Radius（0=ハードシャドウ）
+- **Directional Light**: 方向性ライト（太陽光など）
+  - プロパティ: Direction、Color、Intensity
+- **Ambient Light**: 環境光
+  - プロパティ: Color、Intensity
 
 #### シーンノード
-- **シーン出力**: 最終的なシーン構成
-  - 入力ソケット: カメラ、オブジェクト、ライト
+- **Scene**: 最終的なシーン構成
+  - 入力ソケット: Camera、Objects（複数接続可）、Lights（複数接続可）
   - レンダリング設定: SamplesPerPixel、MaxBounces、Exposure、ToneMapOperator
 
 #### 数学ノード
-- **Vector3**: 3Dベクトル値（位置・方向）
 - **Float**: 浮動小数点値
-- **Color**: 色値
+- **Vector3**: 3Dベクトル (X, Y, Z)
+- **Vector4**: 4Dベクトル (X, Y, Z, W)
+- **Color**: RGB/RGBA色値
+- **Transform**: 位置・回転・スケール変換
+- **Combine Transform**: 複数のTransformを合成
+- **Add**: 値の加算
+- **Sub**: 値の減算
+- **Mul**: 値の乗算
+- **Div**: 値の除算
 
 ### ノードを接続する
 
@@ -127,17 +146,22 @@
 
 **注意**: ノード削除時、関連する接続も自動的に削除されます（Undo可能）
 
-### ノードのプロパティを確認する
+### ノードのプロパティを編集する
 
 1. ノードをクリックして選択
 2. 右パネルの「プロパティ」に以下の情報が表示されます：
    - ノード名
    - ノードタイプ
    - キャンバス上の位置
+   - **ノード固有のプロパティ**（編集可能）
    - 入力ソケット一覧
    - 出力ソケット一覧
 
-**注意**: プロパティ値の詳細編集機能は実装予定です。現在は情報の確認のみ可能です。
+**プロパティ編集**:
+- 数値はテキストボックスで直接編集
+- Enter/Tabで確定、Escapeでキャンセル
+- フォーカスを外すと自動確定
+- **全ての編集はUndo/Redo対応**
 
 ## シーンファイルの保存と読み込み
 

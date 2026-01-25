@@ -104,8 +104,8 @@
 - ✅ 依存関係解決
 - ✅ SceneEvaluatorサービス
 - ✅ ノードタイプ
-  - **オブジェクト**: SphereNode、PlaneNode、BoxNode
-  - **マテリアル**: DiffuseMaterialNode、MetalMaterialNode、GlassMaterialNode、EmissionMaterialNode、MaterialBSDFNode
+  - **オブジェクト**: SphereNode、PlaneNode、BoxNode、FBXMeshNode
+  - **マテリアル**: UniversalPBRNode、MaterialBSDFNode、EmissionMaterialNode
   - **カメラ**: CameraNode（DoF対応）
   - **ライト**: LightNode、DirectionalLightNode、AmbientLightNode
   - **数学**: Vector3Node、Vector4Node、FloatNode、ColorNode、AddNode、SubNode、MulNode、DivNode
@@ -184,23 +184,24 @@
 - `NodeSocket.cs` - ソケット
 
 **ノードタイプ:**
-- `Nodes/SphereNode.cs` - 球ノード
-- `Nodes/PlaneNode.cs` - 平面ノード
-- `Nodes/BoxNode.cs` - ボックスノード
+- `Nodes/SphereNode.cs` - 球ノード（Transform/Material/Radius入力）
+- `Nodes/PlaneNode.cs` - 平面ノード（チェッカーパターン）
+- `Nodes/BoxNode.cs` - ボックスノード（OBB回転対応）
+- `Nodes/FBXMeshNode.cs` - FBXメッシュノード
 - `Nodes/CameraNode.cs` - カメラノード（DoF対応）
 - `Nodes/LightNode.cs` - ポイントライトノード
 - `Nodes/DirectionalLightNode.cs` - ディレクショナルライトノード
 - `Nodes/AmbientLightNode.cs` - アンビエントライトノード
 - `Nodes/SceneNode.cs` - シーンノード
-- `Nodes/DiffuseMaterialNode.cs` - ディフューズマテリアルノード
-- `Nodes/MetalMaterialNode.cs` - 金属マテリアルノード
-- `Nodes/GlassMaterialNode.cs` - ガラスマテリアルノード
+- `Nodes/UniversalPBRNode.cs` - 標準PBRマテリアルノード
+- `Nodes/MaterialBSDFNode.cs` - フル機能BSDFマテリアルノード
 - `Nodes/EmissionMaterialNode.cs` - 発光マテリアルノード
-- `Nodes/MaterialBSDFNode.cs` - BSDFマテリアルノード
+- `Nodes/FloatNode.cs` - Floatノード
 - `Nodes/Vector3Node.cs` - Vector3ノード
 - `Nodes/Vector4Node.cs` - Vector4ノード
-- `Nodes/FloatNode.cs` - Floatノード
 - `Nodes/ColorNode.cs` - Colorノード
+- `Nodes/TransformNode.cs` - Transformノード
+- `Nodes/CombineTransformNode.cs` - Transform合成ノード
 - `Nodes/AddNode.cs` - 加算ノード
 - `Nodes/SubNode.cs` - 減算ノード
 - `Nodes/MulNode.cs` - 乗算ノード
