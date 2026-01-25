@@ -220,6 +220,49 @@ namespace RayTraceVS.WPF.Views
             return renderBitmap;
         }
 
+        public WriteableBitmap? GetRenderBitmapCopy()
+        {
+            if (renderBitmap == null)
+                return null;
+
+            if (!Dispatcher.CheckAccess())
+            {
+                return Dispatcher.Invoke(GetRenderBitmapCopy);
+            }
+
+            try
+            {
+                renderBitmap.Lock();
+                try
+                {
+                    var copy = new WriteableBitmap(
+                        renderBitmap.PixelWidth,
+                        renderBitmap.PixelHeight,
+                        renderBitmap.DpiX,
+                        renderBitmap.DpiY,
+                        renderBitmap.Format,
+                        renderBitmap.Palette);
+
+                    copy.WritePixels(
+                        new Int32Rect(0, 0, renderBitmap.PixelWidth, renderBitmap.PixelHeight),
+                        renderBitmap.BackBuffer,
+                        renderBitmap.BackBufferStride * renderBitmap.PixelHeight,
+                        renderBitmap.BackBufferStride);
+
+                    copy.Freeze();
+                    return copy;
+                }
+                finally
+                {
+                    renderBitmap.Unlock();
+                }
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
         private void StartRendering()
         {
             if (isRendering || renderService == null || nodeGraph == null || sceneEvaluator == null)

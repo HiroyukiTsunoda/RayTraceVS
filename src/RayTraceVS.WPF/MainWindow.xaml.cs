@@ -18,6 +18,7 @@ namespace RayTraceVS.WPF
         private SettingsService settingsService;
         private bool hasUnsavedChanges;
         private bool isRendering = false;
+        private bool isSavingScreenshot = false;
 
         public MainWindow()
         {
@@ -733,19 +734,25 @@ namespace RayTraceVS.WPF
                 MessageBox.Show("レンダリングウィンドウが開いていません。", "情報", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
-            
+
+            if (isSavingScreenshot)
+            {
+                return;
+            }
+
+            isSavingScreenshot = true;
             try
             {
                 var dialog = new SaveFileDialog
                 {
                     Filter = "PNG画像|*.png|JPEG画像|*.jpg|ビットマップ|*.bmp",
                     DefaultExt = "png",
-                    FileName = $"render_{DateTime.Now:yyyyMMdd_HHmmss}"
+                    FileName = $"render_{DateTime.Now:yyyyMMdd_HHmmss_fff}"
                 };
 
                 if (dialog.ShowDialog() == true)
                 {
-                    var bitmap = renderWindow.GetRenderBitmap();
+                    var bitmap = renderWindow.GetRenderBitmapCopy();
                     if (bitmap != null)
                     {
                         BitmapEncoder encoder;
@@ -781,6 +788,10 @@ namespace RayTraceVS.WPF
             catch (Exception ex)
             {
                 MessageBox.Show($"保存エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                isSavingScreenshot = false;
             }
         }
 
