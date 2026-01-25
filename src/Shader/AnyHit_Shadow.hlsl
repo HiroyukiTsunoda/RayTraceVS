@@ -5,8 +5,7 @@
 #include "Common.hlsli"
 
 // Any-hit shader for shadow rays
-// Called when a ray hits any geometry during shadow testing
-// Uses RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH for early termination
+// Shadow rays are traced with RAYKIND_SHADOW and dedicated TraceRay flags.
 
 [shader("anyhit")]
 void AnyHit_Shadow(inout ShadowPayload payload, in ProceduralAttributes attribs)
@@ -37,6 +36,8 @@ void AnyHit_Shadow(inout ShadowPayload payload, in ProceduralAttributes attribs)
     // Report the first occluder and its transmission/color.
     payload.hit = 1;
     payload.hitDistance = RayTCurrent();
+    payload.hitObjectType = objectType;
+    payload.hitObjectIndex = objectIndex;
     payload.shadowColorAccum = objectColor;
     payload.shadowTransmissionAccum = transmission;
     
@@ -54,6 +55,8 @@ void AnyHit_Shadow_Triangle(inout ShadowPayload payload, in BuiltInTriangleInter
     
     payload.hit = 1;
     payload.hitDistance = RayTCurrent();
+    payload.hitObjectType = OBJECT_TYPE_MESH;
+    payload.hitObjectIndex = instanceIndex;
     payload.shadowColorAccum = mat.color.rgb;
     payload.shadowTransmissionAccum = mat.transmission;
 }

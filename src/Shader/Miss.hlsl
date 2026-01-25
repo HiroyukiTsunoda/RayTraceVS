@@ -16,6 +16,8 @@ void Miss(inout RadiancePayload payload)
     payload.shadowPenumbra = 0.0;
     payload.shadowDistance = NRD_FP16_MAX;
     payload.hit = 0;  // 明示的にヒットなしを設定
+    payload.hitObjectType = OBJECT_TYPE_INVALID;
+    payload.hitObjectIndex = 0;
     
     // No further rays for miss
 }
@@ -24,4 +26,6 @@ void Miss(inout RadiancePayload payload)
 void Miss_Shadow(inout ShadowPayload payload)
 {
     payload.hit = 0;
+    payload.hitObjectType = OBJECT_TYPE_INVALID;
+    payload.hitObjectIndex = 0;
 }

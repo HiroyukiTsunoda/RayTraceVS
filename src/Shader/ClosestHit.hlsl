@@ -1,23 +1,15 @@
 // ClosestHit shader - Sphere, Plane, Box
 #include "Common.hlsli"
 
-// Hash function for roughness perturbation
-float Hash(float2 p)
-{
-    float3 p3 = frac(float3(p.xyx) * 0.1031);
-    p3 += dot(p3, p3.yzx + 33.33);
-    return frac((p3.x + p3.y) * p3.z);
-}
-
 // Perturb reflection direction based on roughness (GGX-like approximation)
-float3 PerturbReflection(float3 reflectDir, float3 normal, float roughness, float2 seed)
+float3 PerturbReflection(float3 reflectDir, float3 normal, float roughness, inout RNG rng)
 {
     if (roughness < 0.01)
         return reflectDir;
     
     // Generate random values
-    float r1 = Hash(seed);
-    float r2 = Hash(seed + float2(17.3, 31.7));
+    float r1 = rng_next(rng);
+    float r2 = rng_next(rng);
     
     // Build tangent frame
     float3 tangent = abs(normal.x) > 0.9 ? float3(0, 1, 0) : float3(1, 0, 0);
@@ -43,6 +35,8 @@ void ClosestHit(inout RadiancePayload payload, in ProceduralAttributes attribs)
 {
     payload.hit = 1;
     payload.hitDistance = RayTCurrent();
+    payload.hitObjectType = attribs.objectType;
+    payload.hitObjectIndex = attribs.objectIndex;
     
     // Use scene-specified max bounces (glass needs more for entry/internal/exit)
     uint maxBounces = (Scene.MaxBounces > 0) ? min(Scene.MaxBounces, 32) : 10;
@@ -73,10 +67,6 @@ void ClosestHit(inout RadiancePayload payload, in ProceduralAttributes attribs)
     // If normal is already pointing against ray, frontFace should be true for entering
     // But Intersection always returns normal against ray, so we need to check original geometry
     // For now, use the sign of the normal to determine entering/exiting
-    
-    // Generate random seed for soft shadow sampling
-    uint seed = asuint(hitPosition.x * 1000.0) ^ asuint(hitPosition.y * 2000.0) ^ asuint(hitPosition.z * 3000.0);
-    seed = WangHash(seed + payload.depth * 7919);
     
     // Get material properties
     float4 color;

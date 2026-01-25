@@ -8,21 +8,6 @@
 
 namespace RayTraceVS::DXEngine
 {
-    namespace
-    {
-        D3D12_RESOURCE_BARRIER MakeTransition(ID3D12Resource* resource,
-            D3D12_RESOURCE_STATES beforeState,
-            D3D12_RESOURCE_STATES afterState)
-        {
-            D3D12_RESOURCE_BARRIER barrier = {};
-            barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-            barrier.Transition.pResource = resource;
-            barrier.Transition.StateBefore = beforeState;
-            barrier.Transition.StateAfter = afterState;
-            barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-            return barrier;
-        }
-    }
     NRDDenoiser::NRDDenoiser(DXContext* context)
         : m_dxContext(context)
     {
@@ -173,7 +158,7 @@ namespace RayTraceVS::DXEngine
             }
 
             resource->SetName(name);
-            m_resourceStates[resource.Get()] = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+            m_resourceStateTracker.RegisterResource(resource.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
             return true;
         };
 
@@ -293,7 +278,7 @@ namespace RayTraceVS::DXEngine
                 return false;
 
             resource->SetName(name);
-            m_resourceStates[resource.Get()] = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+            m_resourceStateTracker.RegisterResource(resource.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
             return true;
         };
 
@@ -389,7 +374,7 @@ namespace RayTraceVS::DXEngine
                 OutputDebugStringW(L"NRD: Failed to create permanent pool texture\n");
                 return false;
             }
-            m_resourceStates[m_nrdTextures[i].Get()] = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+            m_resourceStateTracker.RegisterResource(m_nrdTextures[i].Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         }
 
         for (uint32_t i = 0; i < instanceDesc.transientPoolSize; i++)
@@ -431,7 +416,7 @@ namespace RayTraceVS::DXEngine
                 OutputDebugStringW(L"NRD: Failed to create transient pool texture\n");
                 return false;
             }
-            m_resourceStates[m_nrdTextures[idx].Get()] = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+            m_resourceStateTracker.RegisterResource(m_nrdTextures[idx].Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         }
 
         // Create NRD descriptor heap for dispatch resources
@@ -1040,17 +1025,7 @@ namespace RayTraceVS::DXEngine
                         desiredState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
                     }
 
-                    auto stateIt = m_resourceStates.find(d3dResource);
-                    D3D12_RESOURCE_STATES currentState = (stateIt != m_resourceStates.end())
-                        ? stateIt->second
-                        : D3D12_RESOURCE_STATE_COMMON;
-
-                    if (currentState != desiredState)
-                    {
-                        D3D12_RESOURCE_BARRIER barrier = MakeTransition(d3dResource, currentState, desiredState);
-                        cmdList->ResourceBarrier(1, &barrier);
-                        m_resourceStates[d3dResource] = desiredState;
-                    }
+                    m_resourceStateTracker.Transition(d3dResource, desiredState);
 
                     if (range.descriptorType == nrd::DescriptorType::TEXTURE)
                     {
@@ -1110,6 +1085,9 @@ namespace RayTraceVS::DXEngine
                 }
             }
 
+            // Apply queued state transitions before dispatch
+            m_resourceStateTracker.Flush(cmdList);
+
             // Set descriptor tables
             CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpuHandle(m_nrdDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
             srvGpuHandle.Offset(descriptorOffset, m_descriptorSize);
@@ -1135,10 +1113,8 @@ namespace RayTraceVS::DXEngine
             dispatchedCount++;
 
             // UAV barrier between dispatches
-            D3D12_RESOURCE_BARRIER barrier = {};
-            barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
-            barrier.UAV.pResource = nullptr;  // All UAVs
-            cmdList->ResourceBarrier(1, &barrier);
+            m_resourceStateTracker.AddUavBarrier(nullptr);
+            m_resourceStateTracker.Flush(cmdList);
         }
 
         sprintf_s(buf, "NRD: Dispatched %d, Skipped %d (PSO count=%zu)", 
@@ -1148,23 +1124,14 @@ namespace RayTraceVS::DXEngine
         // Ensure NRD outputs and Albedo are in SRV state for composite
         auto ToSrv = [&](ID3D12Resource* res)
         {
-            if (!res)
-                return;
-            auto stateIt = m_resourceStates.find(res);
-            D3D12_RESOURCE_STATES currentState = (stateIt != m_resourceStates.end())
-                ? stateIt->second
-                : D3D12_RESOURCE_STATE_COMMON;
-            if (currentState == D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
-                return;
-            D3D12_RESOURCE_BARRIER barrier = MakeTransition(res, currentState, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-            cmdList->ResourceBarrier(1, &barrier);
-            m_resourceStates[res] = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+            m_resourceStateTracker.Transition(res, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         };
 
         ToSrv(m_output.DiffuseRadiance.Get());
         ToSrv(m_output.SpecularRadiance.Get());
         ToSrv(m_output.DenoisedShadow.Get());
         ToSrv(m_gBuffer.Albedo.Get());
+        m_resourceStateTracker.Flush(cmdList);
         return;
 #endif
 
@@ -1276,26 +1243,17 @@ namespace RayTraceVS::DXEngine
 
     void NRDDenoiser::NotifyResourceState(ID3D12Resource* resource, D3D12_RESOURCE_STATES state)
     {
-        if (!resource)
-            return;
-        m_resourceStates[resource] = state;
+        m_resourceStateTracker.NotifyState(resource, state);
     }
 
     void NRDDenoiser::EnsureResourceState(ID3D12GraphicsCommandList* cmdList,
                                           ID3D12Resource* resource,
                                           D3D12_RESOURCE_STATES desiredState)
     {
-        if (!cmdList || !resource)
+        if (!cmdList)
             return;
-        auto stateIt = m_resourceStates.find(resource);
-        D3D12_RESOURCE_STATES currentState = (stateIt != m_resourceStates.end())
-            ? stateIt->second
-            : D3D12_RESOURCE_STATE_COMMON;
-        if (currentState == desiredState)
-            return;
-        D3D12_RESOURCE_BARRIER barrier = MakeTransition(resource, currentState, desiredState);
-        cmdList->ResourceBarrier(1, &barrier);
-        m_resourceStates[resource] = desiredState;
+        m_resourceStateTracker.Transition(resource, desiredState);
+        m_resourceStateTracker.Flush(cmdList);
     }
 
     D3D12_GPU_DESCRIPTOR_HANDLE NRDDenoiser::GetNormalRoughnessUAV() const
@@ -1385,7 +1343,7 @@ namespace RayTraceVS::DXEngine
         m_output.SpecularRadiance.Reset();
         m_output.DenoisedShadow.Reset();
 
-        m_resourceStates.clear();
+        m_resourceStateTracker.Reset();
         m_initialized = false;
     }
 }

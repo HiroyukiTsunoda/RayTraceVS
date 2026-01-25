@@ -111,6 +111,7 @@
   <ItemGroup>
     <ClInclude Include="DXContext.h" />
     <ClInclude Include="DXRPipeline.h" />
+    <ClInclude Include="ResourceStateTracker.h" />
     <ClInclude Include="ShaderCache.h" />
     <ClInclude Include="AccelerationStructure.h" />
     <ClInclude Include="RenderTarget.h" />
@@ -132,6 +133,7 @@
   <ItemGroup>
     <ClCompile Include="DXContext.cpp" />
     <ClCompile Include="DXRPipeline.cpp" />
+    <ClCompile Include="ResourceStateTracker.cpp" />
     <ClCompile Include="ShaderCache.cpp" />
     <ClCompile Include="AccelerationStructure.cpp" />
     <ClCompile Include="RenderTarget.cpp" />

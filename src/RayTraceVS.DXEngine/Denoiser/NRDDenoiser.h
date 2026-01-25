@@ -5,7 +5,7 @@
 #include <DirectXMath.h>
 #include <vector>
 #include <memory>
-#include <unordered_map>
+#include "../ResourceStateTracker.h"
 
 // NRD integration - enabled by default since NRD SDK is built
 // To disable, define NRD_ENABLED=0 in preprocessor
@@ -161,7 +161,7 @@ namespace RayTraceVS::DXEngine
         ComPtr<ID3D12DescriptorHeap> m_samplerHeap;
 
         // Resource state tracking for NRD inputs/outputs
-        std::unordered_map<ID3D12Resource*, D3D12_RESOURCE_STATES> m_resourceStates;
+        ResourceStateTracker m_resourceStateTracker;
         
         // Helper functions
         bool CreateNRDResources();

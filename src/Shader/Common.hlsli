@@ -1,7 +1,6 @@
 // 共通定義
 
-#define MAX_RECURSION_DEPTH 4
-#define SHADOW_RAY_DEPTH 100  // Marker for shadow rays (depth >= this value)
+// Ray type is determined by rayKind; depth markers are deprecated.
 
 // Include NRD encoding helpers
 #include "NRDEncoding.hlsli"
@@ -11,6 +10,7 @@
 #define OBJECT_TYPE_PLANE 1
 #define OBJECT_TYPE_BOX 2
 #define OBJECT_TYPE_MESH 3
+#define OBJECT_TYPE_INVALID 0xFFFFFFFF
 
 // Light type constants
 #define LIGHT_TYPE_AMBIENT 0
@@ -45,9 +45,12 @@ struct PhotonHashCell
 #define PATH_FLAG_INSIDE 0x1
 #define PATH_FLAG_SPECULAR 0x2
 
-#define PATH_TYPE_RADIANCE 0
-#define PATH_TYPE_SHADOW 1
-#define PATH_TYPE_PHOTON 2
+#define RAYFLAG_SKIP_SELF 0x1
+
+#define RAYKIND_RADIANCE 0
+#define RAYKIND_SHADOW 1
+#define RAYKIND_THICKNESS 2
+#define RAYKIND_PHOTON 3
 
 #define SKY_BOOST_GLASS 1.2
 #define SKY_BOOST_METAL 1.1
@@ -59,15 +62,15 @@ struct PathState
     float3 direction;
     uint depth;
     float3 throughput;
-    uint flags; // PATH_FLAG_*
+    uint pathFlags; // PATH_FLAG_*
     float3 absorption; // sigmaA for current medium
-    uint pathType; // PATH_TYPE_*
+    uint rayKind; // RAYKIND_*
     float skyBoost; // Miss-only sky boost for specular paths
     float3 padding2;
 };
 
-#define RADIANCE_PAYLOAD_SIZE 144
-#define SHADOW_PAYLOAD_SIZE 24
+#define RADIANCE_PAYLOAD_SIZE 160
+#define SHADOW_PAYLOAD_SIZE 32
 #define PHOTON_PAYLOAD_SIZE 160
 #define THICKNESS_PAYLOAD_SIZE 16
 #define WORK_QUEUE_STRIDE 8
@@ -151,11 +154,17 @@ struct RadiancePayload
     float3 absorption;          // Material absorption (sigmaA)
 
     // Current path state (input for hit shaders)
-    uint pathFlags;
+    uint pathFlags;             // PATH_FLAG_*
     float3 pathAbsorption;      // sigmaA for current medium
     float pathSkyBoost;         // Miss-only sky boost
+    uint rayFlags;              // RAYFLAG_*
+    // Any-hit self-skip (input)
+    uint skipObjectType;
+    uint skipObjectIndex;
+    // Hit object id (output)
+    uint hitObjectType;
+    uint hitObjectIndex;
     uint payloadPadding0;
-    uint payloadPadding1;
 };
 
 struct WorkItem
@@ -165,13 +174,16 @@ struct WorkItem
     float3 direction;
     uint depth;
     float3 throughput;
-    uint flags;
+    uint pathFlags;
     float3 absorption;
-    uint pathType;
+    uint rayKind;
     float skyBoost;
     uint specularDepth;
     uint diffuseDepth;
     uint kind;
+    uint rayFlags; // RAYFLAG_*
+    uint skipObjectType;
+    uint skipObjectIndex;
     uint padding;
 };
 
@@ -189,6 +201,8 @@ struct ShadowPayload
 {
     uint hit;                       // 1 if hit, 0 if miss
     float hitDistance;              // Distance to first occluder
+    uint hitObjectType;             // OBJECT_TYPE_*
+    uint hitObjectIndex;            // Object index or instance index
     float3 shadowColorAccum;        // Accumulated tint from translucent objects
     float shadowTransmissionAccum;  // Accumulated transmission (visibility)
 };
@@ -471,6 +485,7 @@ StructuredBuffer<uint> MeshIndices : register(t6);                  // 全メッ
 StructuredBuffer<MeshMaterial> MeshMaterials : register(t7);        // インスタンスごとのマテリアル
 StructuredBuffer<MeshInfo> MeshInfos : register(t8);                // メッシュ種類ごとのオフセット情報
 StructuredBuffer<MeshInstanceInfo> MeshInstances : register(t9);    // インスタンスごとの参照情報
+Texture2D<float4> BlueNoiseTex : register(t10);                     // 16x16 RGBA blue noise
 
 // Photon map buffer (for caustics)
 RWStructuredBuffer<Photon> PhotonMap : register(u1);
@@ -534,6 +549,18 @@ float FresnelSchlick(float cosTheta, float f0)
 // Universal PBR BRDF Functions
 // ============================================
 #define PI 3.14159265359
+
+// ============================================
+// RNG (PCG-based) for temporal stability
+// ============================================
+#define RNG_SALT_AA 1u
+#define RNG_SALT_DOF 2u
+#define RNG_SALT_LIGHT_PICK 3u
+#define RNG_SALT_BRDF 4u
+#define RNG_SALT_RR 5u
+#define RNG_SALT_SHADOW 6u
+#define RNG_SALT_REFLECT 7u
+#define RNG_SALT_REFRACT 8u
 
 // GGX Normal Distribution Function (Trowbridge-Reitz)
 float GGX_D(float NdotH, float roughness)
@@ -668,11 +695,38 @@ uint WangHash(uint seed)
     return seed;
 }
 
-// Generate random float [0, 1) from seed
+// PCG-inspired hash for RNG state transitions
+uint PcgHash(uint v)
+{
+    v = v * 747796405u + 2891336453u;
+    uint word = ((v >> ((v >> 28u) + 4u)) ^ v) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+struct RNG
+{
+    uint state;
+};
+
+RNG rng_init(uint2 pixel, uint frame, uint sample, uint salt)
+{
+    uint s = pixel.x * 1973u + pixel.y * 9277u + frame * 26699u + sample * 31837u + salt * 911u;
+    RNG r;
+    r.state = PcgHash(s);
+    return r;
+}
+
+float rng_next(inout RNG r)
+{
+    r.state = PcgHash(r.state);
+    return (r.state >> 8) * (1.0 / 16777216.0);
+}
+
+// Generate random float [0, 1) from seed (PCG-based)
 float RandomFloat(inout uint seed)
 {
-    seed = WangHash(seed);
-    return float(seed) / 4294967296.0;
+    seed = PcgHash(seed);
+    return (seed >> 8) * (1.0 / 16777216.0);
 }
 
 // Generate random direction on unit sphere
@@ -879,6 +933,8 @@ float TraceSingleShadowRay(float3 rayOrigin, float3 rayDir, float maxDist, out f
         ShadowPayload shadowPayload;
         shadowPayload.hit = 0;
         shadowPayload.hitDistance = NRD_FP16_MAX;
+        shadowPayload.hitObjectType = OBJECT_TYPE_INVALID;
+        shadowPayload.hitObjectIndex = 0;
         shadowPayload.shadowColorAccum = float3(1, 1, 1);
         shadowPayload.shadowTransmissionAccum = 1.0;
         

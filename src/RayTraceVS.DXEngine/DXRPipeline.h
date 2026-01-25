@@ -2,6 +2,7 @@
 
 #include <d3d12.h>
 #include "d3dx12.h"
+#include "ResourceStateTracker.h"
 #include <wrl/client.h>
 #include <memory>
 #include <vector>
@@ -333,6 +334,7 @@ namespace RayTraceVS::DXEngine
     private:
         DXContext* dxContext;
         bool dxrPipelineReady = false;
+        ResourceStateTracker resourceStateTracker;
 
         // Shader paths (fixed locations)
         // - shaderSourcePath: C:\git\RayTraceVS\src\Shader\ (for .hlsl source files)
@@ -430,6 +432,11 @@ namespace RayTraceVS::DXEngine
         // DXR descriptor heap
         ComPtr<ID3D12DescriptorHeap> dxrSrvUavHeap;
         UINT dxrDescriptorSize = 0;
+        
+        // Blue noise texture for AA/DoF (SRV t10)
+        ComPtr<ID3D12Resource> blueNoiseTexture;
+        ComPtr<ID3D12Resource> blueNoiseUpload;
+        bool blueNoiseReady = false;
 
         // Shader bytecode
         ComPtr<ID3DBlob> rayGenShader;
@@ -502,8 +509,8 @@ namespace RayTraceVS::DXEngine
         bool needsAccelerationStructureRebuild = true;
 
         // Trace recursion depth (DXR pipeline config)
-        UINT maxTraceRecursionDepth = 2;
-        UINT currentTraceRecursionDepth = 2;
+        UINT maxTraceRecursionDepth = 1;
+        UINT currentTraceRecursionDepth = 1;
         
         // Cached object counts for detecting scene changes
         UINT lastSphereCount = 0;
@@ -576,6 +583,7 @@ namespace RayTraceVS::DXEngine
         bool CreateDXRDescriptorHeap();
         bool BuildAccelerationStructures(Scene* scene);
         void UpdateDXRDescriptors(RenderTarget* renderTarget);
+        bool LoadBlueNoiseTexture(ID3D12GraphicsCommandList* commandList);
         
         // Photon mapping (for caustics)
         bool CreatePhotonMappingResources();
