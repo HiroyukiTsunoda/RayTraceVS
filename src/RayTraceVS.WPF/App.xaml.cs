@@ -6,7 +6,9 @@ namespace RayTraceVS.WPF
 {
     public partial class App : Application
     {
+#if DEBUG
         private const string DebugLogPath = @"C:\git\RayTraceVS\debug.log";
+#endif
 
         /// <summary>
         /// メッシュキャッシュサービス（アプリ全体で共有）
@@ -17,8 +19,10 @@ namespace RayTraceVS.WPF
         {
             base.OnStartup(e);
             
+#if DEBUG
             // アプリケーション起動時にデバッグログファイルをクリア
             ClearDebugLog();
+#endif
             
             // メッシュキャッシュを初期化（FBX変換）
             // 重要: MainWindow表示前に完了させる必要がある
@@ -31,6 +35,7 @@ namespace RayTraceVS.WPF
             mainWindow.Show();
         }
 
+#if DEBUG
         private void ClearDebugLog()
         {
             try
@@ -42,6 +47,7 @@ namespace RayTraceVS.WPF
                 // ログファイルのクリアに失敗しても続行
             }
         }
+#endif
 
         protected override void OnExit(ExitEventArgs e)
         {

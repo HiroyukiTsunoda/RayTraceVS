@@ -720,8 +720,8 @@
       "Id": "fb058017-47f7-4056-a76f-e8ca00f721dd",
       "Type": "TransformNode",
       "Title": "Transform",
-      "PositionX": 1394.1079617867463,
-      "PositionY": 1166.6786040080403,
+      "PositionX": 1338.1079617867463,
+      "PositionY": 1160.9643182937546,
       "Properties": {
         "PositionX": 0.0,
         "PositionY": 0.0,
@@ -803,8 +803,8 @@
       "Id": "f03f5360-ed34-4fe9-b831-7f741965d0de",
       "Type": "FloatNode",
       "Title": "Float",
-      "PositionX": 1385.5052239508511,
-      "PositionY": 1300.0722626958818,
+      "PositionX": 1288.3623668079942,
+      "PositionY": 1285.2151198387392,
       "Properties": {
         "Value": 1.1
       }
@@ -843,7 +843,7 @@
       "Id": "252760db-13ab-40f1-a848-c4003b7f1745",
       "Type": "TransformNode",
       "Title": "Transform",
-      "PositionX": 1810.7765361774823,
+      "PositionX": 1810.0985700757874,
       "PositionY": 1870.8480712578653,
       "Properties": {
         "PositionX": 0.0,
@@ -861,8 +861,8 @@
       "Id": "77d951bb-ee9d-44d8-86d6-841a7c401a25",
       "Type": "Vector3Node",
       "Title": "Vector3",
-      "PositionX": 1200.495536005434,
-      "PositionY": 1868.7225914787089,
+      "PositionX": 1201.851468208824,
+      "PositionY": 1868.044625377014,
       "Properties": {
         "X": 0.5,
         "Y": -0.03,
@@ -984,12 +984,24 @@
       "Id": "a51b02de-a879-4ad6-9e25-6ba1db75c1d4",
       "Type": "Vector3Node",
       "Title": "Vector3",
-      "PositionX": 1467.1766215714308,
+      "PositionX": 1466.2010118153332,
       "PositionY": 1701.8321198921715,
       "Properties": {
-        "X": 0.0,
-        "Y": 0.0,
+        "X": 0.4,
+        "Y": 0.4,
         "Z": 0.0
+      }
+    },
+    {
+      "Id": "a7d95e97-4e54-4a04-9f46-d80a5948f1a5",
+      "Type": "Vector3Node",
+      "Title": "Vector3",
+      "PositionX": 1532.6808711083036,
+      "PositionY": 1276.5486539668802,
+      "Properties": {
+        "X": 0.0,
+        "Y": 0.4,
+        "Z": 0.4
       }
     }
   ],
@@ -1407,12 +1419,18 @@
       "OutputSocketName": "Vector",
       "InputNodeId": "1421c25d-c665-46e5-a66c-95e3cf7871ad",
       "InputSocketName": "Absorption"
+    },
+    {
+      "OutputNodeId": "a7d95e97-4e54-4a04-9f46-d80a5948f1a5",
+      "OutputSocketName": "Vector",
+      "InputNodeId": "1617550e-1ef3-4181-827f-4a2fa22edc0d",
+      "InputSocketName": "Absorption"
     }
   ],
   "Viewport": {
-    "PanX": -718.0154571659527,
-    "PanY": -842.3698962528421,
-    "Zoom": 0.8200000000000005,
+    "PanX": -359.8538925245066,
+    "PanY": -612.132046815156,
+    "Zoom": 0.7000000000000005,
     "IsLeftPanelVisible": true,
     "IsRightPanelVisible": true,
     "ExpanderStates": {

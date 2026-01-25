@@ -882,7 +882,21 @@ namespace RayTraceVS.WPF.Views
         }
         
         /// <summary>
+        /// IME有効時やSystemキー押下時の実キーを取得
+        /// </summary>
+        private static Key GetRealKey(KeyEventArgs e)
+        {
+            var key = e.Key;
+            if (key == Key.ImeProcessed)
+                key = e.ImeProcessedKey;
+            else if (key == Key.System)
+                key = e.SystemKey;
+            return key;
+        }
+
+        /// <summary>
         /// PreviewKeyDown - コピー＆ペーストのショートカットを処理（トンネリングイベント）
+        /// MainWindowで処理されなかった場合のフォールバック
         /// </summary>
         private void UserControl_PreviewKeyDown(object sender, KeyEventArgs e)
         {
@@ -891,9 +905,11 @@ namespace RayTraceVS.WPF.Views
             {
                 return;
             }
+
+            var key = GetRealKey(e);
             
             // CTRL+C: コピー
-            if (e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.Control)
+            if (key == Key.C && Keyboard.Modifiers == ModifierKeys.Control)
             {
                 HandleCopy();
                 e.Handled = true;
@@ -901,7 +917,7 @@ namespace RayTraceVS.WPF.Views
             }
             
             // CTRL+V: ペースト
-            if (e.Key == Key.V && Keyboard.Modifiers == ModifierKeys.Control)
+            if (key == Key.V && Keyboard.Modifiers == ModifierKeys.Control)
             {
                 HandlePaste();
                 e.Handled = true;
@@ -930,6 +946,22 @@ namespace RayTraceVS.WPF.Views
         /// クリップボードにコピーするデータの形式
         /// </summary>
         private const string ClipboardFormat = "RayTraceVS.NodeClipboard";
+        
+        /// <summary>
+        /// 選択されたノードをクリップボードにコピー（外部公開用）
+        /// </summary>
+        public void CopySelectedNodes()
+        {
+            HandleCopy();
+        }
+        
+        /// <summary>
+        /// クリップボードからノードをペースト（外部公開用）
+        /// </summary>
+        public void PasteNodes()
+        {
+            HandlePaste();
+        }
         
         /// <summary>
         /// 選択されたノードをクリップボードにコピー

@@ -17,11 +17,15 @@ namespace RayTraceVS.WPF.Models.Nodes
             get => _samplesPerPixel;
             set
             {
+#if DEBUG
                 try { System.IO.File.AppendAllText(@"C:\git\RayTraceVS\debug.log", $"[SceneNode] SamplesPerPixel setter called with: {value}, current: {_samplesPerPixel}\n"); } catch { }
+#endif
                 if (SetProperty(ref _samplesPerPixel, value))
                 {
                     MarkDirty();
+#if DEBUG
                     try { System.IO.File.AppendAllText(@"C:\git\RayTraceVS\debug.log", $"[SceneNode] SamplesPerPixel changed to: {value}, MarkDirty called\n"); } catch { }
+#endif
                 }
             }
         }
