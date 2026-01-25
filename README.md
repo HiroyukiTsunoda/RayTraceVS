@@ -2,6 +2,10 @@
 
 WPFベースのビジュアルスクリプティングUIと、DirectX12 DXRを使用したGPUレイトレーシングエンジンを組み合わせたWindowsアプリケーションです。
 
+## スクリーンショット
+
+![RayTraceVS スクリーンショット](ScreenShot.png)
+
 ## 概要
 
 - **プロジェクト名**: RayTraceVS
