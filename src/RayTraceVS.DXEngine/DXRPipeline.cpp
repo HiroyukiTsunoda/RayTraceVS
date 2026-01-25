@@ -19,17 +19,14 @@
 #include <string>
 #include <fstream>
 #include <map>
+#include <wincodec.h>
 
 #pragma comment(lib, "dxcompiler.lib")
 #pragma comment(lib, "d3dcompiler.lib")
+#pragma comment(lib, "windowscodecs.lib")
 
 namespace RayTraceVS::DXEngine
 {
-    // Track photon buffer UAV state (buffers start in COMMON)
-    static bool photonMapInUavState = false;
-    static bool photonCounterInUavState = false;
-    static bool photonHashTableInUavState = false;
-
     static void SetCommandListName(ID3D12GraphicsCommandList* commandList, const wchar_t* name)
     {
         if (commandList && name)
@@ -119,7 +116,7 @@ namespace RayTraceVS::DXEngine
             LOG_ERROR("Failed to initialize shader path");
             return false;
         }
-        
+
         // Initialize shader cache system
         shaderCache = std::make_unique<ShaderCache>(dxContext);
         if (!shaderCache->Initialize(shaderBasePath, shaderSourcePath))
@@ -374,6 +371,7 @@ namespace RayTraceVS::DXEngine
             LOG_ERROR_HR("Failed to create sphere buffer", hr);
             return false;
         }
+        resourceStateTracker.RegisterResource(sphereBuffer.Get(), D3D12_RESOURCE_STATE_COMMON);
         hr = device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &sphereDesc,
             D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&sphereUploadBuffer));
         if (FAILED(hr))
@@ -393,6 +391,7 @@ namespace RayTraceVS::DXEngine
             LOG_ERROR_HR("Failed to create plane buffer", hr);
             return false;
         }
+        resourceStateTracker.RegisterResource(planeBuffer.Get(), D3D12_RESOURCE_STATE_COMMON);
         hr = device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &planeDesc,
             D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&planeUploadBuffer));
         if (FAILED(hr))
@@ -412,6 +411,7 @@ namespace RayTraceVS::DXEngine
             LOG_ERROR_HR("Failed to create box buffer", hr);
             return false;
         }
+        resourceStateTracker.RegisterResource(boxBuffer.Get(), D3D12_RESOURCE_STATE_COMMON);
         hr = device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &boxDesc,
             D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&boxUploadBuffer));
         if (FAILED(hr))
@@ -431,6 +431,7 @@ namespace RayTraceVS::DXEngine
             LOG_ERROR_HR("Failed to create light buffer", hr);
             return false;
         }
+        resourceStateTracker.RegisterResource(lightBuffer.Get(), D3D12_RESOURCE_STATE_COMMON);
         hr = device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &lightDesc,
             D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&lightUploadBuffer));
         if (FAILED(hr))
@@ -461,41 +462,14 @@ namespace RayTraceVS::DXEngine
         auto commandList = dxContext->GetCommandList();
         SetCommandListName(commandList, L"CmdList_UpdateSceneData");
 
-        // Track default heap buffer states across frames
-        static bool sphereBufferInSrvState = false;
-        static bool planeBufferInSrvState = false;
-        static bool boxBufferInSrvState = false;
-        static bool lightBufferInSrvState = false;
-
-        auto TransitionForCopy = [&](ID3D12Resource* resource, bool& inSrvState)
+        auto TransitionForCopy = [&](ID3D12Resource* resource)
         {
-            if (!resource)
-                return;
-
-            D3D12_RESOURCE_BARRIER preBarrier = {};
-            preBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-            preBarrier.Transition.pResource = resource;
-            preBarrier.Transition.StateBefore = inSrvState
-                ? D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE
-                : D3D12_RESOURCE_STATE_COMMON;
-            preBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST;
-            preBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-            commandList->ResourceBarrier(1, &preBarrier);
+            resourceStateTracker.Transition(resource, D3D12_RESOURCE_STATE_COPY_DEST);
         };
 
-        auto TransitionToSrv = [&](ID3D12Resource* resource, bool& inSrvState)
+        auto TransitionToSrv = [&](ID3D12Resource* resource)
         {
-            if (!resource)
-                return;
-
-            D3D12_RESOURCE_BARRIER postBarrier = {};
-            postBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-            postBarrier.Transition.pResource = resource;
-            postBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
-            postBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-            postBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-            commandList->ResourceBarrier(1, &postBarrier);
-            inSrvState = true;
+            resourceStateTracker.Transition(resource, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         };
 
         // Update constant buffer
@@ -540,12 +514,7 @@ namespace RayTraceVS::DXEngine
         mappedConstantData->SamplesPerPixel = scene->GetSamplesPerPixel();
         mappedConstantData->MaxBounces = scene->GetMaxBounces();
 
-        int requestedTraceDepth = scene->GetTraceRecursionDepth();
-        if (requestedTraceDepth < 2)
-            requestedTraceDepth = 2;
-        if (requestedTraceDepth > 8)
-            requestedTraceDepth = 8;
-        maxTraceRecursionDepth = static_cast<UINT>(requestedTraceDepth);
+        maxTraceRecursionDepth = 1;
         
         // DoF parameters
         mappedConstantData->ApertureSize = camera.GetApertureSize();
@@ -762,31 +731,36 @@ namespace RayTraceVS::DXEngine
         // Upload object data to GPU buffers
         if (!spheres.empty() && sphereUploadBuffer)
         {
-            TransitionForCopy(sphereBuffer.Get(), sphereBufferInSrvState);
+            TransitionForCopy(sphereBuffer.Get());
+            resourceStateTracker.Flush(commandList);
             void* mapped = nullptr;
             sphereUploadBuffer->Map(0, nullptr, &mapped);
             memcpy(mapped, spheres.data(), sizeof(GPUSphere) * spheres.size());
             sphereUploadBuffer->Unmap(0, nullptr);
 
             commandList->CopyResource(sphereBuffer.Get(), sphereUploadBuffer.Get());
-            TransitionToSrv(sphereBuffer.Get(), sphereBufferInSrvState);
+            TransitionToSrv(sphereBuffer.Get());
+            resourceStateTracker.Flush(commandList);
         }
 
         if (!planes.empty() && planeUploadBuffer)
         {
-            TransitionForCopy(planeBuffer.Get(), planeBufferInSrvState);
+            TransitionForCopy(planeBuffer.Get());
+            resourceStateTracker.Flush(commandList);
             void* mapped = nullptr;
             planeUploadBuffer->Map(0, nullptr, &mapped);
             memcpy(mapped, planes.data(), sizeof(GPUPlane) * planes.size());
             planeUploadBuffer->Unmap(0, nullptr);
 
             commandList->CopyResource(planeBuffer.Get(), planeUploadBuffer.Get());
-            TransitionToSrv(planeBuffer.Get(), planeBufferInSrvState);
+            TransitionToSrv(planeBuffer.Get());
+            resourceStateTracker.Flush(commandList);
         }
 
         if (!Boxes.empty() && boxUploadBuffer)
         {
-            TransitionForCopy(boxBuffer.Get(), boxBufferInSrvState);
+            TransitionForCopy(boxBuffer.Get());
+            resourceStateTracker.Flush(commandList);
             void* mapped = nullptr;
             HRESULT hr = boxUploadBuffer->Map(0, nullptr, &mapped);
             if (FAILED(hr) || mapped == nullptr)
@@ -810,12 +784,14 @@ namespace RayTraceVS::DXEngine
             }
 
             commandList->CopyResource(boxBuffer.Get(), boxUploadBuffer.Get());
-            TransitionToSrv(boxBuffer.Get(), boxBufferInSrvState);
+            TransitionToSrv(boxBuffer.Get());
+            resourceStateTracker.Flush(commandList);
         }
 
         if (!gpuLights.empty() && lightUploadBuffer)
         {
-            TransitionForCopy(lightBuffer.Get(), lightBufferInSrvState);
+            TransitionForCopy(lightBuffer.Get());
+            resourceStateTracker.Flush(commandList);
             void* mapped = nullptr;
             HRESULT hr = lightUploadBuffer->Map(0, nullptr, &mapped);
             if (FAILED(hr) || mapped == nullptr)
@@ -839,7 +815,8 @@ namespace RayTraceVS::DXEngine
             }
 
             commandList->CopyResource(lightBuffer.Get(), lightUploadBuffer.Get());
-            TransitionToSrv(lightBuffer.Get(), lightBufferInSrvState);
+            TransitionToSrv(lightBuffer.Get());
+            resourceStateTracker.Flush(commandList);
         }
         
         // ============================================
@@ -1281,6 +1258,190 @@ namespace RayTraceVS::DXEngine
         commandList->ResourceBarrier(1, &barrier);
     }
 
+    bool DXRPipeline::LoadBlueNoiseTexture(ID3D12GraphicsCommandList* commandList)
+    {
+        if (blueNoiseReady)
+            return true;
+        if (!commandList)
+            return false;
+
+        const std::wstring texturePath = L"C:\\git\\RayTraceVS\\Resource\\Texture\\BlueNoise16.png";
+
+        HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+        const bool coInitOk = SUCCEEDED(hr);
+        if (FAILED(hr) && hr != RPC_E_CHANGED_MODE)
+        {
+            LOG_ERROR("LoadBlueNoiseTexture: CoInitializeEx failed");
+            return false;
+        }
+
+        ComPtr<IWICImagingFactory> factory;
+        hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
+        if (FAILED(hr))
+        {
+            LOG_ERROR("LoadBlueNoiseTexture: Failed to create WIC factory");
+            if (coInitOk)
+                CoUninitialize();
+            return false;
+        }
+
+        ComPtr<IWICBitmapDecoder> decoder;
+        hr = factory->CreateDecoderFromFilename(texturePath.c_str(), nullptr, GENERIC_READ,
+            WICDecodeMetadataCacheOnLoad, &decoder);
+        if (FAILED(hr))
+        {
+            LOG_ERROR("LoadBlueNoiseTexture: Failed to open BlueNoise16.png");
+            if (coInitOk)
+                CoUninitialize();
+            return false;
+        }
+
+        ComPtr<IWICBitmapFrameDecode> frame;
+        hr = decoder->GetFrame(0, &frame);
+        if (FAILED(hr))
+        {
+            LOG_ERROR("LoadBlueNoiseTexture: Failed to get PNG frame");
+            if (coInitOk)
+                CoUninitialize();
+            return false;
+        }
+
+        UINT width = 0;
+        UINT height = 0;
+        frame->GetSize(&width, &height);
+        if (width != 16 || height != 16)
+        {
+            LOG_WARN("LoadBlueNoiseTexture: Expected 16x16 BlueNoise16.png");
+        }
+
+        ComPtr<IWICFormatConverter> converter;
+        hr = factory->CreateFormatConverter(&converter);
+        if (FAILED(hr))
+        {
+            LOG_ERROR("LoadBlueNoiseTexture: Failed to create format converter");
+            if (coInitOk)
+                CoUninitialize();
+            return false;
+        }
+
+        hr = converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppRGBA,
+            WICBitmapDitherTypeNone, nullptr, 0.0, WICBitmapPaletteTypeCustom);
+        if (FAILED(hr))
+        {
+            LOG_ERROR("LoadBlueNoiseTexture: Failed to convert PNG to RGBA");
+            if (coInitOk)
+                CoUninitialize();
+            return false;
+        }
+
+        const UINT pixelStride = 4;
+        const UINT rowSize = width * pixelStride;
+        std::vector<uint8_t> pixels(rowSize * height);
+        hr = converter->CopyPixels(nullptr, rowSize, static_cast<UINT>(pixels.size()), pixels.data());
+        if (FAILED(hr))
+        {
+            LOG_ERROR("LoadBlueNoiseTexture: Failed to read PNG pixels");
+            if (coInitOk)
+                CoUninitialize();
+            return false;
+        }
+
+        auto device = dxContext->GetDevice();
+
+        D3D12_RESOURCE_DESC texDesc = {};
+        texDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+        texDesc.Width = width;
+        texDesc.Height = height;
+        texDesc.DepthOrArraySize = 1;
+        texDesc.MipLevels = 1;
+        texDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        texDesc.SampleDesc.Count = 1;
+        texDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+        texDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+        CD3DX12_HEAP_PROPERTIES defaultHeapProps(D3D12_HEAP_TYPE_DEFAULT);
+        hr = device->CreateCommittedResource(
+            &defaultHeapProps,
+            D3D12_HEAP_FLAG_NONE,
+            &texDesc,
+            D3D12_RESOURCE_STATE_COPY_DEST,
+            nullptr,
+            IID_PPV_ARGS(&blueNoiseTexture));
+        if (FAILED(hr))
+        {
+            LOG_ERROR("LoadBlueNoiseTexture: Failed to create texture resource");
+            if (coInitOk)
+                CoUninitialize();
+            return false;
+        }
+        blueNoiseTexture->SetName(L"BlueNoise16");
+
+        UINT64 uploadSize = 0;
+        D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint = {};
+        UINT numRows = 0;
+        UINT64 rowSizeInBytes = 0;
+        device->GetCopyableFootprints(&texDesc, 0, 1, 0, &footprint, &numRows, &rowSizeInBytes, &uploadSize);
+
+        CD3DX12_HEAP_PROPERTIES uploadHeapProps(D3D12_HEAP_TYPE_UPLOAD);
+        CD3DX12_RESOURCE_DESC uploadDesc = CD3DX12_RESOURCE_DESC::Buffer(uploadSize);
+        hr = device->CreateCommittedResource(
+            &uploadHeapProps,
+            D3D12_HEAP_FLAG_NONE,
+            &uploadDesc,
+            D3D12_RESOURCE_STATE_GENERIC_READ,
+            nullptr,
+            IID_PPV_ARGS(&blueNoiseUpload));
+        if (FAILED(hr))
+        {
+            LOG_ERROR("LoadBlueNoiseTexture: Failed to create upload buffer");
+            if (coInitOk)
+                CoUninitialize();
+            return false;
+        }
+
+        void* mapped = nullptr;
+        hr = blueNoiseUpload->Map(0, nullptr, &mapped);
+        if (FAILED(hr))
+        {
+            LOG_ERROR("LoadBlueNoiseTexture: Failed to map upload buffer");
+            if (coInitOk)
+                CoUninitialize();
+            return false;
+        }
+
+        uint8_t* dst = static_cast<uint8_t*>(mapped);
+        for (UINT y = 0; y < height; ++y)
+        {
+            memcpy(dst + y * footprint.Footprint.RowPitch, pixels.data() + y * rowSize, rowSize);
+        }
+        blueNoiseUpload->Unmap(0, nullptr);
+
+        D3D12_TEXTURE_COPY_LOCATION src = {};
+        src.pResource = blueNoiseUpload.Get();
+        src.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+        src.PlacedFootprint = footprint;
+
+        D3D12_TEXTURE_COPY_LOCATION dstLoc = {};
+        dstLoc.pResource = blueNoiseTexture.Get();
+        dstLoc.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+        dstLoc.SubresourceIndex = 0;
+
+        commandList->CopyTextureRegion(&dstLoc, 0, 0, 0, &src, nullptr);
+
+        CD3DX12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+            blueNoiseTexture.Get(),
+            D3D12_RESOURCE_STATE_COPY_DEST,
+            D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        commandList->ResourceBarrier(1, &barrier);
+
+        blueNoiseReady = true;
+
+        if (coInitOk)
+            CoUninitialize();
+        return true;
+    }
+
+
     // ============================================
     // DXR Pipeline Implementation
     // ============================================
@@ -1363,8 +1524,9 @@ namespace RayTraceVS::DXEngine
         // [17] UAV - Photon hash table (u11)
         // [18-19] UAV - WorkItem queue (u12-u13)
         // [20-24] SRV - Mesh buffers (t5-t9)
+        // [25] SRV - Blue noise texture (t10)
         
-        CD3DX12_DESCRIPTOR_RANGE1 ranges[25];
+        CD3DX12_DESCRIPTOR_RANGE1 ranges[26];
         ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);  // u0 - Output
         ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);  // t0 - TLAS
         ranges[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0);  // b0 - Constants
@@ -1392,9 +1554,10 @@ namespace RayTraceVS::DXEngine
         ranges[22].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 7);  // t7 - MeshMaterials
         ranges[23].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 8);  // t8 - MeshInfos
         ranges[24].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 9);  // t9 - MeshInstances
+        ranges[25].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 10); // t10 - BlueNoise
         
-        CD3DX12_ROOT_PARAMETER1 rootParameters[25];
-        for (int i = 0; i < 25; i++)
+        CD3DX12_ROOT_PARAMETER1 rootParameters[26];
+        for (int i = 0; i < 26; i++)
         {
             rootParameters[i].InitAsDescriptorTable(1, &ranges[i]);
         }
@@ -1666,6 +1829,7 @@ namespace RayTraceVS::DXEngine
         AddLibrary(anyHitShadowShader.Get(), L"AnyHit_Shadow");
         AddLibrary(anyHitShadowShader.Get(), L"AnyHit_Shadow_Triangle");
         AddLibrary(anyHitSkipSelfShader.Get(), L"AnyHit_SkipSelf");
+        AddLibrary(anyHitSkipSelfShader.Get(), L"AnyHit_SkipSelf_Triangle");
         
         // Hit group 0: Primary rays for procedural geometry (ClosestHit + Intersection)
         auto hitGroup = stateObjectDesc.CreateSubobject<CD3DX12_HIT_GROUP_SUBOBJECT>();
@@ -1705,7 +1869,7 @@ namespace RayTraceVS::DXEngine
         auto triangleReflectHitGroup = stateObjectDesc.CreateSubobject<CD3DX12_HIT_GROUP_SUBOBJECT>();
         triangleReflectHitGroup->SetHitGroupExport(L"TriangleReflectHitGroup");
         triangleReflectHitGroup->SetClosestHitShaderImport(L"ClosestHit_Triangle");
-        triangleReflectHitGroup->SetAnyHitShaderImport(L"AnyHit_SkipSelf");
+        triangleReflectHitGroup->SetAnyHitShaderImport(L"AnyHit_SkipSelf_Triangle");
         triangleReflectHitGroup->SetHitGroupType(D3D12_HIT_GROUP_TYPE_TRIANGLES);
         
         // Shader config
@@ -1775,8 +1939,9 @@ namespace RayTraceVS::DXEngine
         // [17] UAV: Photon hash table (u11)
         // [18-19] UAVs: WorkItem queue (u12-u13)
         // [20-24] SRVs: Mesh buffers (t5-t9)
+        // [25] SRV: Blue noise texture (t10)
         D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
-        heapDesc.NumDescriptors = 25;  // 18 + 2 + 5 for mesh buffers
+        heapDesc.NumDescriptors = 26;  // 18 + 2 + 5 + 1 (blue noise)
         heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
         heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
@@ -2255,6 +2420,17 @@ namespace RayTraceVS::DXEngine
             meshSrvDesc.Buffer.StructureByteStride = sizeof(GPUMeshInstanceInfo);
             device->CreateShaderResourceView(nullptr, &meshSrvDesc, cpuHandle);
         }
+        cpuHandle.Offset(1, dxrDescriptorSize);
+        
+        // [25] t10 - Blue noise texture (16x16 RGBA)
+        {
+            D3D12_SHADER_RESOURCE_VIEW_DESC blueNoiseSrv = {};
+            blueNoiseSrv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+            blueNoiseSrv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+            blueNoiseSrv.Texture2D.MipLevels = 1;
+            blueNoiseSrv.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+            device->CreateShaderResourceView(blueNoiseTexture.Get(), &blueNoiseSrv, cpuHandle);
+        }
     }
 
     void DXRPipeline::RenderWithDXR(RenderTarget* renderTarget, Scene* scene)
@@ -2333,6 +2509,14 @@ namespace RayTraceVS::DXEngine
         // ============================================
         // Pass 2: Main Rendering
         // ============================================
+        if (!blueNoiseReady)
+        {
+            if (!LoadBlueNoiseTexture(commandList))
+            {
+                LOG_WARN("BlueNoise16.png not loaded - continuing without blue noise");
+                blueNoiseReady = true; // avoid repeated attempts per frame
+            }
+        }
         UpdateDXRDescriptors(renderTarget);
         
         ID3D12DescriptorHeap* heaps[] = { dxrSrvUavHeap.Get() };
@@ -2341,7 +2525,7 @@ namespace RayTraceVS::DXEngine
         commandList->SetComputeRootSignature(globalRootSignature.Get());
         
         CD3DX12_GPU_DESCRIPTOR_HANDLE gpuHandle(dxrSrvUavHeap->GetGPUDescriptorHandleForHeapStart());
-        for (int i = 0; i < 25; i++)
+        for (int i = 0; i < 26; i++)
         {
             commandList->SetComputeRootDescriptorTable(i, gpuHandle);
             gpuHandle.Offset(1, dxrDescriptorSize);
@@ -2477,6 +2661,7 @@ namespace RayTraceVS::DXEngine
             LOG_ERROR_HR("Failed to create photon map buffer", hr);
             return false;
         }
+        resourceStateTracker.RegisterResource(photonMapBuffer.Get(), D3D12_RESOURCE_STATE_COMMON);
         
         CD3DX12_RESOURCE_DESC counterBufferDesc = CD3DX12_RESOURCE_DESC::Buffer(
             sizeof(UINT), D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
@@ -2494,6 +2679,7 @@ namespace RayTraceVS::DXEngine
             LOG_ERROR_HR("Failed to create photon counter buffer", hr);
             return false;
         }
+        resourceStateTracker.RegisterResource(photonCounterBuffer.Get(), D3D12_RESOURCE_STATE_COMMON);
         
         CD3DX12_HEAP_PROPERTIES uploadHeapProps(D3D12_HEAP_TYPE_UPLOAD);
         CD3DX12_RESOURCE_DESC resetBufferDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(UINT));
@@ -2684,34 +2870,16 @@ namespace RayTraceVS::DXEngine
         auto commandList = dxContext->GetCommandList();
         SetCommandListName(commandList, L"CmdList_ClearPhotonMap");
 
-        // Ensure photon counter is in UAV state before transitioning to COPY_DEST
-        if (photonCounterBuffer && !photonCounterInUavState)
-        {
-            CD3DX12_RESOURCE_BARRIER toUav = CD3DX12_RESOURCE_BARRIER::Transition(
-                photonCounterBuffer.Get(),
-                D3D12_RESOURCE_STATE_COMMON,
-                D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-            commandList->ResourceBarrier(1, &toUav);
-            photonCounterInUavState = true;
-        }
-        
         // Transition counter to copy dest
-        CD3DX12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-            photonCounterBuffer.Get(),
-            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-            D3D12_RESOURCE_STATE_COPY_DEST);
-        commandList->ResourceBarrier(1, &barrier);
+        resourceStateTracker.Transition(photonCounterBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST);
+        resourceStateTracker.Flush(commandList);
         
         // Copy 0 to counter
         commandList->CopyResource(photonCounterBuffer.Get(), photonCounterResetBuffer.Get());
         
         // Transition back
-        barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-            photonCounterBuffer.Get(),
-            D3D12_RESOURCE_STATE_COPY_DEST,
-            D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-        commandList->ResourceBarrier(1, &barrier);
-        photonCounterInUavState = true;
+        resourceStateTracker.Transition(photonCounterBuffer.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        resourceStateTracker.Flush(commandList);
     }
 
     // ============================================
@@ -2745,6 +2913,7 @@ namespace RayTraceVS::DXEngine
             LOG_ERROR_HR("Failed to create photon hash table buffer", hr);
             return false;
         }
+        resourceStateTracker.RegisterResource(photonHashTableBuffer.Get(), D3D12_RESOURCE_STATE_COMMON);
         
         CD3DX12_HEAP_PROPERTIES uploadHeapProps(D3D12_HEAP_TYPE_UPLOAD);
         CD3DX12_RESOURCE_DESC constBufferDesc = CD3DX12_RESOURCE_DESC::Buffer(
@@ -2834,24 +3003,9 @@ namespace RayTraceVS::DXEngine
         SetCommandListName(commandList, L"CmdList_BuildPhotonHash");
 
         // Ensure photon map/hash table buffers are in UAV state
-        if (photonMapBuffer && !photonMapInUavState)
-        {
-            CD3DX12_RESOURCE_BARRIER toUav = CD3DX12_RESOURCE_BARRIER::Transition(
-                photonMapBuffer.Get(),
-                D3D12_RESOURCE_STATE_COMMON,
-                D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-            commandList->ResourceBarrier(1, &toUav);
-            photonMapInUavState = true;
-        }
-        if (photonHashTableBuffer && !photonHashTableInUavState)
-        {
-            CD3DX12_RESOURCE_BARRIER toUav = CD3DX12_RESOURCE_BARRIER::Transition(
-                photonHashTableBuffer.Get(),
-                D3D12_RESOURCE_STATE_COMMON,
-                D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-            commandList->ResourceBarrier(1, &toUav);
-            photonHashTableInUavState = true;
-        }
+        resourceStateTracker.Transition(photonMapBuffer.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        resourceStateTracker.Transition(photonHashTableBuffer.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        resourceStateTracker.Flush(commandList);
         
         // Update constants
         mappedPhotonHashConstants->PhotonCount = mappedConstantData->PhotonMapSize;
@@ -2869,8 +3023,8 @@ namespace RayTraceVS::DXEngine
         commandList->Dispatch(clearDispatchX, 1, 1);
         
         // UAV barrier between clear and build
-        CD3DX12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::UAV(photonHashTableBuffer.Get());
-        commandList->ResourceBarrier(1, &barrier);
+        resourceStateTracker.AddUavBarrier(photonHashTableBuffer.Get());
+        resourceStateTracker.Flush(commandList);
         
         // Step 2: Build hash table
         commandList->SetPipelineState(photonHashBuildPipeline.Get());
@@ -2881,7 +3035,8 @@ namespace RayTraceVS::DXEngine
         }
         
         // UAV barrier to ensure hash table is ready for reading
-        commandList->ResourceBarrier(1, &barrier);
+        resourceStateTracker.AddUavBarrier(photonHashTableBuffer.Get());
+        resourceStateTracker.Flush(commandList);
     }
 
     void DXRPipeline::UpdatePhotonDescriptors()
@@ -3026,15 +3181,8 @@ namespace RayTraceVS::DXEngine
         SetCommandListName(commandList, L"CmdList_EmitPhotons");
 
         // Ensure photon map is in UAV state before use
-        if (photonMapBuffer && !photonMapInUavState)
-        {
-            CD3DX12_RESOURCE_BARRIER toUav = CD3DX12_RESOURCE_BARRIER::Transition(
-                photonMapBuffer.Get(),
-                D3D12_RESOURCE_STATE_COMMON,
-                D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-            commandList->ResourceBarrier(1, &toUav);
-            photonMapInUavState = true;
-        }
+        resourceStateTracker.Transition(photonMapBuffer.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        resourceStateTracker.Flush(commandList);
         
         // Clear the photon map
         ClearPhotonMap();
@@ -3118,8 +3266,8 @@ namespace RayTraceVS::DXEngine
         commandList->DispatchRays(&dispatchDesc);
         
         // UAV barrier to ensure photons are written before reading
-        CD3DX12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::UAV(photonMapBuffer.Get());
-        commandList->ResourceBarrier(1, &barrier);
+        resourceStateTracker.AddUavBarrier(photonMapBuffer.Get());
+        resourceStateTracker.Flush(commandList);
         
         // Update scene constants with photon info
         mappedConstantData->NumPhotons = totalPhotons;
@@ -3228,9 +3376,6 @@ namespace RayTraceVS::DXEngine
         auto& gBuffer = denoiser->GetGBuffer();
         if (gBuffer.RawSpecularBackup && gBuffer.SpecularRadianceHitDist)
         {
-            // Track RawSpecularBackup state across frames
-            static bool rawSpecularInSrvState = false;
-            
             // CRITICAL: First, flush ALL UAV writes with an explicit UAV barrier
             // This ensures ray tracing shader has finished writing to SpecularRadianceHitDist
             D3D12_RESOURCE_BARRIER uavFlush = {};
@@ -3239,63 +3384,21 @@ namespace RayTraceVS::DXEngine
             commandList->ResourceBarrier(1, &uavFlush);
             
             // Transition resources for copy operation
-            D3D12_RESOURCE_BARRIER copyBarriers[2] = {};
-            int barrierCount = 0;
-            
-            // Source: UAV -> COPY_SOURCE
-            copyBarriers[barrierCount].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-            copyBarriers[barrierCount].Transition.pResource = gBuffer.SpecularRadianceHitDist.Get();
-            copyBarriers[barrierCount].Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-            copyBarriers[barrierCount].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
-            copyBarriers[barrierCount].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-            barrierCount++;
-            
-            // Dest: Previous state -> COPY_DEST
-            copyBarriers[barrierCount].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-            copyBarriers[barrierCount].Transition.pResource = gBuffer.RawSpecularBackup.Get();
-            copyBarriers[barrierCount].Transition.StateBefore = rawSpecularInSrvState
-                ? D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE
-                : D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-            copyBarriers[barrierCount].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST;
-            copyBarriers[barrierCount].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-            barrierCount++;
-            
-            commandList->ResourceBarrier(barrierCount, copyBarriers);
+            denoiser->EnsureResourceState(commandList, gBuffer.SpecularRadianceHitDist.Get(), D3D12_RESOURCE_STATE_COPY_SOURCE);
+            denoiser->EnsureResourceState(commandList, gBuffer.RawSpecularBackup.Get(), D3D12_RESOURCE_STATE_COPY_DEST);
             
             // Perform the copy
             commandList->CopyResource(gBuffer.RawSpecularBackup.Get(), gBuffer.SpecularRadianceHitDist.Get());
             
             // Transition back for NRD and Composite usage
-            D3D12_RESOURCE_BARRIER postCopyBarriers[2] = {};
-            
-            // Source: COPY_SOURCE -> UAV (NRD needs it as UAV)
-            postCopyBarriers[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-            postCopyBarriers[0].Transition.pResource = gBuffer.SpecularRadianceHitDist.Get();
-            postCopyBarriers[0].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
-            postCopyBarriers[0].Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-            postCopyBarriers[0].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-            
-            // Dest: COPY_DEST -> SRV (Composite reads it)
-            postCopyBarriers[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-            postCopyBarriers[1].Transition.pResource = gBuffer.RawSpecularBackup.Get();
-            postCopyBarriers[1].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
-            postCopyBarriers[1].Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-            postCopyBarriers[1].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-            
-            commandList->ResourceBarrier(2, postCopyBarriers);
-            
-            rawSpecularInSrvState = true;  // Now in SRV state for next frame
-            denoiser->NotifyResourceState(gBuffer.RawSpecularBackup.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-            denoiser->NotifyResourceState(gBuffer.SpecularRadianceHitDist.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+            denoiser->EnsureResourceState(commandList, gBuffer.SpecularRadianceHitDist.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+            denoiser->EnsureResourceState(commandList, gBuffer.RawSpecularBackup.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         }
         
         // CRITICAL: Copy raw diffuse data BEFORE NRD processes it
         // NRD may corrupt the original DiffuseRadianceHitDist buffer, losing point light illumination
         if (gBuffer.RawDiffuseBackup && gBuffer.DiffuseRadianceHitDist)
         {
-            // Track RawDiffuseBackup state across frames
-            static bool rawDiffuseInSrvState = false;
-            
             // CRITICAL: First, flush ALL UAV writes with an explicit UAV barrier
             // This ensures ray tracing shader has finished writing to DiffuseRadianceHitDist
             D3D12_RESOURCE_BARRIER uavFlush = {};
@@ -3304,54 +3407,15 @@ namespace RayTraceVS::DXEngine
             commandList->ResourceBarrier(1, &uavFlush);
             
             // Transition resources for copy operation
-            D3D12_RESOURCE_BARRIER copyBarriers[2] = {};
-            int barrierCount = 0;
-            
-            // Source: UAV -> COPY_SOURCE
-            copyBarriers[barrierCount].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-            copyBarriers[barrierCount].Transition.pResource = gBuffer.DiffuseRadianceHitDist.Get();
-            copyBarriers[barrierCount].Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-            copyBarriers[barrierCount].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
-            copyBarriers[barrierCount].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-            barrierCount++;
-            
-            // Dest: Previous state -> COPY_DEST
-            copyBarriers[barrierCount].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-            copyBarriers[barrierCount].Transition.pResource = gBuffer.RawDiffuseBackup.Get();
-            copyBarriers[barrierCount].Transition.StateBefore = rawDiffuseInSrvState
-                ? D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE
-                : D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-            copyBarriers[barrierCount].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST;
-            copyBarriers[barrierCount].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-            barrierCount++;
-            
-            commandList->ResourceBarrier(barrierCount, copyBarriers);
+            denoiser->EnsureResourceState(commandList, gBuffer.DiffuseRadianceHitDist.Get(), D3D12_RESOURCE_STATE_COPY_SOURCE);
+            denoiser->EnsureResourceState(commandList, gBuffer.RawDiffuseBackup.Get(), D3D12_RESOURCE_STATE_COPY_DEST);
             
             // Perform the copy
             commandList->CopyResource(gBuffer.RawDiffuseBackup.Get(), gBuffer.DiffuseRadianceHitDist.Get());
             
             // Transition back for NRD and Composite usage
-            D3D12_RESOURCE_BARRIER postCopyBarriers[2] = {};
-            
-            // Source: COPY_SOURCE -> UAV (NRD needs it as UAV)
-            postCopyBarriers[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-            postCopyBarriers[0].Transition.pResource = gBuffer.DiffuseRadianceHitDist.Get();
-            postCopyBarriers[0].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
-            postCopyBarriers[0].Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-            postCopyBarriers[0].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-            
-            // Dest: COPY_DEST -> SRV (Composite reads it)
-            postCopyBarriers[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-            postCopyBarriers[1].Transition.pResource = gBuffer.RawDiffuseBackup.Get();
-            postCopyBarriers[1].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
-            postCopyBarriers[1].Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-            postCopyBarriers[1].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-            
-            commandList->ResourceBarrier(2, postCopyBarriers);
-            
-            rawDiffuseInSrvState = true;  // Now in SRV state for next frame
-            denoiser->NotifyResourceState(gBuffer.RawDiffuseBackup.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-            denoiser->NotifyResourceState(gBuffer.DiffuseRadianceHitDist.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+            denoiser->EnsureResourceState(commandList, gBuffer.DiffuseRadianceHitDist.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+            denoiser->EnsureResourceState(commandList, gBuffer.RawDiffuseBackup.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         }
         
         // Apply denoising (NRD handles per-dispatch state transitions internally)

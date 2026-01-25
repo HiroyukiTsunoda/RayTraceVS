@@ -3034,35 +3034,40 @@ namespace RayTraceVS.WPF.Views
             var textBox = sender as TextBox;
             if (textBox != null)
             {
-                // 空の場合は0に設定
-                if (string.IsNullOrWhiteSpace(textBox.Text) || textBox.Text == "-" || textBox.Text == ".")
+                ApplyFloatTextBoxValue(textBox);
+            }
+        }
+
+        private void ApplyFloatTextBoxValue(TextBox textBox)
+        {
+            // 空の場合は0に設定
+            if (string.IsNullOrWhiteSpace(textBox.Text) || textBox.Text == "-" || textBox.Text == ".")
+            {
+                textBox.Text = "0";
+            }
+            
+            // 変更前の値を取得
+            float? oldValue = null;
+            if (_textBoxOriginalValues.TryGetValue(textBox, out float originalValue))
+            {
+                oldValue = originalValue;
+                _textBoxOriginalValues.Remove(textBox);
+            }
+            
+            // バインディングを強制更新
+            var bindingExpression = textBox.GetBindingExpression(TextBox.TextProperty);
+            bindingExpression?.UpdateSource();
+            
+            // FloatNodeの場合、Undo/Redoコマンドを発行
+            if (oldValue.HasValue && textBox.DataContext is FloatNode floatNode)
+            {
+                float newValue = floatNode.Value;
+                if (oldValue.Value != newValue)
                 {
-                    textBox.Text = "0";
-                }
-                
-                // 変更前の値を取得
-                float? oldValue = null;
-                if (_textBoxOriginalValues.TryGetValue(textBox, out float originalValue))
-                {
-                    oldValue = originalValue;
-                    _textBoxOriginalValues.Remove(textBox);
-                }
-                
-                // バインディングを強制更新
-                var bindingExpression = textBox.GetBindingExpression(TextBox.TextProperty);
-                bindingExpression?.UpdateSource();
-                
-                // FloatNodeの場合、Undo/Redoコマンドを発行
-                if (oldValue.HasValue && textBox.DataContext is FloatNode floatNode)
-                {
-                    float newValue = floatNode.Value;
-                    if (oldValue.Value != newValue)
-                    {
-                        var viewModel = GetViewModel();
-                        viewModel?.CommandManager.RegisterExecuted(
-                            new ChangePropertyCommand<float>(floatNode, "Value", oldValue.Value, newValue, 
-                                "Float値を変更"));
-                    }
+                    var viewModel = GetViewModel();
+                    viewModel?.CommandManager.RegisterExecuted(
+                        new ChangePropertyCommand<float>(floatNode, "Value", oldValue.Value, newValue, 
+                            "Float値を変更"));
                 }
             }
         }
@@ -3672,8 +3677,30 @@ namespace RayTraceVS.WPF.Views
             var focusedElement = Keyboard.FocusedElement as TextBox;
             if (focusedElement != null)
             {
-                var binding = BindingOperations.GetBindingExpression(focusedElement, TextBox.TextProperty);
-                binding?.UpdateSource();
+                if (focusedElement.Tag is NodeSocket socket)
+                {
+                    if (socket.ParentNode is Vector3Node)
+                    {
+                        ApplyVector3TextBoxValue(focusedElement);
+                    }
+                    else if (socket.ParentNode is Vector4Node)
+                    {
+                        ApplyVector4TextBoxValue(focusedElement);
+                    }
+                    else if (socket.ParentNode is ColorNode)
+                    {
+                        ApplyColorTextBoxValue(focusedElement);
+                    }
+                }
+                else if (focusedElement.DataContext is FloatNode)
+                {
+                    ApplyFloatTextBoxValue(focusedElement);
+                }
+                else
+                {
+                    var binding = BindingOperations.GetBindingExpression(focusedElement, TextBox.TextProperty);
+                    binding?.UpdateSource();
+                }
                 
                 // フォーカスをクリア（別のノードをクリックしたときにテキストボックスのフォーカスが残らないようにする）
                 Keyboard.ClearFocus();

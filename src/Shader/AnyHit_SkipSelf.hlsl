@@ -6,5 +6,23 @@
 [shader("anyhit")]
 void AnyHit_SkipSelf(inout RadiancePayload payload, in ProceduralAttributes attribs)
 {
-    // Self-skip disabled (no per-ray skip data in payload).
+    if ((payload.rayFlags & RAYFLAG_SKIP_SELF) == 0 || payload.skipObjectType == OBJECT_TYPE_INVALID)
+        return;
+    
+    if (payload.skipObjectType == attribs.objectType && payload.skipObjectIndex == attribs.objectIndex)
+    {
+        IgnoreHit();
+    }
+}
+
+[shader("anyhit")]
+void AnyHit_SkipSelf_Triangle(inout RadiancePayload payload, in BuiltInTriangleIntersectionAttributes attribs)
+{
+    if ((payload.rayFlags & RAYFLAG_SKIP_SELF) == 0 || payload.skipObjectType != OBJECT_TYPE_MESH)
+        return;
+    
+    if (payload.skipObjectIndex == InstanceID())
+    {
+        IgnoreHit();
+    }
 }
