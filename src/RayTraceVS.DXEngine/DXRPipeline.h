@@ -77,6 +77,24 @@ namespace RayTraceVS::DXEngine
         float Padding;
     };
 
+    // Work item for ray queue (must match HLSL)
+    struct alignas(16) GPUWorkItem
+    {
+        XMFLOAT3 Origin;
+        float TMin;
+        XMFLOAT3 Direction;
+        UINT Depth;
+        XMFLOAT3 Throughput;
+        UINT Flags;
+        XMFLOAT3 Absorption;
+        UINT PathType;
+        float SkyBoost;
+        UINT SpecularDepth;
+        UINT DiffuseDepth;
+        UINT Kind;
+        UINT Padding;
+    };
+
     // ============================================
     // Spatial Hash for Photon Gathering
     // ============================================
@@ -461,6 +479,13 @@ namespace RayTraceVS::DXEngine
         // Constants buffer for hash compute shaders
         ComPtr<ID3D12Resource> photonHashConstantBuffer;
         PhotonHashConstants* mappedPhotonHashConstants = nullptr;
+
+        // WorkItem queue buffers
+        ComPtr<ID3D12Resource> workQueueBuffer;
+        ComPtr<ID3D12Resource> workQueueCountBuffer;
+        UINT64 workQueueCapacity = 0;
+        UINT64 workQueueCountCapacity = 0;
+        static constexpr UINT WORK_QUEUE_STRIDE = 8;
         
         // Compute pipeline for hash table construction
         ComPtr<ID3D12RootSignature> photonHashRootSignature;

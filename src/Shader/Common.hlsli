@@ -66,9 +66,66 @@ struct PathState
     float3 padding2;
 };
 
-#define RADIANCE_PAYLOAD_SIZE 416
+#define RADIANCE_PAYLOAD_SIZE 144
 #define SHADOW_PAYLOAD_SIZE 24
 #define PHOTON_PAYLOAD_SIZE 160
+#define THICKNESS_PAYLOAD_SIZE 16
+#define WORK_QUEUE_STRIDE 8
+
+uint PackSnorm2x16(float2 v)
+{
+    float2 clamped = clamp(v, -1.0, 1.0);
+    int2 scaled = int2(round(clamped * 32767.0));
+    uint lo = (uint)(scaled.x & 0xFFFF);
+    uint hi = (uint)(scaled.y & 0xFFFF);
+    return lo | (hi << 16);
+}
+
+float2 UnpackSnorm2x16(uint packed)
+{
+    int x = (int)(packed << 16) >> 16;
+    int y = (int)packed >> 16;
+    return float2(x, y) / 32767.0;
+}
+
+uint PackNormalOctahedron(float3 n)
+{
+    n = normalize(n);
+    n /= (abs(n.x) + abs(n.y) + abs(n.z));
+    float2 enc = n.xy;
+    if (n.z < 0.0)
+    {
+        float2 signNotZero = float2(enc.x >= 0.0 ? 1.0 : -1.0, enc.y >= 0.0 ? 1.0 : -1.0);
+        enc = (1.0 - abs(enc.yx)) * signNotZero;
+    }
+    return PackSnorm2x16(enc);
+}
+
+float3 UnpackNormalOctahedron(uint packed)
+{
+    float2 enc = UnpackSnorm2x16(packed);
+    float3 n = float3(enc.x, enc.y, 1.0 - abs(enc.x) - abs(enc.y));
+    if (n.z < 0.0)
+    {
+        float2 signNotZero = float2(n.x >= 0.0 ? 1.0 : -1.0, n.y >= 0.0 ? 1.0 : -1.0);
+        n.xy = (1.0 - abs(n.yx)) * signNotZero;
+    }
+    return normalize(n);
+}
+
+uint PackHalf2(float2 v)
+{
+    uint lo = f32tof16(v.x) & 0xFFFF;
+    uint hi = f32tof16(v.y) & 0xFFFF;
+    return lo | (hi << 16);
+}
+
+float2 UnpackHalf2(uint packed)
+{
+    uint lo = packed & 0xFFFF;
+    uint hi = packed >> 16;
+    return float2(f16tof32(lo), f16tof32(hi));
+}
 
 struct RadiancePayload
 {
@@ -76,54 +133,55 @@ struct RadiancePayload
     float3 color;           // Total radiance (12 bytes)
     uint depth;             // Recursion depth (4 bytes)
     uint hit;               // Did ray hit something? (4 bytes)
-    float padding;          // Padding (4 bytes)
+    float hitDistance;      // Distance to hit point (primary ray)
     
     // NRD denoiser fields
     float3 diffuseRadiance;   // Diffuse lighting component
-    float hitDistance;        // Distance to hit point (primary ray)
-    float3 specularRadiance;  // Specular/reflection component
     float specularHitDistance;// Distance for specular (reflection ray or primary)
-    float roughness;          // Surface roughness
-    float3 worldNormal;       // World-space normal at hit
-    float viewZ;              // Linear view depth
-    float3 worldPosition;     // World-space hit position
-    float metallic;           // Metallic value
+    float3 specularRadiance;  // Specular/reflection component
+    uint packedNormal;        // Octahedral packed normal
+    uint packedMaterial0;     // roughness, metallic
+    uint packedMaterial1;     // specular, transmission
+    uint packedMaterial2;     // ior, unused
     float3 albedo;            // Surface albedo
     float shadowVisibility;   // Shadow visibility for SIGMA (0-1)
     float shadowPenumbra;     // Packed penumbra radius for SIGMA
     float shadowDistance;     // Distance to occluder (or NRD_FP16_MAX)
-    float padding2;           // Padding for alignment
-
-    // Material data for RayGen shading
-    float transmission;
-    float ior;
-    float specular;
-    float materialPadding;
     float3 emission;
-    float emissionPadding;
-    
-    // Thickness query for refractive objects
-    uint targetObjectType;      // Object to skip (input)
-    uint targetObjectIndex;
-    uint thicknessQuery;        // 1 = thickness ray, 0 = normal
-    uint hitObjectType;         // Object that was hit (output)
-    
-    uint hitObjectIndex;        // Index of hit object (output)
-    
-    // Loop-based ray tracing
-    float4 loopRayOrigin;       // xyz = nextRayOrigin, w = continueTrace
-    float4 loopRayDirection;    // xyz = nextRayDirection, w = nextRayTMin
-    float4 loopThroughput;      // xyz = throughput, w = unused
+    float3 absorption;          // Material absorption (sigmaA)
 
     // Current path state (input for hit shaders)
     uint pathFlags;
     float3 pathAbsorption;      // sigmaA for current medium
     float pathSkyBoost;         // Miss-only sky boost
-    float3 pathPadding;
+    uint payloadPadding0;
+    uint payloadPadding1;
+};
 
-    // Queue-based ray tracing (children paths for RayGen)
-    uint childCount;
-    PathState childPaths[MAX_CHILD_PATHS];
+struct WorkItem
+{
+    float3 origin;
+    float tMin;
+    float3 direction;
+    uint depth;
+    float3 throughput;
+    uint flags;
+    float3 absorption;
+    uint pathType;
+    float skyBoost;
+    uint specularDepth;
+    uint diffuseDepth;
+    uint kind;
+    uint padding;
+};
+
+// Thickness query payload (minimal)
+struct ThicknessPayload
+{
+    uint hit;           // 1 if hit, 0 if miss
+    float hitT;         // Distance to next intersection
+    uint objectType;    // OBJECT_TYPE_*
+    uint objectIndex;   // Index for self-skip or identification
 };
 
 // シャドウレイ用ペイロード
@@ -421,6 +479,8 @@ RWStructuredBuffer<uint> PhotonCounter : register(u2);  // Atomic counter for ph
 // Spatial hash table for efficient photon gathering (O(1) lookup instead of O(N))
 // Note: This buffer is populated by BuildPhotonHash compute shader after photon emission
 RWStructuredBuffer<PhotonHashCell> PhotonHashTable : register(u11);
+RWStructuredBuffer<WorkItem> WorkQueue : register(u12);
+RWStructuredBuffer<uint> WorkQueueCount : register(u13);
 
 // ============================================
 // G-Buffer Outputs for NRD Denoiser
