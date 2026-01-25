@@ -320,6 +320,30 @@ namespace RayTraceVS.WPF.Views
         }
 
         /// <summary>
+        /// ソケットにマウスが乗ったときにポップアップで型情報を表示
+        /// </summary>
+        private void Socket_MouseEnter(object sender, MouseEventArgs e)
+        {
+            if (sender is Ellipse ellipse && ellipse.DataContext is NodeSocket socket)
+            {
+                // ソケットの型名を取得して表示
+                SocketTypeText.Text = socket.SocketType.ToString();
+                
+                // ポップアップを表示
+                SocketTypePopup.IsOpen = true;
+            }
+        }
+
+        /// <summary>
+        /// ソケットからマウスが離れたときにポップアップを閉じる
+        /// </summary>
+        private void Socket_MouseLeave(object sender, MouseEventArgs e)
+        {
+            // ポップアップを閉じる
+            SocketTypePopup.IsOpen = false;
+        }
+
+        /// <summary>
         /// ソケットのUI要素から実際の位置を取得して設定
         /// </summary>
         private void UpdateSocketPositionFromUI(Ellipse ellipse, NodeSocket socket)

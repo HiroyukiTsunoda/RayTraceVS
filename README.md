@@ -22,9 +22,10 @@ WPFベースのビジュアルスクリプティングUIと、DirectX12 DXRを�
 - 複数光源のサポート（ポイントライト、ディレクショナルライト、アンビエントライト）
 - 物理ベースマテリアル（PBR: Metallic/Roughness/Transmission/IOR/Emission/Absorption）
 - 発光マテリアル（Emission）による自己発光オブジェクト
-- 鏡面反射（Fresnelシュリック近似）
+- 鏡面反射（Fresnelシュリック近似、GGX-like roughness perturbation）
 - ソフトシャドウ（エリアライトサンプリング）
-- フォトンマッピングによるコースティクス
+- カラーシャドウ（Beer-Lambert吸収、透過オブジェクト）
+- フォトンマッピングによるコースティクス（空間ハッシュ最適化）
 - NRDデノイザー統合（REBLUR + SIGMA）
 - トーンマッピング（Reinhard / ACES Filmic）
 - 被写界深度（DoF）シミュレーション
@@ -146,15 +147,15 @@ RayTraceVS/
 ## ノードタイプ一覧
 
 ### オブジェクトノード
-- **Sphere（球）**: 球体オブジェクト
-- **Plane（平面）**: 無限平面
-- **Box（ボックス）**: 直方体オブジェクト
-- **FBXメッシュ**: Resource/Modelフォルダに配置したFBXファイルを自動読み込み
+- **Sphere（球）**: 球体オブジェクト（Transform/Material/Radius入力）
+- **Plane（平面）**: 無限平面（チェッカーパターン付き）
+- **Box（ボックス）**: 直方体オブジェクト（OBB回転対応）
+- **FBX Mesh**: FBXメッシュ（Resource/Modelフォルダから自動読み込み）
 
 ### マテリアルノード
-- **Universal PBR**: 統合物理ベースマテリアル（Metallic/Roughness/Transmission/IOR/Emission）
-- **MaterialBSDF**: BSDFマテリアル
-- **EmissionMaterial**: 発光マテリアル（全オブジェクトでEmissionパラメータ対応）
+- **Universal PBR**: 標準PBRマテリアル（BaseColor/Metallic/Roughness/Emissive）
+- **Material BSDF**: フル機能BSDFマテリアル（+Transmission/IOR/Absorption対応）
+- **Emission Material**: 発光専用マテリアル
 
 ### ライトノード
 - **Light（ポイントライト）**: 点光源
