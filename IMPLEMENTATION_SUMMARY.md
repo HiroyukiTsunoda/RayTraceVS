@@ -45,7 +45,8 @@
 #### 5. DXR レイトレーシングオブジェクト（dxr-objects）
 - ✅ 球（Sphere）- カスタム交差シェーダー（2次方程式）
 - ✅ 平面（Plane）- カスタム交差シェーダー
-- ✅ ボックス（Box）- カスタム交差シェーダー（スラブ法）
+- ✅ ボックス（Box）- OBB対応カスタム交差シェーダー（スラブ法、回転対応）
+- ✅ メッシュ（Mesh）- FBXインポート、三角形メッシュ
 - ✅ PBRマテリアルシステム
   - Metallic（金属度）
   - Roughness（粗さ）
@@ -53,7 +54,8 @@
   - IOR（屈折率）
   - Specular（スペキュラ強度）
   - Emission（発光）
-- ✅ GPU構造体サイズ: Sphere/Plane=80 bytes、Box=96 bytes
+  - Absorption（吸収係数、カラーシャドウ用）
+- ✅ GPU構造体サイズ: Sphere/Plane=96 bytes、Box=160 bytes（OBB回転軸+absorption）
 
 #### 6. C#/C++相互運用（interop）
 - ✅ EngineWrapperクラス
@@ -358,7 +360,10 @@ RayTraceVSプロジェクトは、計画されたすべての主要機能を実�
 - ✅ DirectX12 DXR レイトレーシングエンジン
 - ✅ WPF ビジュアルスクリプティングUI
 - ✅ ノードベースのシーン構築（オブジェクト/マテリアル/ライト/数学ノード）
-- ✅ PBRマテリアルシステム（Metallic/Roughness/Transmission/IOR/Emission）
+- ✅ PBRマテリアルシステム（Metallic/Roughness/Transmission/IOR/Emission/Absorption）
+- ✅ カラーシャドウ（Beer-Lambert吸収）
+- ✅ OBB（Oriented Bounding Box）回転対応
+- ✅ FBXメッシュインポート
 - ✅ NRDデノイザー統合（REBLUR + SIGMA）
 - ✅ フォトンマッピングによるコースティクス（空間ハッシュ最適化）
 - ✅ ソフトシャドウ（エリアライトサンプリング）

@@ -105,18 +105,28 @@ D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE
 
 | ファイル | 種類 | 用途 |
 |---------|------|------|
-| `Common.hlsli` | ヘッダー | 共通定義、構造体、ユーティリティ関数 |
+| `Common.hlsli` | ヘッダー | 共通定義、構造体、ペイロード、ユーティリティ関数 |
 | `NRDEncoding.hlsli` | ヘッダー | NRD用エンコード/デコード関数 |
 | `RayGen.hlsl` | RayGeneration | プライマリレイ生成、G-Buffer出力 |
-| `Intersection.hlsl` | Intersection | プロシージャル交差判定 |
+| `Intersection.hlsl` | Intersection | プロシージャル交差判定（球/平面/OBBボックス） |
 | `ClosestHit.hlsl` | ClosestHit | 統合マテリアル処理（Diffuse/Metal/Glass/Emission対応） |
 | `ClosestHit_Diffuse.hlsl` | ClosestHit | ディフューズ専用（レガシー） |
 | `ClosestHit_Metal.hlsl` | ClosestHit | 金属専用（レガシー） |
 | `Miss.hlsl` | Miss | 空の色計算 |
-| `AnyHit_Shadow.hlsl` | AnyHit | シャドウレイ処理 |
+| `AnyHit_Shadow.hlsl` | AnyHit | シャドウレイ処理（プロシージャル + 三角形メッシュ） |
+| `AnyHit_SkipSelf.hlsl` | AnyHit | 自己交差スキップ用 |
 | `Composite.hlsl` | Compute | 最終合成、トーンマッピング |
 | `PhotonEmit.hlsl` | Compute | フォトン放出 |
 | `PhotonTrace.hlsl` | ClosestHit | フォトントレース |
+| `BuildPhotonHash.hlsl` | Compute | 空間ハッシュ構築 |
+
+**ペイロード構造**:
+| ペイロード | サイズ | 用途 |
+|-----------|--------|------|
+| `RadiancePayload` | 160 bytes | メインレイトレーシング（NRDフィールド含む） |
+| `ShadowPayload` | 32 bytes | シャドウレイ（カラーシャドウ対応） |
+| `ThicknessPayload` | 16 bytes | 厚さ計算（屈折用） |
+| `PhotonPayload` | 160 bytes | フォトントレース |
 
 ---
 
@@ -244,13 +254,19 @@ float SIGMA_BackEnd_UnpackShadow(float4 packedShadow);
 | **Specular** | 0.0-1.0 | スペキュラ強度 |
 | **Albedo** | RGB | ベースカラー |
 | **Emission** | RGB | 発光色（自己発光マテリアル用） |
+| **Absorption** | RGB (sigmaA) | 吸収係数（カラーシャドウ用、Beer-Lambert則） |
 
 **GPU構造体サイズ**:
-| 構造体 | サイズ | アライメント |
-|--------|--------|-------------|
-| `GPUSphere` | 80 bytes | 16-byte |
-| `GPUPlane` | 80 bytes | 16-byte |
-| `GPUBox` | 96 bytes | 16-byte |
+| 構造体 | サイズ | アライメント | 備考 |
+|--------|--------|-------------|------|
+| `GPUSphere` | 96 bytes | 16-byte | absorption追加 |
+| `GPUPlane` | 96 bytes | 16-byte | absorption追加 |
+| `GPUBox` | 160 bytes | 16-byte | OBB回転軸 + absorption |
+| `MeshInstanceInfo` | - | 16-byte | FBXメッシュ用 |
+
+**OBB (Oriented Bounding Box)**:
+- ボックスは回転に対応（axisX, axisY, axisZ）
+- ローカル座標系でのスラブ法交差判定
 
 ---
 
@@ -300,6 +316,36 @@ float specTerm = pow(NdotH, shininess) * NdotL;
 **ライトタイプ別サンプリング**:
 - **ポイントライト**: 球面上のランダムサンプリング
 - **ディレクショナルライト**: コーン角度内の方向サンプリング
+
+#### 5.5 カラーシャドウ（Absorption）
+
+透過オブジェクトを通過する光は、Beer-Lambert則に基づいて色付けされます。
+
+| パラメータ | 説明 |
+|-----------|------|
+| **absorption (sigmaA)** | RGB吸収係数 |
+| **ShadowAbsorptionScale** | 吸収スケール（シーン設定） |
+| **SHADOW_ABSORPTION_THICKNESS** | デフォルト厚さ（1.0） |
+
+**Beer-Lambert則**:
+```hlsl
+float3 beer = exp(-sigmaA * thickness * Scene.ShadowAbsorptionScale);
+payload.shadowColorAccum *= beer;
+payload.shadowTransmissionAccum *= transmission;
+```
+
+**ShadowPayload構造**:
+```hlsl
+struct ShadowPayload
+{
+    uint hit;                       // 1 if hit, 0 if miss
+    float hitDistance;              // Distance to first occluder
+    uint hitObjectType;             // OBJECT_TYPE_*
+    uint hitObjectIndex;            // Object index or instance index
+    float3 shadowColorAccum;        // Accumulated tint from translucent objects
+    float shadowTransmissionAccum;  // Accumulated transmission (visibility)
+};
+```
 
 ---
 
@@ -1025,18 +1071,30 @@ void DXRPipeline::Render(RenderTarget* renderTarget, Scene* scene)
 **定数**:
 
 ```hlsl
-#define MAX_RECURSION_DEPTH 5           // デフォルト再帰深度（Scene.MaxBouncesで上書き可能）
-#define MAX_PHOTONS 262144              // 256K フォトン
+#define MAX_PHOTONS 262144              // 256K フォトン（TDRセーフティ）
+#define MAX_PHOTON_BOUNCES 4            // フォトンバウンス最大数
 #define PHOTON_HASH_TABLE_SIZE 65536    // 空間ハッシュテーブルサイズ
 #define MAX_PHOTONS_PER_CELL 64         // セルあたり最大フォトン数
 
 #define OBJECT_TYPE_SPHERE 0
 #define OBJECT_TYPE_PLANE 1
 #define OBJECT_TYPE_BOX 2
+#define OBJECT_TYPE_MESH 3              // FBXメッシュ
+#define OBJECT_TYPE_INVALID 0xFFFFFFFF
 
 #define LIGHT_TYPE_AMBIENT 0
 #define LIGHT_TYPE_POINT 1
 #define LIGHT_TYPE_DIRECTIONAL 2
+
+// レイ種別
+#define RAYKIND_RADIANCE 0              // メインレイトレーシング
+#define RAYKIND_SHADOW 1                // シャドウレイ
+#define RAYKIND_THICKNESS 2             // 厚さ計算レイ
+#define RAYKIND_PHOTON 3                // フォトントレース
+
+// パスフラグ
+#define PATH_FLAG_INSIDE 0x1            // 媒質内部
+#define PATH_FLAG_SPECULAR 0x2          // スペキュラパス
 ```
 
 **主要構造体**:

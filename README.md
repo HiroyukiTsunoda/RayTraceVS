@@ -13,9 +13,9 @@ WPFベースのビジュアルスクリプティングUIと、DirectX12 DXRを�
 
 - UEのBlueprintライクなノードエディタでシーンを構築
 - リアルタイムGPUレイトレーシング (DirectX 12 DXR)
-- 球、平面、ボックスのプロシージャルジオメトリ
+- 球、平面、ボックス（OBB回転対応）、FBXメッシュのジオメトリ
 - 複数光源のサポート（ポイントライト、ディレクショナルライト、アンビエントライト）
-- 物理ベースマテリアル（PBR: Metallic/Roughness/Transmission/IOR/Emission）
+- 物理ベースマテリアル（PBR: Metallic/Roughness/Transmission/IOR/Emission/Absorption）
 - 発光マテリアル（Emission）による自己発光オブジェクト
 - 鏡面反射（Fresnelシュリック近似）
 - ソフトシャドウ（エリアライトサンプリング）
@@ -229,13 +229,14 @@ RayTraceVS/
 | **ClosestHit.hlsl** | 統合マテリアル処理（Diffuse/Metal/Glass/Emission対応） |
 | **ClosestHit_Diffuse.hlsl** | 拡散反射マテリアル処理（レガシー、コースティクス対応） |
 | **ClosestHit_Metal.hlsl** | 金属マテリアル処理（レガシー、反射） |
-| **AnyHit_Shadow.hlsl** | シャドウレイ判定 |
+| **AnyHit_Shadow.hlsl** | シャドウレイ判定（プロシージャル+三角形メッシュ、カラーシャドウ対応） |
 | **Miss.hlsl** | レイミス時の背景色処理 |
-| **Intersection.hlsl** | プロシージャル交差判定（球、平面、ボックス） |
+| **Intersection.hlsl** | プロシージャル交差判定（球、平面、OBBボックス） |
 | **PhotonEmit.hlsl** | フォトン放出（コースティクス用） |
 | **PhotonTrace.hlsl** | フォトントレース |
+| **BuildPhotonHash.hlsl** | 空間ハッシュ構築 |
 | **Composite.hlsl** | 最終合成、トーンマッピング、ガンマ補正 |
-| **Common.hlsli** | 共通定義・構造体（80/80/96 bytes）・ユーティリティ関数 |
+| **Common.hlsli** | 共通定義・構造体（96/96/160 bytes）・ペイロード・ユーティリティ |
 | **NRDEncoding.hlsli** | NRDデノイザー用エンコーディング（Oct法線、SIGMA等） |
 
 ### レンダリングパイプライン
@@ -328,8 +329,10 @@ RayTraceVS/
 ### レンダリング
 - [x] NRDデノイザー統合（REBLUR + SIGMA）
 - [x] フォトンマッピングによるコースティクス（空間ハッシュ最適化）
-- [x] PBRマテリアルシステム（Metallic/Roughness/Transmission/IOR/Emission）
+- [x] PBRマテリアルシステム（Metallic/Roughness/Transmission/IOR/Emission/Absorption）
 - [x] ソフトシャドウ（エリアライトサンプリング）
+- [x] カラーシャドウ（Beer-Lambert吸収、透過オブジェクト）
+- [x] OBB（Oriented Bounding Box）回転対応
 - [x] 被写界深度（DoF）シミュレーション
 - [x] トーンマッピング（Reinhard / ACES Filmic）
 - [x] シェーダーキャッシュ（DXC + JSON管理）
