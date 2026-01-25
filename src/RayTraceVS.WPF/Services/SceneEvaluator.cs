@@ -31,7 +31,7 @@ namespace RayTraceVS.WPF.Services
 {
     public class SceneEvaluator
     {
-        public (InteropSphereData[], InteropPlaneData[], InteropBoxData[], InteropCameraData, InteropLightData[], InteropMeshInstanceData[], InteropMeshCacheData[], int SamplesPerPixel, int MaxBounces, int TraceRecursionDepth, float Exposure, int ToneMapOperator, float DenoiserStabilization, float ShadowStrength, bool EnableDenoiser, float Gamma) EvaluateScene(NodeGraph nodeGraph)
+        public (InteropSphereData[], InteropPlaneData[], InteropBoxData[], InteropCameraData, InteropLightData[], InteropMeshInstanceData[], InteropMeshCacheData[], int SamplesPerPixel, int MaxBounces, int TraceRecursionDepth, float Exposure, int ToneMapOperator, float DenoiserStabilization, float ShadowStrength, float ShadowAbsorptionScale, bool EnableDenoiser, float Gamma) EvaluateScene(NodeGraph nodeGraph)
         {
             var spheres = new List<InteropSphereData>();
             var planes = new List<InteropPlaneData>();
@@ -46,6 +46,7 @@ namespace RayTraceVS.WPF.Services
             int toneMapOperator = 2;
             float denoiserStabilization = 1.0f;
             float shadowStrength = 1.0f;
+            float shadowAbsorptionScale = 4.0f;
             bool enableDenoiser = true;
             float gamma = 1.0f;
             InteropCameraData camera = new InteropCameraData
@@ -151,6 +152,7 @@ namespace RayTraceVS.WPF.Services
                     toneMapOperator = sceneData.ToneMapOperator;
                     denoiserStabilization = sceneData.DenoiserStabilization > 0 ? sceneData.DenoiserStabilization : 1.0f;
                     shadowStrength = sceneData.ShadowStrength >= 0 ? sceneData.ShadowStrength : 1.0f;
+                    shadowAbsorptionScale = sceneData.ShadowAbsorptionScale >= 0 ? sceneData.ShadowAbsorptionScale : 4.0f;
                     enableDenoiser = sceneData.EnableDenoiser;
                     gamma = sceneData.Gamma > 0 ? sceneData.Gamma : 1.0f;
                 }
@@ -294,7 +296,7 @@ namespace RayTraceVS.WPF.Services
                 }
             }
 
-            return (spheres.ToArray(), planes.ToArray(), boxes.ToArray(), camera, lights.ToArray(), meshInstances.ToArray(), meshCaches.Values.ToArray(), samplesPerPixel, maxBounces, traceRecursionDepth, exposure, toneMapOperator, denoiserStabilization, shadowStrength, enableDenoiser, gamma);
+            return (spheres.ToArray(), planes.ToArray(), boxes.ToArray(), camera, lights.ToArray(), meshInstances.ToArray(), meshCaches.Values.ToArray(), samplesPerPixel, maxBounces, traceRecursionDepth, exposure, toneMapOperator, denoiserStabilization, shadowStrength, shadowAbsorptionScale, enableDenoiser, gamma);
         }
 
         private InteropSphereData ConvertSphereData(SphereData data)

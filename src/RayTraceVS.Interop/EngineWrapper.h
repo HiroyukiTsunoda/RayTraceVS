@@ -35,6 +35,7 @@ namespace RayTraceVS::Interop
             int toneMapOperator,
             float denoiserStabilization,
             float shadowStrength,
+            float shadowAbsorptionScale,
             bool enableDenoiser,
             float gamma,
             int photonDebugMode,

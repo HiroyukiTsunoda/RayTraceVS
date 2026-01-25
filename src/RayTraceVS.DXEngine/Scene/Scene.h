@@ -64,7 +64,7 @@ namespace RayTraceVS::DXEngine
         Camera& GetCamera() { return camera; }
         const Camera& GetCamera() const { return camera; }
 
-        void SetRenderSettings(int samples, int bounces, int traceRecursion, float exp = 1.0f, int tone = 2, float stab = 1.0f, float shadow = 1.0f, bool denoiser = true, float gam = 2.2f, int photonDebug = 0, float photonDebugScale = 1.0f)
+        void SetRenderSettings(int samples, int bounces, int traceRecursion, float exp = 1.0f, int tone = 2, float stab = 1.0f, float shadow = 1.0f, float shadowAbsorb = 4.0f, bool denoiser = true, float gam = 2.2f, int photonDebug = 0, float photonDebugScaleVal = 1.0f)
         {
             samplesPerPixel = samples;
             maxBounces = bounces;
@@ -73,10 +73,11 @@ namespace RayTraceVS::DXEngine
             toneMapOperator = tone;
             denoiserStabilization = stab;
             shadowStrength = shadow;
+            shadowAbsorptionScale = shadowAbsorb;
             enableDenoiser = denoiser;
             gamma = gam;
             photonDebugMode = photonDebug;
-            photonDebugScale = photonDebugScale;
+            photonDebugScale = photonDebugScaleVal;
         }
         int GetSamplesPerPixel() const { return samplesPerPixel; }
         int GetMaxBounces() const { return maxBounces; }
@@ -85,6 +86,7 @@ namespace RayTraceVS::DXEngine
         int GetToneMapOperator() const { return toneMapOperator; }
         float GetDenoiserStabilization() const { return denoiserStabilization; }
         float GetShadowStrength() const { return shadowStrength; }
+        float GetShadowAbsorptionScale() const { return shadowAbsorptionScale; }
         bool GetEnableDenoiser() const { return enableDenoiser; }
         float GetGamma() const { return gamma; }
         int GetPhotonDebugMode() const { return photonDebugMode; }
@@ -122,6 +124,7 @@ namespace RayTraceVS::DXEngine
         int toneMapOperator = 2;
         float denoiserStabilization = 1.0f;
         float shadowStrength = 1.0f;
+        float shadowAbsorptionScale = 4.0f;
         bool enableDenoiser = true;
         float gamma = 1.0f;
         int photonDebugMode = 0;

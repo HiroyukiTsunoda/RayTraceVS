@@ -522,8 +522,10 @@ namespace RayTraceVS::DXEngine
         
         // Shadow parameters and frame counter for temporal variation
         mappedConstantData->ShadowStrength = shadowStrength;
+        mappedConstantData->ShadowAbsorptionScale = scene->GetShadowAbsorptionScale();
         static UINT s_frameCounter = 0;
         mappedConstantData->FrameIndex = s_frameCounter++;  // Increment each render call
+        mappedConstantData->ShadowPadding = 0;
 
         // View/Projection matrices for motion vectors (column-major for HLSL)
         XMMATRIX viewMatrix = camera.GetViewMatrix();
@@ -1823,11 +1825,14 @@ namespace RayTraceVS::DXEngine
         AddLibrary(rayGenShader.Get(), L"RayGen");
         AddLibrary(missShader.Get(), L"Miss");
         AddLibrary(missShader.Get(), L"Miss_Shadow");
+        AddLibrary(missShader.Get(), L"Miss_Thickness");
         AddLibrary(closestHitShader.Get(), L"ClosestHit");
         AddLibrary(closestHitTriangleShader.Get(), L"ClosestHit_Triangle");
         AddLibrary(intersectionShader.Get(), L"SphereIntersection");
         AddLibrary(anyHitShadowShader.Get(), L"AnyHit_Shadow");
         AddLibrary(anyHitShadowShader.Get(), L"AnyHit_Shadow_Triangle");
+        AddLibrary(anyHitShadowShader.Get(), L"AnyHit_Thickness");
+        AddLibrary(anyHitShadowShader.Get(), L"AnyHit_Thickness_Triangle");
         AddLibrary(anyHitSkipSelfShader.Get(), L"AnyHit_SkipSelf");
         AddLibrary(anyHitSkipSelfShader.Get(), L"AnyHit_SkipSelf_Triangle");
         
@@ -1853,24 +1858,37 @@ namespace RayTraceVS::DXEngine
         reflectHitGroup->SetIntersectionShaderImport(L"SphereIntersection");
         reflectHitGroup->SetHitGroupType(D3D12_HIT_GROUP_TYPE_PROCEDURAL_PRIMITIVE);
         
-        // Hit group 3: Triangle primary rays
+        // Hit group 3: Thickness rays for procedural geometry (AnyHit_Thickness + Intersection)
+        auto thicknessHitGroup = stateObjectDesc.CreateSubobject<CD3DX12_HIT_GROUP_SUBOBJECT>();
+        thicknessHitGroup->SetHitGroupExport(L"ThicknessHitGroup");
+        thicknessHitGroup->SetAnyHitShaderImport(L"AnyHit_Thickness");
+        thicknessHitGroup->SetIntersectionShaderImport(L"SphereIntersection");
+        thicknessHitGroup->SetHitGroupType(D3D12_HIT_GROUP_TYPE_PROCEDURAL_PRIMITIVE);
+        
+        // Hit group 4: Triangle primary rays
         auto triangleHitGroup = stateObjectDesc.CreateSubobject<CD3DX12_HIT_GROUP_SUBOBJECT>();
         triangleHitGroup->SetHitGroupExport(L"TriangleHitGroup");
         triangleHitGroup->SetClosestHitShaderImport(L"ClosestHit_Triangle");
         triangleHitGroup->SetHitGroupType(D3D12_HIT_GROUP_TYPE_TRIANGLES);
         
-        // Hit group 4: Triangle shadow rays
+        // Hit group 5: Triangle shadow rays
         auto triangleShadowHitGroup = stateObjectDesc.CreateSubobject<CD3DX12_HIT_GROUP_SUBOBJECT>();
         triangleShadowHitGroup->SetHitGroupExport(L"TriangleShadowHitGroup");
         triangleShadowHitGroup->SetAnyHitShaderImport(L"AnyHit_Shadow_Triangle");
         triangleShadowHitGroup->SetHitGroupType(D3D12_HIT_GROUP_TYPE_TRIANGLES);
         
-        // Hit group 5: Triangle reflection rays
+        // Hit group 6: Triangle reflection rays
         auto triangleReflectHitGroup = stateObjectDesc.CreateSubobject<CD3DX12_HIT_GROUP_SUBOBJECT>();
         triangleReflectHitGroup->SetHitGroupExport(L"TriangleReflectHitGroup");
         triangleReflectHitGroup->SetClosestHitShaderImport(L"ClosestHit_Triangle");
         triangleReflectHitGroup->SetAnyHitShaderImport(L"AnyHit_SkipSelf_Triangle");
         triangleReflectHitGroup->SetHitGroupType(D3D12_HIT_GROUP_TYPE_TRIANGLES);
+        
+        // Hit group 7: Triangle thickness rays
+        auto triangleThicknessHitGroup = stateObjectDesc.CreateSubobject<CD3DX12_HIT_GROUP_SUBOBJECT>();
+        triangleThicknessHitGroup->SetHitGroupExport(L"TriangleThicknessHitGroup");
+        triangleThicknessHitGroup->SetAnyHitShaderImport(L"AnyHit_Thickness_Triangle");
+        triangleThicknessHitGroup->SetHitGroupType(D3D12_HIT_GROUP_TYPE_TRIANGLES);
         
         // Shader config
         auto shaderConfig = stateObjectDesc.CreateSubobject<CD3DX12_RAYTRACING_SHADER_CONFIG_SUBOBJECT>();
@@ -1893,7 +1911,7 @@ namespace RayTraceVS::DXEngine
             LOG_ERROR("Invalid payload size defines (check Common.hlsli)");
             return false;
         }
-        UINT payloadSize = static_cast<UINT>(max(radiancePayloadSize, shadowPayloadSize));
+        UINT payloadSize = static_cast<UINT>(max(radiancePayloadSize, max(shadowPayloadSize, thicknessPayloadSize)));
         // ProceduralAttributes: float3 normal (12) + uint objectType (4) + uint objectIndex (4) = 20 bytes
         UINT attribSize = 12 + 4 + 4;   // 20 bytes
         shaderConfig->Config(payloadSize, attribSize);
@@ -1962,22 +1980,26 @@ namespace RayTraceVS::DXEngine
         void* rayGenId = stateObjectProperties->GetShaderIdentifier(L"RayGen");
         void* missId = stateObjectProperties->GetShaderIdentifier(L"Miss");
         void* missShadowId = stateObjectProperties->GetShaderIdentifier(L"Miss_Shadow");
+        void* missThicknessId = stateObjectProperties->GetShaderIdentifier(L"Miss_Thickness");
         void* hitGroupId = stateObjectProperties->GetShaderIdentifier(L"HitGroup");
         void* shadowHitGroupId = stateObjectProperties->GetShaderIdentifier(L"ShadowHitGroup");
         void* reflectHitGroupId = stateObjectProperties->GetShaderIdentifier(L"ReflectHitGroup");
+        void* thicknessHitGroupId = stateObjectProperties->GetShaderIdentifier(L"ThicknessHitGroup");
         
         // Get shader identifiers for triangle geometry (hit groups 3-5)
         void* triangleHitGroupId = stateObjectProperties->GetShaderIdentifier(L"TriangleHitGroup");
         void* triangleShadowHitGroupId = stateObjectProperties->GetShaderIdentifier(L"TriangleShadowHitGroup");
         void* triangleReflectHitGroupId = stateObjectProperties->GetShaderIdentifier(L"TriangleReflectHitGroup");
+        void* triangleThicknessHitGroupId = stateObjectProperties->GetShaderIdentifier(L"TriangleThicknessHitGroup");
         
-        if (!rayGenId || !missId || !missShadowId || !hitGroupId || !shadowHitGroupId || !reflectHitGroupId)
+        if (!rayGenId || !missId || !missShadowId || !missThicknessId ||
+            !hitGroupId || !shadowHitGroupId || !reflectHitGroupId || !thicknessHitGroupId)
         {
             LOG_ERROR("Failed to get shader identifiers for procedural geometry");
             return false;
         }
         
-        if (!triangleHitGroupId || !triangleShadowHitGroupId || !triangleReflectHitGroupId)
+        if (!triangleHitGroupId || !triangleShadowHitGroupId || !triangleReflectHitGroupId || !triangleThicknessHitGroupId)
         {
             LOG_ERROR("Failed to get shader identifiers for triangle geometry");
             return false;
@@ -2000,9 +2022,9 @@ namespace RayTraceVS::DXEngine
             rayGenShaderTable->Unmap(0, nullptr);
         }
         
-        // Miss shader table (2 entries: radiance + shadow)
+        // Miss shader table (3 entries: radiance + shadow + thickness)
         {
-            CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(shaderTableRecordSize * 2);
+            CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(shaderTableRecordSize * 3);
             device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &desc,
                 D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&missShaderTable));
             
@@ -2011,14 +2033,15 @@ namespace RayTraceVS::DXEngine
             BYTE* dst = static_cast<BYTE*>(mapped);
             memcpy(dst, missId, shaderIdSize);
             memcpy(dst + shaderTableRecordSize, missShadowId, shaderIdSize);
+            memcpy(dst + shaderTableRecordSize * 2, missThicknessId, shaderIdSize);
             missShaderTable->Unmap(0, nullptr);
         }
         
-        // Hit group shader table (6 entries):
-        // 0-2: Procedural geometry (spheres, boxes, planes)
-        // 3-5: Triangle geometry (meshes)
+        // Hit group shader table (8 entries):
+        // 0-3: Procedural geometry (spheres, boxes, planes)
+        // 4-7: Triangle geometry (meshes)
         {
-            UINT hitGroupTableSize = shaderTableRecordSize * 6;  // 6 hit groups
+            UINT hitGroupTableSize = shaderTableRecordSize * 8;  // 8 hit groups
             CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(hitGroupTableSize);
             device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &desc,
                 D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&hitGroupShaderTable));
@@ -2032,12 +2055,16 @@ namespace RayTraceVS::DXEngine
             memcpy(dst + shaderTableRecordSize, shadowHitGroupId, shaderIdSize);
             // Hit group 2: Reflection rays (procedural)
             memcpy(dst + shaderTableRecordSize * 2, reflectHitGroupId, shaderIdSize);
-            // Hit group 3: Primary rays (triangle)
-            memcpy(dst + shaderTableRecordSize * 3, triangleHitGroupId, shaderIdSize);
-            // Hit group 4: Shadow rays (triangle)
-            memcpy(dst + shaderTableRecordSize * 4, triangleShadowHitGroupId, shaderIdSize);
-            // Hit group 5: Reflection rays (triangle)
-            memcpy(dst + shaderTableRecordSize * 5, triangleReflectHitGroupId, shaderIdSize);
+            // Hit group 3: Thickness rays (procedural)
+            memcpy(dst + shaderTableRecordSize * 3, thicknessHitGroupId, shaderIdSize);
+            // Hit group 4: Primary rays (triangle)
+            memcpy(dst + shaderTableRecordSize * 4, triangleHitGroupId, shaderIdSize);
+            // Hit group 5: Shadow rays (triangle)
+            memcpy(dst + shaderTableRecordSize * 5, triangleShadowHitGroupId, shaderIdSize);
+            // Hit group 6: Reflection rays (triangle)
+            memcpy(dst + shaderTableRecordSize * 6, triangleReflectHitGroupId, shaderIdSize);
+            // Hit group 7: Thickness rays (triangle)
+            memcpy(dst + shaderTableRecordSize * 7, triangleThicknessHitGroupId, shaderIdSize);
             hitGroupShaderTable->Unmap(0, nullptr);
         }
         
@@ -2537,11 +2564,11 @@ namespace RayTraceVS::DXEngine
         dispatchDesc.RayGenerationShaderRecord.SizeInBytes = shaderTableRecordSize;
         
         dispatchDesc.MissShaderTable.StartAddress = missShaderTable->GetGPUVirtualAddress();
-        dispatchDesc.MissShaderTable.SizeInBytes = shaderTableRecordSize * 2;
+        dispatchDesc.MissShaderTable.SizeInBytes = shaderTableRecordSize * 3;
         dispatchDesc.MissShaderTable.StrideInBytes = shaderTableRecordSize;
         
         dispatchDesc.HitGroupTable.StartAddress = hitGroupShaderTable->GetGPUVirtualAddress();
-        dispatchDesc.HitGroupTable.SizeInBytes = shaderTableRecordSize * 6;  // 6 hit groups (3 procedural + 3 triangle)
+        dispatchDesc.HitGroupTable.SizeInBytes = shaderTableRecordSize * 8;  // 8 hit groups (4 procedural + 4 triangle)
         dispatchDesc.HitGroupTable.StrideInBytes = shaderTableRecordSize;
         
         dispatchDesc.Width = width;

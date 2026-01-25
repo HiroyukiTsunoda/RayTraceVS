@@ -114,6 +114,22 @@ namespace RayTraceVS.WPF.Models.Nodes
         }
 
         /// <summary>
+        /// 透過影の吸収スケール (1.0 = 通常, 2.0+ = より濃い色付き影)
+        /// </summary>
+        private float _shadowAbsorptionScale = 4.0f;
+        public float ShadowAbsorptionScale
+        {
+            get => _shadowAbsorptionScale;
+            set
+            {
+                if (SetProperty(ref _shadowAbsorptionScale, value))
+                {
+                    MarkDirty();
+                }
+            }
+        }
+
+        /// <summary>
         /// デノイザー有効/無効 (true = NRDデノイザー有効)
         /// </summary>
         private bool _enableDenoiser = true;
@@ -376,6 +392,7 @@ namespace RayTraceVS.WPF.Models.Nodes
                 ToneMapOperator = ToneMapOperator,
                 DenoiserStabilization = DenoiserStabilization,
                 ShadowStrength = ShadowStrength,
+                ShadowAbsorptionScale = ShadowAbsorptionScale,
                 EnableDenoiser = EnableDenoiser,
                 Gamma = Gamma
             };

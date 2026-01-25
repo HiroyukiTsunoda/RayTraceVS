@@ -58,7 +58,9 @@ namespace RayTraceVS::DXEngine
         float FocusDistance;        // Distance to the focal plane
         // Shadow parameters
         float ShadowStrength;       // 0.0 = no shadow, 1.0 = normal, >1.0 = darker
+        float ShadowAbsorptionScale; // Beer absorption scale for colored transparent shadows
         UINT FrameIndex;            // Frame counter for temporal noise variation
+        UINT ShadowPadding;         // Padding for 16-byte alignment
         // Mesh instance count
         UINT NumMeshInstances;      // Number of FBX mesh instances
         UINT MeshPadding[3];        // Padding for 16-byte alignment

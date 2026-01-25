@@ -279,13 +279,6 @@ void RayGen()
                 continue;
             }
             
-            // Beer-Lambert absorption inside medium (use hit distance)
-            if ((state.pathFlags & PATH_FLAG_INSIDE) != 0 && payload.hit)
-            {
-                float3 absorption = exp(-state.absorption * payload.hitDistance);
-                state.throughput *= absorption;
-            }
-
             float3 hitPosition = state.origin + state.direction * payload.hitDistance;
             float3 N = UnpackNormalOctahedron(payload.packedNormal);
             float2 rm = UnpackHalf2(payload.packedMaterial0);
@@ -314,7 +307,9 @@ void RayGen()
                     if (specular > 0.01)
                     {
                         float3 viewDir = -state.direction;
-                        float f0 = pow((ior - 1.0) / (ior + 1.0), 2.0);
+                        float f0FromIor = pow((ior - 1.0) / (ior + 1.0), 2.0);
+                        float specularBlend = saturate(specular);
+                        float f0 = lerp(f0FromIor, specularBlend, specularBlend);
                         for (uint li = 0; li < Scene.NumLights; li++)
                         {
                             LightData light = Lights[li];
@@ -484,7 +479,6 @@ void RayGen()
 
                         ambient = lerp(diffuseColor, baseColor * 0.3, metallic) * 0.2;
                     }
-
                     float reflectionWeight = metallic * (1.0 - roughness * 0.5);
                     float directWeight = 1.0 - reflectionWeight * 0.5;
 
@@ -511,7 +505,7 @@ void RayGen()
                                           + directSpecular
                                           + photonCaustic
                                           + emission;
-                        payload.color = saturate(finalColor);
+                        payload.color = max(finalColor, 0.0);
                     }
 
                     if (payload.depth == 0)
@@ -525,6 +519,16 @@ void RayGen()
                 }
             }
             
+#if DEBUG_SHADOW_VIS
+            if (payload.depth == 0)
+            {
+                float v = saturate(payload.shadowVisibility);
+                payload.color = v.xxx;
+                payload.diffuseRadiance = v.xxx;
+                payload.specularRadiance = float3(0, 0, 0);
+            }
+#endif
+
             // Accumulate color with throughput
             float3 bounceColor = state.throughput * payload.color;
             sampleColor += bounceColor;
@@ -572,7 +576,7 @@ void RayGen()
                 
                 if (isGlass)
                 {
-                bool entering = (state.pathFlags & PATH_FLAG_INSIDE) == 0;
+                    bool entering = dot(N, -state.direction) > 0.0;
                     float eta = entering ? (1.0 / ior) : ior;
                     float3 reflectDir = normalize(reflect(state.direction, N));
                     float3 refractDir = refract(state.direction, N, eta);
@@ -595,7 +599,9 @@ void RayGen()
                     }
                     
                     float cosTheta = saturate(dot(-state.direction, N));
-                    float f0 = pow((ior - 1.0) / (ior + 1.0), 2.0);
+                    float f0FromIor = pow((ior - 1.0) / (ior + 1.0), 2.0);
+                    float specularBlend = saturate(specular);
+                    float f0 = lerp(f0FromIor, specularBlend, specularBlend);
                     float fresnel = FresnelSchlick(cosTheta, f0);
                     if (tir)
                     {
@@ -605,9 +611,44 @@ void RayGen()
                     float3 reflectThroughput = fresnel.xxx;
                     float transmittance = saturate(transmission);
                     float tintStrength = (state.depth == 0) ? 1.0 : 0.7;
-                    float3 refractThroughput = (1.0 - fresnel) * transmittance * lerp(float3(1, 1, 1), baseColor, tintStrength);
+                    float3 refractThroughput = (1.0 - fresnel) * transmittance
+                        * lerp(float3(1, 1, 1), baseColor, tintStrength);
                     reflectThroughput = clamp(reflectThroughput, 0.0, 1.0);
                     refractThroughput = clamp(refractThroughput, 0.0, 1.0);
+                    
+                    float thickness = 0.0;
+                    if (!tir)
+                    {
+                        RayDesc thicknessRay;
+                        thicknessRay.Origin = hitPosition + refractDir * 0.002;
+                        thicknessRay.Direction = refractDir;
+                        thicknessRay.TMin = 0.001;
+                        thicknessRay.TMax = NRD_FP16_MAX;
+                        
+                        ThicknessPayload thicknessPayload;
+                        thicknessPayload.hit = 0;
+                        thicknessPayload.hitT = NRD_FP16_MAX;
+                        thicknessPayload.objectType = payload.hitObjectType;
+                        thicknessPayload.objectIndex = payload.hitObjectIndex;
+                        
+                        TraceRay(SceneBVH,
+                                 RAY_FLAG_SKIP_CLOSEST_HIT_SHADER,
+                                 0xFF,
+                                 3, 0, 2,
+                                 thicknessRay,
+                                 thicknessPayload);
+                        
+                        if (thicknessPayload.hit)
+                        {
+                            thickness = thicknessPayload.hitT;
+                        }
+                    }
+                    
+                    float absorptionScale = 0.6;
+                    float3 refractionAbsorption = (!tir && thickness > 0.0)
+                        ? exp(-payload.absorption * thickness * absorptionScale)
+                        : float3(1, 1, 1);
+                    float3 refractionPathScale = refractionAbsorption;
                     
                     float reflectWeight = max(reflectThroughput.r, max(reflectThroughput.g, reflectThroughput.b));
                     float refractWeight = (!tir)
@@ -621,7 +662,9 @@ void RayGen()
                         float rr = rng_next(rrRng);
                         bool chooseReflect = tir || (rr < (reflectWeight / max(weightSum, 1e-6)));
                         float chosenWeight = chooseReflect ? reflectWeight : refractWeight;
-                        float3 nextThroughput = chooseReflect ? reflectThroughput : refractThroughput;
+                        float3 nextThroughput = chooseReflect
+                            ? reflectThroughput
+                            : (refractThroughput * refractionPathScale);
                         nextThroughput *= weightSum / max(chosenWeight, 1e-6);
                         
                         WorkItem child;
@@ -632,28 +675,14 @@ void RayGen()
                         child.throughput = nextThroughput * state.throughput;
                         child.pathFlags = state.pathFlags | PATH_FLAG_SPECULAR;
                         child.absorption = state.absorption;
-                        if (!chooseReflect)
-                        {
-                            if (entering)
-                            {
-                                child.pathFlags = state.pathFlags | PATH_FLAG_INSIDE | PATH_FLAG_SPECULAR;
-                                child.absorption = payload.absorption;
-                            }
-                            else
-                            {
-                                child.pathFlags = (state.pathFlags & ~PATH_FLAG_INSIDE) | PATH_FLAG_SPECULAR;
-                                child.absorption = float3(0, 0, 0);
-                            }
-                        }
                         child.rayKind = RAYKIND_RADIANCE;
                         child.skyBoost = SKY_BOOST_GLASS;
                         child.specularDepth = state.specularDepth + 1;
                         child.diffuseDepth = state.diffuseDepth;
                         child.kind = chooseReflect ? 1 : 2;
-                        bool childInside = (child.pathFlags & PATH_FLAG_INSIDE) != 0;
-                        child.rayFlags = childInside ? 0 : RAYFLAG_SKIP_SELF;
-                        child.skipObjectType = childInside ? OBJECT_TYPE_INVALID : payload.hitObjectType;
-                        child.skipObjectIndex = childInside ? 0 : payload.hitObjectIndex;
+                        child.rayFlags = chooseReflect ? RAYFLAG_SKIP_SELF : 0;
+                        child.skipObjectType = chooseReflect ? payload.hitObjectType : OBJECT_TYPE_INVALID;
+                        child.skipObjectIndex = chooseReflect ? payload.hitObjectIndex : 0;
                         child.padding = 0;
                         
                         float maxChildThroughput = max(child.throughput.r, max(child.throughput.g, child.throughput.b));
@@ -681,10 +710,9 @@ void RayGen()
                         reflectChild.specularDepth = state.specularDepth + 1;
                         reflectChild.diffuseDepth = state.diffuseDepth;
                         reflectChild.kind = 1;
-                        bool reflectInside = (reflectChild.pathFlags & PATH_FLAG_INSIDE) != 0;
-                        reflectChild.rayFlags = reflectInside ? 0 : RAYFLAG_SKIP_SELF;
-                        reflectChild.skipObjectType = reflectInside ? OBJECT_TYPE_INVALID : payload.hitObjectType;
-                        reflectChild.skipObjectIndex = reflectInside ? 0 : payload.hitObjectIndex;
+                        reflectChild.rayFlags = RAYFLAG_SKIP_SELF;
+                        reflectChild.skipObjectType = payload.hitObjectType;
+                        reflectChild.skipObjectIndex = payload.hitObjectIndex;
                         reflectChild.padding = 0;
                         
                         if (queueCount < WORK_QUEUE_STRIDE)
@@ -700,26 +728,17 @@ void RayGen()
                             refractChild.tMin = 0.001;
                             refractChild.direction = refractDir;
                             refractChild.depth = state.depth + 1;
-                            refractChild.throughput = refractThroughput * state.throughput;
-                            if (entering)
-                            {
-                                refractChild.pathFlags = state.pathFlags | PATH_FLAG_INSIDE | PATH_FLAG_SPECULAR;
-                                refractChild.absorption = payload.absorption;
-                            }
-                            else
-                            {
-                                refractChild.pathFlags = (state.pathFlags & ~PATH_FLAG_INSIDE) | PATH_FLAG_SPECULAR;
-                                refractChild.absorption = float3(0, 0, 0);
-                            }
+                            refractChild.throughput = refractThroughput * refractionPathScale * state.throughput;
+                            refractChild.pathFlags = state.pathFlags | PATH_FLAG_SPECULAR;
+                            refractChild.absorption = state.absorption;
                             refractChild.rayKind = RAYKIND_RADIANCE;
                             refractChild.skyBoost = SKY_BOOST_GLASS;
                             refractChild.specularDepth = state.specularDepth + 1;
                             refractChild.diffuseDepth = state.diffuseDepth;
                             refractChild.kind = 2;
-                            bool refractInside = (refractChild.pathFlags & PATH_FLAG_INSIDE) != 0;
-                            refractChild.rayFlags = refractInside ? 0 : RAYFLAG_SKIP_SELF;
-                            refractChild.skipObjectType = refractInside ? OBJECT_TYPE_INVALID : payload.hitObjectType;
-                            refractChild.skipObjectIndex = refractInside ? 0 : payload.hitObjectIndex;
+                            refractChild.rayFlags = 0;
+                            refractChild.skipObjectType = OBJECT_TYPE_INVALID;
+                            refractChild.skipObjectIndex = 0;
                             refractChild.padding = 0;
                             
                             if (queueCount < WORK_QUEUE_STRIDE)

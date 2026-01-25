@@ -123,7 +123,7 @@
           "Light3",
           "Light4"
         ],
-        "SamplesPerPixel": 8,
+        "SamplesPerPixel": 16,
         "MaxBounces": 10,
         "TraceRecursionDepth": 2,
         "Exposure": 1.0,
@@ -494,7 +494,7 @@
       "PositionX": 959.1204583411736,
       "PositionY": 1693.7262954074872,
       "Properties": {
-        "Value": 0.5
+        "Value": 0.8
       }
     },
     {
@@ -806,7 +806,7 @@
       "PositionX": 1385.5052239508511,
       "PositionY": 1300.0722626958818,
       "Properties": {
-        "Value": 1.5
+        "Value": 1.1
       }
     },
     {
@@ -865,7 +865,7 @@
       "PositionY": 1868.7225914787089,
       "Properties": {
         "X": 0.5,
-        "Y": 0.0,
+        "Y": -0.03,
         "Z": -1.5
       }
     },
@@ -920,7 +920,7 @@
       "Id": "c651a3a2-59a4-46cd-9252-36fe3efd4601",
       "Type": "FloatNode",
       "Title": "Float",
-      "PositionX": 1371.0718647996252,
+      "PositionX": 1372.0474745557226,
       "PositionY": 2249.637707123831,
       "Properties": {
         "Value": 1.05
@@ -933,7 +933,7 @@
       "PositionX": 1159.117165261875,
       "PositionY": 2241.3056358053204,
       "Properties": {
-        "Value": 1.0
+        "Value": 0.92
       }
     },
     {
@@ -1391,12 +1391,6 @@
       "InputSocketName": "Light3"
     },
     {
-      "OutputNodeId": "a51b02de-a879-4ad6-9e25-6ba1db75c1d4",
-      "OutputSocketName": "Vector",
-      "InputNodeId": "1421c25d-c665-46e5-a66c-95e3cf7871ad",
-      "InputSocketName": "Absorption"
-    },
-    {
       "OutputNodeId": "61dd6547-4fc4-4a4b-bf19-5d6b95b8a60d",
       "OutputSocketName": "Material",
       "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-111111111111",
@@ -1407,11 +1401,17 @@
       "OutputSocketName": "Material",
       "InputNodeId": "d38ae94a-cab2-47e9-b086-7e48c9b4bdf0",
       "InputSocketName": "Material"
+    },
+    {
+      "OutputNodeId": "a51b02de-a879-4ad6-9e25-6ba1db75c1d4",
+      "OutputSocketName": "Vector",
+      "InputNodeId": "1421c25d-c665-46e5-a66c-95e3cf7871ad",
+      "InputSocketName": "Absorption"
     }
   ],
   "Viewport": {
-    "PanX": -689.8175695238116,
-    "PanY": -642.5445014792699,
+    "PanX": -718.0154571659527,
+    "PanY": -842.3698962528421,
     "Zoom": 0.8200000000000005,
     "IsLeftPanelVisible": true,
     "IsRightPanelVisible": true,

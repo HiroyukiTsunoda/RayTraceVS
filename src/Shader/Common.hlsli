@@ -55,6 +55,12 @@ struct PhotonHashCell
 #define SKY_BOOST_GLASS 1.2
 #define SKY_BOOST_METAL 1.1
 
+// Shadow absorption thickness proxy (any-hit can't TraceRay)
+#define SHADOW_ABSORPTION_THICKNESS 1.0
+// ShadowAbsorptionScale is now in SceneConstantBuffer (Scene.ShadowAbsorptionScale)
+// Debug: visualize shadow visibility on surfaces
+#define DEBUG_SHADOW_VIS 0
+
 struct PathState
 {
     float3 origin;
@@ -258,7 +264,9 @@ struct SceneConstantBuffer
     float FocusDistance;        // Distance to the focal plane
     // Shadow parameters
     float ShadowStrength;       // 0.0 = no shadow, 1.0 = normal, >1.0 = darker
+    float ShadowAbsorptionScale; // Beer absorption scale for colored transparent shadows
     uint FrameIndex;            // Frame counter for temporal noise variation
+    uint ShadowPadding;         // Padding for 16-byte alignment
     // Matrices for motion vectors
     float4x4 ViewProjection;
     float4x4 PrevViewProjection;
@@ -908,88 +916,62 @@ struct SoftShadowResult
     float3 shadowColor;    // Color tint from translucent objects (white = no tint)
 };
 
+float3 GetShadowAbsorption(uint objectType, uint objectIndex)
+{
+    if (objectType == OBJECT_TYPE_SPHERE)
+    {
+        return Spheres[objectIndex].absorption;
+    }
+    if (objectType == OBJECT_TYPE_PLANE)
+    {
+        return Planes[objectIndex].absorption;
+    }
+    if (objectType == OBJECT_TYPE_BOX)
+    {
+        return Boxes[objectIndex].absorption;
+    }
+    if (objectType == OBJECT_TYPE_MESH)
+    {
+        MeshInstanceInfo instInfo = MeshInstances[objectIndex];
+        MeshMaterial mat = MeshMaterials[instInfo.materialIndex];
+        return mat.absorption;
+    }
+    return float3(0, 0, 0);
+}
+
 // Trace a single shadow ray and return visibility (0 = blocked, 1 = visible)
 // Also returns shadowColor: white = no tint, colored = light filtered through translucent objects
-// Loops through translucent objects to accumulate color tint
+// Accumulation is handled in AnyHit_Shadow via IgnoreHit for translucent objects.
 float TraceSingleShadowRay(float3 rayOrigin, float3 rayDir, float maxDist, out float occluderDistance, out float3 shadowColor)
 {
-    float3 currentOrigin = rayOrigin;
-    float remainingDist = maxDist;
-    float accumulatedVisibility = 1.0;
-    float3 accumulatedColor = float3(1, 1, 1);
     occluderDistance = NRD_FP16_MAX;
-    bool firstHit = true;
     
-    // Loop through potentially multiple translucent objects
-    const int MAX_TRANSLUCENT_LAYERS = 4;
-    for (int layer = 0; layer < MAX_TRANSLUCENT_LAYERS; layer++)
+    RayDesc shadowRay;
+    shadowRay.Origin = rayOrigin;
+    shadowRay.Direction = rayDir;
+    shadowRay.TMin = 0.001;
+    shadowRay.TMax = maxDist;
+    
+    ShadowPayload shadowPayload;
+    shadowPayload.hit = 0;
+    shadowPayload.hitDistance = NRD_FP16_MAX;
+    shadowPayload.hitObjectType = OBJECT_TYPE_INVALID;
+    shadowPayload.hitObjectIndex = 0;
+    shadowPayload.shadowColorAccum = float3(1, 1, 1);
+    shadowPayload.shadowTransmissionAccum = 1.0;
+    
+    TraceRay(SceneBVH, 
+             RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH |
+             RAY_FLAG_SKIP_CLOSEST_HIT_SHADER,
+             0xFF, 1, 0, 1, shadowRay, shadowPayload);
+    
+    if (shadowPayload.hit)
     {
-        RayDesc shadowRay;
-        shadowRay.Origin = currentOrigin;
-        shadowRay.Direction = rayDir;
-        shadowRay.TMin = 0.001;
-        shadowRay.TMax = remainingDist;
-        
-        ShadowPayload shadowPayload;
-        shadowPayload.hit = 0;
-        shadowPayload.hitDistance = NRD_FP16_MAX;
-        shadowPayload.hitObjectType = OBJECT_TYPE_INVALID;
-        shadowPayload.hitObjectIndex = 0;
-        shadowPayload.shadowColorAccum = float3(1, 1, 1);
-        shadowPayload.shadowTransmissionAccum = 1.0;
-        
-        TraceRay(SceneBVH, 
-                 RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH |
-                 RAY_FLAG_SKIP_CLOSEST_HIT_SHADER,
-                 0xFF, 1, 0, 1, shadowRay, shadowPayload);
-        
-        if (!shadowPayload.hit)
-        {
-            // No hit - light reaches through
-            break;
-        }
-        
-        // Record first occluder distance
-        if (firstHit)
-        {
-            occluderDistance = shadowPayload.hitDistance;
-            firstHit = false;
-        }
-        
-        // Get transmission from payload (set by shadow any-hit)
-        float transmission = shadowPayload.shadowTransmissionAccum;
-        float3 objectColor = shadowPayload.shadowColorAccum;
-        
-        if (transmission < 0.01)
-        {
-            // Opaque object - full shadow, no color
-            shadowColor = float3(0, 0, 0);
-            return 0.0;
-        }
-        
-        // Translucent object - accumulate color and continue
-        // Color tint: less transparent = more color influence
-        float3 tintColor = lerp(objectColor, float3(1, 1, 1), transmission);
-        accumulatedColor *= tintColor;
-        accumulatedVisibility *= transmission;
-        
-        // If too little light remaining, stop
-        if (accumulatedVisibility < 0.01)
-        {
-            shadowColor = accumulatedColor;
-            return 0.0;
-        }
-        
-        // Move origin past the hit object and continue
-        currentOrigin = currentOrigin + rayDir * (shadowPayload.hitDistance + 0.01);
-        remainingDist -= shadowPayload.hitDistance + 0.01;
-        
-        if (remainingDist <= 0.0)
-            break;
+        occluderDistance = shadowPayload.hitDistance;
     }
     
-    shadowColor = accumulatedColor;
-    return accumulatedVisibility;
+    shadowColor = shadowPayload.shadowColorAccum;
+    return shadowPayload.shadowTransmissionAccum;
 }
 
 // Calculate soft shadow visibility for a point light (area light)

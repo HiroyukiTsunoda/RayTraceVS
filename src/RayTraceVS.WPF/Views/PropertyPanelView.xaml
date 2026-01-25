@@ -283,6 +283,35 @@
                                                    FontSize="9"
                                                    Margin="0,0,0,10"/>
 
+                                        <!-- ShadowAbsorptionScale -->
+                                        <TextBlock Text="透過影の吸収 (ShadowAbsorptionScale)" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="10"
+                                                   Margin="0,5,0,2"/>
+                                        <Grid Margin="0,0,0,5">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="50"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Slider Grid.Column="0" 
+                                                    Value="{Binding ShadowAbsorptionScale, Mode=TwoWay, UpdateSourceTrigger=Explicit}" 
+                                                    Minimum="0.0" Maximum="10.0" 
+                                                    LargeChange="1.0" SmallChange="0.5"
+                                                    VerticalAlignment="Center" Margin="0,0,5,0"
+                                                    utils:SliderDragBehavior.UpdateOnDragCompleted="True"/>
+                                            <TextBox Grid.Column="1" 
+                                                     Text="{Binding ShadowAbsorptionScale, Mode=TwoWay, UpdateSourceTrigger=LostFocus, StringFormat=F1}"
+                                                     Background="#3C3C3C"
+                                                     Foreground="{StaticResource TextBrush}"
+                                                     BorderBrush="{StaticResource BorderBrush}"
+                                                     Padding="5,3" TextAlignment="Center"
+                                                     KeyDown="TextBox_KeyDown"/>
+                                        </Grid>
+                                        <TextBlock Text="1.0: 薄い色 / 4.0: 通常 / 8.0+: 濃い色付き影" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="9"
+                                                   Margin="0,0,0,10"/>
+
                                         <!-- EnableDenoiser -->
                                         <CheckBox Content="デノイザー有効" 
                                                   IsChecked="{Binding EnableDenoiser, Mode=TwoWay}"

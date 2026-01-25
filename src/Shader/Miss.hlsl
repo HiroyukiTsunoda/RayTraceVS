@@ -29,3 +29,12 @@ void Miss_Shadow(inout ShadowPayload payload)
     payload.hitObjectType = OBJECT_TYPE_INVALID;
     payload.hitObjectIndex = 0;
 }
+
+[shader("miss")]
+void Miss_Thickness(inout ThicknessPayload payload)
+{
+    payload.hit = 0;
+    payload.hitT = NRD_FP16_MAX;
+    payload.objectType = OBJECT_TYPE_INVALID;
+    payload.objectIndex = 0;
+}
