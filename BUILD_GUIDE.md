@@ -37,7 +37,7 @@
 ### 1. リポジトリのクローンまたはダウンロード
 
 ```bash
-git clone https://github.com/yourname/RayTraceVS.git
+git clone https://github.com/HiroyukiTsunoda/RayTraceVS.git
 cd RayTraceVS
 ```
 
