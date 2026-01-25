@@ -413,8 +413,8 @@ void CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
     {
         finalColor = ApplyGamma(saturate(tonemapped), GammaValue);
     }
-    // Photon map usage overlay (top-left bar)
-    if (MaxPhotons > 0)
+    // Photon map usage overlay (top-left bar) - only show when DebugMode is enabled
+    if (DebugMode > 0 && MaxPhotons > 0)
     {
         uint barWidth = max(64u, OutputSize.x / 5u);
         uint barHeight = 8u;

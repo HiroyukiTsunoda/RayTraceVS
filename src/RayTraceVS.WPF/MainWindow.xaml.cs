@@ -45,6 +45,10 @@ namespace RayTraceVS.WPF
             
             // ウィンドウが閉じる際に設定を保存
             this.Closing += MainWindow_Closing;
+
+            // グローバルなキー入力を最優先で捕捉
+            System.Windows.Input.InputManager.Current.PreProcessInput += OnPreProcessInput;
+            this.Closed += MainWindow_Closed;
         }
         
         private void OnSceneChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
@@ -89,6 +93,11 @@ namespace RayTraceVS.WPF
             {
                 NodeEditor.RefreshConnectionLines();
             }), System.Windows.Threading.DispatcherPriority.Loaded);
+
+            // 起動直後にフォーカスを明示的に与える
+            Activate();
+            Focus();
+            System.Windows.Input.Keyboard.Focus(this);
         }
 
         private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
@@ -117,6 +126,11 @@ namespace RayTraceVS.WPF
             {
                 settingsService.LastOpenedFilePath = currentFilePath;
             }
+        }
+
+        private void MainWindow_Closed(object? sender, EventArgs e)
+        {
+            System.Windows.Input.InputManager.Current.PreProcessInput -= OnPreProcessInput;
         }
         
         private void RestoreWindowBounds()
@@ -162,10 +176,155 @@ namespace RayTraceVS.WPF
             settingsService.MainWindowBounds = bounds;
         }
 
+        /// <summary>
+        /// IME有効時やSystemキー押下時の実キーを取得
+        /// </summary>
+        private static System.Windows.Input.Key GetRealKey(System.Windows.Input.KeyEventArgs e)
+        {
+            var key = e.Key;
+            if (key == System.Windows.Input.Key.ImeProcessed)
+                key = e.ImeProcessedKey;
+            else if (key == System.Windows.Input.Key.System)
+                key = e.SystemKey;
+            return key;
+        }
+
+        /// <summary>
+        /// PreviewKeyDown - 最優先でショートカットを処理（トンネリングイベント）
+        /// </summary>
+        private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            HandleGlobalShortcuts(e);
+        }
+
+        private void OnPreProcessInput(object sender, System.Windows.Input.PreProcessInputEventArgs e)
+        {
+            if (!IsActive)
+            {
+                return;
+            }
+
+            if (e.StagingItem.Input is System.Windows.Input.KeyEventArgs keyEvent &&
+                keyEvent.RoutedEvent == System.Windows.Input.Keyboard.PreviewKeyDownEvent)
+            {
+                HandleGlobalShortcuts(keyEvent);
+            }
+        }
+
+        private void HandleGlobalShortcuts(System.Windows.Input.KeyEventArgs e)
+        {
+            var key = GetRealKey(e);
+            var modifiers = System.Windows.Input.Keyboard.Modifiers;
+            bool isCtrl = modifiers.HasFlag(System.Windows.Input.ModifierKeys.Control);
+            bool isShift = modifiers.HasFlag(System.Windows.Input.ModifierKeys.Shift);
+            bool isTextBoxFocused = System.Windows.Input.Keyboard.FocusedElement is System.Windows.Controls.TextBox;
+
+            // Ctrl+S: 保存（常に処理）
+            if (isCtrl && !isShift && key == System.Windows.Input.Key.S)
+            {
+                SaveScene_Click(this, new RoutedEventArgs());
+                e.Handled = true;
+                return;
+            }
+
+            // Ctrl+Shift+S: 名前を付けて保存（常に処理）
+            if (isCtrl && isShift && key == System.Windows.Input.Key.S)
+            {
+                SaveSceneAs_Click(this, new RoutedEventArgs());
+                e.Handled = true;
+                return;
+            }
+
+            // Ctrl+N: 新規シーン（常に処理）
+            if (isCtrl && !isShift && key == System.Windows.Input.Key.N)
+            {
+                NewScene_Click(this, new RoutedEventArgs());
+                e.Handled = true;
+                return;
+            }
+
+            // Ctrl+O: 開く（常に処理）
+            if (isCtrl && !isShift && key == System.Windows.Input.Key.O)
+            {
+                OpenScene_Click(this, new RoutedEventArgs());
+                e.Handled = true;
+                return;
+            }
+
+            // Ctrl+Shift+P: スクリーンショット保存（常に処理）
+            if (isCtrl && isShift && key == System.Windows.Input.Key.P)
+            {
+                SaveScreenshot();
+                e.Handled = true;
+                return;
+            }
+
+            // TextBoxにフォーカスがある場合、以下のショートカットはテキスト操作用にスルー
+            if (isTextBoxFocused)
+            {
+                return;
+            }
+
+            // Ctrl+Z: Undo
+            if (isCtrl && !isShift && key == System.Windows.Input.Key.Z)
+            {
+                ExecuteUndo();
+                e.Handled = true;
+                return;
+            }
+
+            // Ctrl+Shift+Z: Redo
+            if (isCtrl && isShift && key == System.Windows.Input.Key.Z)
+            {
+                ExecuteRedo();
+                e.Handled = true;
+                return;
+            }
+
+            // Ctrl+C: コピー
+            if (isCtrl && !isShift && key == System.Windows.Input.Key.C)
+            {
+                NodeEditor.CopySelectedNodes();
+                e.Handled = true;
+                return;
+            }
+
+            // Ctrl+V: ペースト
+            if (isCtrl && !isShift && key == System.Windows.Input.Key.V)
+            {
+                NodeEditor.PasteNodes();
+                e.Handled = true;
+                return;
+            }
+        }
+
+        private void ExecuteUndo()
+        {
+            if (viewModel != null && viewModel.CommandManager.CanUndo)
+            {
+                viewModel.CommandManager.Undo();
+                NodeEditor.RefreshConnectionLines();
+                NodeEditor.RefreshNodeTextBoxValues();
+            }
+        }
+
+        private void ExecuteRedo()
+        {
+            if (viewModel != null && viewModel.CommandManager.CanRedo)
+            {
+                viewModel.CommandManager.Redo();
+                NodeEditor.RefreshConnectionLines();
+                NodeEditor.RefreshNodeTextBoxValues();
+            }
+        }
+
         private void Window_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
         {
-            // Deleteキーの処理（優先）
-            if (e.Key == System.Windows.Input.Key.Delete)
+            var key = GetRealKey(e);
+            bool isTextBoxFocused = System.Windows.Input.Keyboard.FocusedElement is System.Windows.Controls.TextBox;
+
+            // Deleteキーの処理（TextBox以外）
+            if (!isTextBoxFocused && key == System.Windows.Input.Key.Delete)
             {
                 NodeEditor.DeleteSelectedNodes();
                 e.Handled = true;
@@ -173,7 +332,7 @@ namespace RayTraceVS.WPF
             }
             
             // F5: レンダリング開始
-            if (e.Key == System.Windows.Input.Key.F5)
+            if (key == System.Windows.Input.Key.F5)
             {
                 if (e.KeyboardDevice.Modifiers == System.Windows.Input.ModifierKeys.Shift)
                 {
@@ -188,76 +347,32 @@ namespace RayTraceVS.WPF
                 e.Handled = true;
                 return;
             }
-            
-            // キーボードショートカット
-            if (e.KeyboardDevice.Modifiers == System.Windows.Input.ModifierKeys.Control)
-            {
-                switch (e.Key)
-                {
-                    case System.Windows.Input.Key.N:
-                        NewScene_Click(this, new RoutedEventArgs());
-                        e.Handled = true;
-                        break;
-                    case System.Windows.Input.Key.O:
-                        OpenScene_Click(this, new RoutedEventArgs());
-                        e.Handled = true;
-                        break;
-                }
-            }
-            else if (e.KeyboardDevice.Modifiers == (System.Windows.Input.ModifierKeys.Control | System.Windows.Input.ModifierKeys.Shift))
-            {
-                if (e.Key == System.Windows.Input.Key.P)
-                {
-                    // Ctrl+Shift+P: スクリーンショット保存
-                    SaveScreenshot();
-                    e.Handled = true;
-                }
-            }
         }
 
-        private void SaveCommand_CanExecute(object sender, System.Windows.Input.CanExecuteRoutedEventArgs e)
+        // メニュー用 Click ハンドラ
+        private void Undo_Click(object sender, RoutedEventArgs e)
         {
-            e.CanExecute = true;
+            ExecuteUndo();
         }
 
-        private void SaveCommand_Executed(object sender, System.Windows.Input.ExecutedRoutedEventArgs e)
+        private void Redo_Click(object sender, RoutedEventArgs e)
         {
-            SaveScene_Click(this, new RoutedEventArgs());
+            ExecuteRedo();
         }
 
-        private void SaveAsCommand_Executed(object sender, System.Windows.Input.ExecutedRoutedEventArgs e)
+        private void Copy_Click(object sender, RoutedEventArgs e)
         {
-            SaveSceneAs_Click(this, new RoutedEventArgs());
+            NodeEditor.CopySelectedNodes();
         }
 
-        private void UndoCommand_CanExecute(object sender, System.Windows.Input.CanExecuteRoutedEventArgs e)
+        private void Paste_Click(object sender, RoutedEventArgs e)
         {
-            e.CanExecute = viewModel != null && viewModel.CommandManager.CanUndo;
+            NodeEditor.PasteNodes();
         }
 
-        private void UndoCommand_Executed(object sender, System.Windows.Input.ExecutedRoutedEventArgs e)
+        private void Delete_Click(object sender, RoutedEventArgs e)
         {
-            if (viewModel != null && viewModel.CommandManager.CanUndo)
-            {
-                viewModel.CommandManager.Undo();
-                NodeEditor.RefreshConnectionLines();
-                NodeEditor.RefreshNodeTextBoxValues();
-            }
-        }
-
-        private void RedoCommand_CanExecute(object sender, System.Windows.Input.CanExecuteRoutedEventArgs e)
-        {
-            e.CanExecute = viewModel != null && viewModel.CommandManager.CanRedo;
-        }
-
-        private void RedoCommand_Executed(object sender, System.Windows.Input.ExecutedRoutedEventArgs e)
-        {
-            if (viewModel != null && viewModel.CommandManager.CanRedo)
-            {
-                viewModel.CommandManager.Redo();
-                NodeEditor.RefreshConnectionLines();
-                NodeEditor.RefreshNodeTextBoxValues();
-            }
+            NodeEditor.DeleteSelectedNodes();
         }
         
         private void LoadLastScene()
