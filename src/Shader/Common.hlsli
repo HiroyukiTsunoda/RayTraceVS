@@ -66,7 +66,11 @@ struct PathState
     float3 padding2;
 };
 
-struct RayPayload
+#define RADIANCE_PAYLOAD_SIZE 416
+#define SHADOW_PAYLOAD_SIZE 24
+#define PHOTON_PAYLOAD_SIZE 160
+
+struct RadiancePayload
 {
     // Basic fields
     float3 color;           // Total radiance (12 bytes)
@@ -104,10 +108,6 @@ struct RayPayload
     uint thicknessQuery;        // 1 = thickness ray, 0 = normal
     uint hitObjectType;         // Object that was hit (output)
     
-    // Colored shadow accumulation (for translucent objects)
-    float3 shadowColorAccum;       // Accumulated shadow color tint
-    float shadowTransmissionAccum; // Accumulated transmission (visibility)
-    
     uint hitObjectIndex;        // Index of hit object (output)
     
     // Loop-based ray tracing
@@ -129,7 +129,10 @@ struct RayPayload
 // シャドウレイ用ペイロード
 struct ShadowPayload
 {
-    bool inShadow;
+    uint hit;                       // 1 if hit, 0 if miss
+    float hitDistance;              // Distance to first occluder
+    float3 shadowColorAccum;        // Accumulated tint from translucent objects
+    float shadowTransmissionAccum;  // Accumulated transmission (visibility)
 };
 
 // Procedural geometry attributes (normal from intersection shader)
@@ -813,46 +816,16 @@ float TraceSingleShadowRay(float3 rayOrigin, float3 rayDir, float maxDist, out f
         shadowRay.TMin = 0.001;
         shadowRay.TMax = remainingDist;
         
-        RayPayload shadowPayload;
-        shadowPayload.color = float3(0, 0, 0);
-        shadowPayload.depth = SHADOW_RAY_DEPTH;  // Mark as shadow ray
+        ShadowPayload shadowPayload;
         shadowPayload.hit = 0;
-        shadowPayload.padding = 0.0;
-        shadowPayload.diffuseRadiance = float3(0, 0, 0);
-        shadowPayload.specularRadiance = float3(0, 0, 0);
         shadowPayload.hitDistance = NRD_FP16_MAX;
-        shadowPayload.worldNormal = float3(0, 1, 0);
-        shadowPayload.roughness = 1.0;
-        shadowPayload.worldPosition = float3(0, 0, 0);
-        shadowPayload.viewZ = 10000.0;
-        shadowPayload.metallic = 0.0;
-        shadowPayload.albedo = float3(0, 0, 0);
-        shadowPayload.shadowVisibility = 1.0;
-        shadowPayload.shadowPenumbra = 0.0;
-        shadowPayload.shadowDistance = NRD_FP16_MAX;
-        shadowPayload.targetObjectType = 0;
-        shadowPayload.targetObjectIndex = 0;
-        shadowPayload.thicknessQuery = 0;
         shadowPayload.shadowColorAccum = float3(1, 1, 1);
-        shadowPayload.shadowTransmissionAccum = 0.0;  // Will be set by ClosestHit
-        shadowPayload.transmission = 0.0;
-        shadowPayload.ior = 1.5;
-        shadowPayload.specular = 0.5;
-        shadowPayload.materialPadding = 0.0;
-        shadowPayload.emission = float3(0, 0, 0);
-        shadowPayload.emissionPadding = 0.0;
-        shadowPayload.loopRayOrigin = float4(0, 0, 0, 0);
-        shadowPayload.loopRayDirection = float4(0, 0, 0, 0);
-        shadowPayload.loopThroughput = float4(1, 1, 1, 0);
-        shadowPayload.pathFlags = 0;
-        shadowPayload.pathAbsorption = float3(0, 0, 0);
-        shadowPayload.pathSkyBoost = 1.0;
-        shadowPayload.pathPadding = float3(0, 0, 0);
-        shadowPayload.childCount = 0;
+        shadowPayload.shadowTransmissionAccum = 1.0;
         
         TraceRay(SceneBVH, 
-                 RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,
-                 0xFF, 0, 0, 0, shadowRay, shadowPayload);
+                 RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH |
+                 RAY_FLAG_SKIP_CLOSEST_HIT_SHADER,
+                 0xFF, 1, 0, 1, shadowRay, shadowPayload);
         
         if (!shadowPayload.hit)
         {
@@ -867,7 +840,7 @@ float TraceSingleShadowRay(float3 rayOrigin, float3 rayDir, float maxDist, out f
             firstHit = false;
         }
         
-        // Get transmission from payload (set by ClosestHit)
+        // Get transmission from payload (set by shadow any-hit)
         float transmission = shadowPayload.shadowTransmissionAccum;
         float3 objectColor = shadowPayload.shadowColorAccum;
         

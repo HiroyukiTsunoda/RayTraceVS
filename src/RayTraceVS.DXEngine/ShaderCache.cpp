@@ -1044,4 +1044,49 @@ namespace RayTraceVS::DXEngine
 
         return success;
     }
+
+    bool ShaderCache::TryGetHlslDefineUInt(const std::wstring& sourcePath, const std::string& defineName, uint32_t* outValue)
+    {
+        if (!outValue)
+            return false;
+
+        std::ifstream file(sourcePath);
+        if (!file.is_open())
+        {
+            Log("Failed to open HLSL source for define parsing");
+            return false;
+        }
+
+        std::string line;
+        while (std::getline(file, line))
+        {
+            size_t start = line.find_first_not_of(" \t");
+            if (start == std::string::npos)
+                continue;
+
+            if (line.compare(start, 7, "#define") != 0)
+                continue;
+
+            std::istringstream iss(line.substr(start));
+            std::string directive;
+            std::string name;
+            std::string value;
+            iss >> directive >> name >> value;
+            if (directive != "#define" || name != defineName || value.empty())
+                continue;
+
+            try
+            {
+                unsigned long parsed = std::stoul(value, nullptr, 0);
+                *outValue = static_cast<uint32_t>(parsed);
+                return true;
+            }
+            catch (...)
+            {
+                return false;
+            }
+        }
+
+        return false;
+    }
 }

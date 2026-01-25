@@ -9,7 +9,7 @@
 // Uses RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH for early termination
 
 [shader("anyhit")]
-void AnyHit_Shadow(inout RayPayload payload, in ProceduralAttributes attribs)
+void AnyHit_Shadow(inout ShadowPayload payload, in ProceduralAttributes attribs)
 {
     uint objectType = attribs.objectType;
     uint objectIndex = attribs.objectIndex;
@@ -34,58 +34,29 @@ void AnyHit_Shadow(inout RayPayload payload, in ProceduralAttributes attribs)
         objectColor = Boxes[objectIndex].color.rgb;
     }
     
-    // Handle translucent objects: accumulate color and transmission
-    if (transmission > 0.01)
-    {
-        // Calculate the tint color: more transparent = less tint
-        // When transmission is high (e.g., 0.9), object color has less influence
-        // When transmission is low (e.g., 0.3), object color has more influence
-        float3 tintColor = lerp(objectColor, float3(1, 1, 1), transmission);
-        
-        // Accumulate the shadow color and transmission
-        payload.shadowColorAccum *= tintColor;
-        payload.shadowTransmissionAccum *= transmission;
-        
-        // If there's still significant light passing through, continue tracing
-        if (payload.shadowTransmissionAccum > 0.01)
-        {
-            // Record the first occluder distance if not already set
-            if (payload.hitDistance >= 10000.0)
-            {
-                payload.hitDistance = RayTCurrent();
-            }
-            
-            // Ignore this hit and continue searching for more occluders
-            IgnoreHit();
-            return;
-        }
-    }
-    
-    // Opaque object or accumulated transmission too low - full shadow
-    payload.hit = true;
+    // Report the first occluder and its transmission/color.
+    payload.hit = 1;
     payload.hitDistance = RayTCurrent();
-    payload.shadowColorAccum = float3(0, 0, 0);
-    payload.shadowTransmissionAccum = 0.0;
+    payload.shadowColorAccum = objectColor;
+    payload.shadowTransmissionAccum = transmission;
     
     // AcceptHitAndEndSearch() is implicit when using
     // RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH flag
 }
 
-// Specialized shadow payload for minimal memory usage
-// Note: This shader uses the standard RayPayload for compatibility
-// but could be optimized with a dedicated ShadowPayload:
-//
-// struct ShadowPayload
-// {
-//     bool inShadow;
-// };
-//
-// [shader("anyhit")]
-// void AnyHit_Shadow_Optimized(inout ShadowPayload payload, in ProceduralAttributes attribs)
-// {
-//     // ... same transparency check ...
-//     payload.inShadow = true;
-// }
+// Triangle mesh shadow any-hit (uses material data from mesh instance)
+[shader("anyhit")]
+void AnyHit_Shadow_Triangle(inout ShadowPayload payload, in BuiltInTriangleIntersectionAttributes attribs)
+{
+    uint instanceIndex = InstanceID();
+    MeshInstanceInfo instInfo = MeshInstances[instanceIndex];
+    MeshMaterial mat = MeshMaterials[instInfo.materialIndex];
+    
+    payload.hit = 1;
+    payload.hitDistance = RayTCurrent();
+    payload.shadowColorAccum = mat.color.rgb;
+    payload.shadowTransmissionAccum = mat.transmission;
+}
 
 // ============================================
 // Usage in ClosestHit shaders:

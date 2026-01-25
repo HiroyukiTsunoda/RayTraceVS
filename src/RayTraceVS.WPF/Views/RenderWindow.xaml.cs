@@ -442,7 +442,7 @@ namespace RayTraceVS.WPF.Views
         {
             if (e.Key == System.Windows.Input.Key.F2)
             {
-                photonDebugMode = (photonDebugMode + 1) % 5;
+                photonDebugMode = 0;
                 UpdateInfo();
                 RequestRenderRefresh();
                 e.Handled = true;
@@ -471,6 +471,7 @@ namespace RayTraceVS.WPF.Views
             if (!isRendering || renderService == null || nodeGraph == null || sceneEvaluator == null)
                 return;
 
+            photonDebugMode = 0;
             var evaluated = sceneEvaluator.EvaluateScene(nodeGraph);
             var sceneParams = new SceneParams(
                 evaluated.Item1, evaluated.Item2, evaluated.Item3,

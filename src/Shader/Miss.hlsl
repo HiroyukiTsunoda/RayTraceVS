@@ -2,7 +2,7 @@
 #include "Common.hlsli"
 
 [shader("miss")]
-void Miss(inout RayPayload payload)
+void Miss(inout RadiancePayload payload)
 {
     float3 rayDir = normalize(WorldRayDirection());
     
@@ -23,4 +23,10 @@ void Miss(inout RayPayload payload)
     // Loop-based: terminate ray trace loop
     payload.loopRayOrigin.w = 0.0;
     payload.loopThroughput.xyz = float3(0, 0, 0);
+}
+
+[shader("miss")]
+void Miss_Shadow(inout ShadowPayload payload)
+{
+    payload.hit = 0;
 }
