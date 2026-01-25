@@ -36,7 +36,7 @@ float3 PerturbReflection(float3 reflectDir, float3 normal, float roughness, floa
 }
 
 [shader("closesthit")]
-void ClosestHit_Triangle(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attribs)
+void ClosestHit_Triangle(inout RadiancePayload payload, in BuiltInTriangleIntersectionAttributes attribs)
 {
     payload.hit = 1;
     payload.hitDistance = RayTCurrent();
@@ -50,14 +50,6 @@ void ClosestHit_Triangle(inout RayPayload payload, in BuiltInTriangleIntersectio
     
     // マテリアル取得（インスタンスごとのマテリアルインデックス）
     MeshMaterial mat = MeshMaterials[instInfo.materialIndex];
-    
-    // Shadow ray: return material info for colored shadows (avoid mesh buffer access)
-    if (payload.depth >= SHADOW_RAY_DEPTH)
-    {
-        payload.shadowTransmissionAccum = mat.transmission;
-        payload.shadowColorAccum = mat.color.rgb;
-        return;
-    }
     
     // メッシュ種類の情報を取得（頂点/インデックスオフセット）
     MeshInfo meshInfo = MeshInfos[instInfo.meshTypeIndex];
@@ -123,14 +115,6 @@ void ClosestHit_Triangle(inout RayPayload payload, in BuiltInTriangleIntersectio
         payload.shadowVisibility = 1.0;
         payload.shadowPenumbra = 0.0;
         payload.shadowDistance = NRD_FP16_MAX;
-        return;
-    }
-    
-    // Shadow ray: return material info for colored shadows
-    if (payload.depth >= SHADOW_RAY_DEPTH)
-    {
-        payload.shadowTransmissionAccum = mat.transmission;
-        payload.shadowColorAccum = mat.color.rgb;
         return;
     }
     

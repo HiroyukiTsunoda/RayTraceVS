@@ -39,7 +39,7 @@ float3 PerturbReflection(float3 reflectDir, float3 normal, float roughness, floa
 }
 
 [shader("closesthit")]
-void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
+void ClosestHit(inout RadiancePayload payload, in ProceduralAttributes attribs)
 {
     payload.hit = 1;
     payload.hitDistance = RayTCurrent();
@@ -49,35 +49,6 @@ void ClosestHit(inout RayPayload payload, in ProceduralAttributes attribs)
     // Store hit object info for caller to check self-intersection
     payload.hitObjectType = attribs.objectType;
     payload.hitObjectIndex = attribs.objectIndex;
-    
-    // Shadow ray: return material info for colored shadows
-    if (payload.depth >= SHADOW_RAY_DEPTH)
-    {
-        // Get transmission and color for the hit object
-        float transmission = 0.0;
-        float3 objectColor = float3(1, 1, 1);
-        
-        if (attribs.objectType == OBJECT_TYPE_SPHERE)
-        {
-            transmission = Spheres[attribs.objectIndex].transmission;
-            objectColor = Spheres[attribs.objectIndex].color.rgb;
-        }
-        else if (attribs.objectType == OBJECT_TYPE_PLANE)
-        {
-            transmission = Planes[attribs.objectIndex].transmission;
-            objectColor = Planes[attribs.objectIndex].color.rgb;
-        }
-        else // OBJECT_TYPE_BOX
-        {
-            transmission = Boxes[attribs.objectIndex].transmission;
-            objectColor = Boxes[attribs.objectIndex].color.rgb;
-        }
-        
-        // Store in payload for TraceSingleShadowRay to read
-        payload.shadowTransmissionAccum = transmission;
-        payload.shadowColorAccum = objectColor;
-        return;
-    }
     
     // Use scene-specified max bounces (glass needs more for entry/internal/exit)
     uint maxBounces = (Scene.MaxBounces > 0) ? min(Scene.MaxBounces, 32) : 10;

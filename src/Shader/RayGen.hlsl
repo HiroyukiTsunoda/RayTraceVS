@@ -196,7 +196,7 @@ void RayGen()
             ray.TMax = 10000.0;
             
             // ペイロード初期化
-            RayPayload payload;
+            RadiancePayload payload;
             payload.color = float3(0, 0, 0);
             payload.depth = state.depth;
             payload.hit = 0;
@@ -216,8 +216,6 @@ void RayGen()
             payload.targetObjectType = 0;
             payload.targetObjectIndex = 0;
             payload.thicknessQuery = 0;
-            payload.shadowColorAccum = float3(1, 1, 1);
-            payload.shadowTransmissionAccum = 1.0;
             payload.transmission = 0.0;
             payload.ior = 1.5;
             payload.specular = 0.5;

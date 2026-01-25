@@ -85,6 +85,9 @@ namespace RayTraceVS::DXEngine
         // Pre-compile all registered shaders
         bool PrecompileAll();
 
+        // Read a numeric #define from an HLSL source file
+        bool TryGetHlslDefineUInt(const std::wstring& sourcePath, const std::string& defineName, uint32_t* outValue);
+
     private:
         // Register known shaders and their dependencies
         void RegisterShaders();

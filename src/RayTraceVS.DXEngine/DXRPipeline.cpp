@@ -1656,10 +1656,12 @@ namespace RayTraceVS::DXEngine
         
         AddLibrary(rayGenShader.Get(), L"RayGen");
         AddLibrary(missShader.Get(), L"Miss");
+        AddLibrary(missShader.Get(), L"Miss_Shadow");
         AddLibrary(closestHitShader.Get(), L"ClosestHit");
         AddLibrary(closestHitTriangleShader.Get(), L"ClosestHit_Triangle");
         AddLibrary(intersectionShader.Get(), L"SphereIntersection");
         AddLibrary(anyHitShadowShader.Get(), L"AnyHit_Shadow");
+        AddLibrary(anyHitShadowShader.Get(), L"AnyHit_Shadow_Triangle");
         AddLibrary(anyHitSkipSelfShader.Get(), L"AnyHit_SkipSelf");
         
         // Hit group 0: Primary rays for procedural geometry (ClosestHit + Intersection)
@@ -1693,7 +1695,7 @@ namespace RayTraceVS::DXEngine
         // Hit group 4: Triangle shadow rays
         auto triangleShadowHitGroup = stateObjectDesc.CreateSubobject<CD3DX12_HIT_GROUP_SUBOBJECT>();
         triangleShadowHitGroup->SetHitGroupExport(L"TriangleShadowHitGroup");
-        triangleShadowHitGroup->SetAnyHitShaderImport(L"AnyHit_Shadow");
+        triangleShadowHitGroup->SetAnyHitShaderImport(L"AnyHit_Shadow_Triangle");
         triangleShadowHitGroup->SetHitGroupType(D3D12_HIT_GROUP_TYPE_TRIANGLES);
         
         // Hit group 5: Triangle reflection rays
@@ -1705,11 +1707,24 @@ namespace RayTraceVS::DXEngine
         
         // Shader config
         auto shaderConfig = stateObjectDesc.CreateSubobject<CD3DX12_RAYTRACING_SHADER_CONFIG_SUBOBJECT>();
-        // RayPayload (with queue-based path states + sky boost):
-        //   Total size must match HLSL RayPayload (see Common.hlsli)
-        //   Current layout includes material fields and child paths (2 * PathState = 160 bytes)
-        //   Total: 432 bytes (aligned to 8)
-        UINT payloadSize = 432;
+        // Payload sizes must match HLSL defines (see Common.hlsli)
+        const std::wstring commonPath = shaderSourcePath + L"Common.hlsli";
+        uint32_t radiancePayloadSize = 0;
+        uint32_t shadowPayloadSize = 0;
+        if (!shaderCache->TryGetHlslDefineUInt(commonPath, "RADIANCE_PAYLOAD_SIZE", &radiancePayloadSize) ||
+            !shaderCache->TryGetHlslDefineUInt(commonPath, "SHADOW_PAYLOAD_SIZE", &shadowPayloadSize))
+        {
+            LOG_ERROR("Failed to read payload size defines from Common.hlsli");
+            return false;
+        }
+        if (radiancePayloadSize == 0 || shadowPayloadSize == 0 ||
+            (radiancePayloadSize % 8) != 0 || (shadowPayloadSize % 8) != 0 ||
+            shadowPayloadSize > radiancePayloadSize)
+        {
+            LOG_ERROR("Invalid payload size defines (check Common.hlsli)");
+            return false;
+        }
+        UINT payloadSize = static_cast<UINT>(max(radiancePayloadSize, shadowPayloadSize));
         // ProceduralAttributes: float3 normal (12) + uint objectType (4) + uint objectIndex (4) = 20 bytes
         UINT attribSize = 12 + 4 + 4;   // 20 bytes
         shaderConfig->Config(payloadSize, attribSize);
@@ -1775,6 +1790,7 @@ namespace RayTraceVS::DXEngine
         // Get shader identifiers for procedural geometry (hit groups 0-2)
         void* rayGenId = stateObjectProperties->GetShaderIdentifier(L"RayGen");
         void* missId = stateObjectProperties->GetShaderIdentifier(L"Miss");
+        void* missShadowId = stateObjectProperties->GetShaderIdentifier(L"Miss_Shadow");
         void* hitGroupId = stateObjectProperties->GetShaderIdentifier(L"HitGroup");
         void* shadowHitGroupId = stateObjectProperties->GetShaderIdentifier(L"ShadowHitGroup");
         void* reflectHitGroupId = stateObjectProperties->GetShaderIdentifier(L"ReflectHitGroup");
@@ -1784,7 +1800,7 @@ namespace RayTraceVS::DXEngine
         void* triangleShadowHitGroupId = stateObjectProperties->GetShaderIdentifier(L"TriangleShadowHitGroup");
         void* triangleReflectHitGroupId = stateObjectProperties->GetShaderIdentifier(L"TriangleReflectHitGroup");
         
-        if (!rayGenId || !missId || !hitGroupId || !shadowHitGroupId || !reflectHitGroupId)
+        if (!rayGenId || !missId || !missShadowId || !hitGroupId || !shadowHitGroupId || !reflectHitGroupId)
         {
             LOG_ERROR("Failed to get shader identifiers for procedural geometry");
             return false;
@@ -1813,15 +1829,17 @@ namespace RayTraceVS::DXEngine
             rayGenShaderTable->Unmap(0, nullptr);
         }
         
-        // Miss shader table
+        // Miss shader table (2 entries: radiance + shadow)
         {
-            CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(shaderTableRecordSize);
+            CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(shaderTableRecordSize * 2);
             device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &desc,
                 D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&missShaderTable));
             
             void* mapped = nullptr;
             missShaderTable->Map(0, nullptr, &mapped);
-            memcpy(mapped, missId, shaderIdSize);
+            BYTE* dst = static_cast<BYTE*>(mapped);
+            memcpy(dst, missId, shaderIdSize);
+            memcpy(dst + shaderTableRecordSize, missShadowId, shaderIdSize);
             missShaderTable->Unmap(0, nullptr);
         }
         
@@ -2262,7 +2280,7 @@ namespace RayTraceVS::DXEngine
         dispatchDesc.RayGenerationShaderRecord.SizeInBytes = shaderTableRecordSize;
         
         dispatchDesc.MissShaderTable.StartAddress = missShaderTable->GetGPUVirtualAddress();
-        dispatchDesc.MissShaderTable.SizeInBytes = shaderTableRecordSize;
+        dispatchDesc.MissShaderTable.SizeInBytes = shaderTableRecordSize * 2;
         dispatchDesc.MissShaderTable.StrideInBytes = shaderTableRecordSize;
         
         dispatchDesc.HitGroupTable.StartAddress = hitGroupShaderTable->GetGPUVirtualAddress();
@@ -2484,9 +2502,20 @@ namespace RayTraceVS::DXEngine
         
         // Shader config
         auto shaderConfig = stateObjectDesc.CreateSubobject<CD3DX12_RAYTRACING_SHADER_CONFIG_SUBOBJECT>();
-        // PhotonPayload: includes child paths for queue-based tracing
-        // Total: 160 bytes (aligned to 8)
-        UINT payloadSize = 160;
+        // PhotonPayload size from HLSL define (Common.hlsli)
+        const std::wstring commonPath = shaderSourcePath + L"Common.hlsli";
+        uint32_t photonPayloadSize = 0;
+        if (!shaderCache->TryGetHlslDefineUInt(commonPath, "PHOTON_PAYLOAD_SIZE", &photonPayloadSize))
+        {
+            LOG_ERROR("Failed to read PHOTON_PAYLOAD_SIZE from Common.hlsli");
+            return false;
+        }
+        if (photonPayloadSize == 0 || (photonPayloadSize % 8) != 0)
+        {
+            LOG_ERROR("Invalid PHOTON_PAYLOAD_SIZE (check Common.hlsli)");
+            return false;
+        }
+        UINT payloadSize = static_cast<UINT>(photonPayloadSize);
         UINT attribSize = 20;  // Same as main pipeline
         shaderConfig->Config(payloadSize, attribSize);
         
