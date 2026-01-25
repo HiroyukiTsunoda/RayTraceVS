@@ -52,6 +52,17 @@ namespace RayTraceVS.WPF.Services
                 SaveSettings();
             }
         }
+
+        // スクリーンショット保存先フォルダ
+        public string? LastScreenshotFolder
+        {
+            get => settings.LastScreenshotFolder;
+            set
+            {
+                settings.LastScreenshotFolder = value;
+                SaveSettings();
+            }
+        }
         
         // パネルの幅
         public double LeftPanelWidth
@@ -120,6 +131,7 @@ namespace RayTraceVS.WPF.Services
             public string? LastOpenedFilePath { get; set; }
             public WindowBounds? MainWindowBounds { get; set; }
             public WindowBounds? RenderWindowBounds { get; set; }
+            public string? LastScreenshotFolder { get; set; }
             public double LeftPanelWidth { get; set; } = 250;
             public double RightPanelWidth { get; set; } = 300;
         }

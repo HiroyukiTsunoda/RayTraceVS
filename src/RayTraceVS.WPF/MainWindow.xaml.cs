@@ -743,11 +743,23 @@ namespace RayTraceVS.WPF
             isSavingScreenshot = true;
             try
             {
+                var initialDir = settingsService.LastScreenshotFolder;
+                if (string.IsNullOrWhiteSpace(initialDir) || !Directory.Exists(initialDir))
+                {
+                    initialDir = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
+                }
+                if (string.IsNullOrWhiteSpace(initialDir) || !Directory.Exists(initialDir))
+                {
+                    initialDir = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+                }
+
                 var dialog = new SaveFileDialog
                 {
                     Filter = "PNG画像|*.png|JPEG画像|*.jpg|ビットマップ|*.bmp",
                     DefaultExt = "png",
-                    FileName = $"render_{DateTime.Now:yyyyMMdd_HHmmss_fff}"
+                    FileName = $"render_{DateTime.Now:yyyyMMdd_HHmmss_fff}",
+                    InitialDirectory = initialDir,
+                    RestoreDirectory = true
                 };
 
                 if (dialog.ShowDialog() == true)
@@ -777,6 +789,12 @@ namespace RayTraceVS.WPF
                         using (var stream = File.Create(dialog.FileName))
                         {
                             encoder.Save(stream);
+                        }
+
+                        var savedDir = Path.GetDirectoryName(dialog.FileName);
+                        if (!string.IsNullOrEmpty(savedDir))
+                        {
+                            settingsService.LastScreenshotFolder = savedDir;
                         }
                     }
                     else
