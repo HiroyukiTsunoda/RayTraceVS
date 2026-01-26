@@ -35,6 +35,16 @@ namespace RayTraceVS.WPF.ViewModels
         public ObservableCollection<NodeConnection> UnselectedNodeConnections { get; } = new();
 
         /// <summary>
+        /// 選択されたノード（高ZIndexで描画）
+        /// </summary>
+        public ObservableCollection<Node> SelectedNodes { get; } = new();
+
+        /// <summary>
+        /// 非選択ノード（通常ZIndexで描画）
+        /// </summary>
+        public ObservableCollection<Node> UnselectedNodes { get; } = new();
+
+        /// <summary>
         /// Undo/Redo操作を管理するコマンドマネージャ
         /// </summary>
         public CommandManager CommandManager { get; } = new();
@@ -52,6 +62,78 @@ namespace RayTraceVS.WPF.ViewModels
             
             // コレクション変更時にビューを更新
             connections.CollectionChanged += OnConnectionsCollectionChanged;
+            nodes.CollectionChanged += OnNodesCollectionChanged;
+        }
+        
+        /// <summary>
+        /// ノードコレクションが変更されたとき
+        /// </summary>
+        private void OnNodesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        {
+            // Reset（Clear）操作の場合
+            if (e.Action == NotifyCollectionChangedAction.Reset)
+            {
+                // 全てのノードの監視を解除（できれば）し、コレクションをクリア
+                foreach (var node in SelectedNodes)
+                    node.PropertyChanged -= OnNodePropertyChanged;
+                foreach (var node in UnselectedNodes)
+                    node.PropertyChanged -= OnNodePropertyChanged;
+                    
+                SelectedNodes.Clear();
+                UnselectedNodes.Clear();
+                return;
+            }
+            
+            // 新しく追加されたノードのIsSelected変更を監視
+            if (e.NewItems != null)
+            {
+                foreach (Node node in e.NewItems)
+                {
+                    node.PropertyChanged += OnNodePropertyChanged;
+                    // 適切なコレクションに追加
+                    if (node.IsSelected)
+                        SelectedNodes.Add(node);
+                    else
+                        UnselectedNodes.Add(node);
+                }
+            }
+            
+            // 削除されたノードの監視を解除
+            if (e.OldItems != null)
+            {
+                foreach (Node node in e.OldItems)
+                {
+                    node.PropertyChanged -= OnNodePropertyChanged;
+                    // 両方のコレクションから削除
+                    SelectedNodes.Remove(node);
+                    UnselectedNodes.Remove(node);
+                }
+            }
+        }
+        
+        /// <summary>
+        /// ノードのプロパティが変更されたとき（IsSelectedの変更を検知）
+        /// </summary>
+        private void OnNodePropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(Node.IsSelected) && sender is Node node)
+            {
+                // 選択状態に応じてコレクション間を移動
+                if (node.IsSelected)
+                {
+                    if (UnselectedNodes.Remove(node))
+                    {
+                        SelectedNodes.Add(node);
+                    }
+                }
+                else
+                {
+                    if (SelectedNodes.Remove(node))
+                    {
+                        UnselectedNodes.Add(node);
+                    }
+                }
+            }
         }
         
         /// <summary>

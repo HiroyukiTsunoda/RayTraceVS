@@ -958,8 +958,10 @@ namespace RayTraceVS::DXEngine
         int photonDebugMode = scene->GetPhotonDebugMode();
         if (photonDebugMode < 0)
             photonDebugMode = 0;
-        if (photonDebugMode > 4)
-            photonDebugMode = 4;
+        // 0..4 are existing photon/material debug modes.
+        // 5..6 are reserved for Composite diagnostics (rawT / ViewZ).
+        if (photonDebugMode > 10)
+            photonDebugMode = 10;
         mappedConstantData->PhotonDebugMode = static_cast<UINT>(photonDebugMode);
         float photonDebugScale = scene->GetPhotonDebugScale();
         if (photonDebugScale < 0.1f)
@@ -2537,7 +2539,17 @@ namespace RayTraceVS::DXEngine
             device->CreateUnorderedAccessView(normalRoughness, nullptr, &gbufferUavDesc, cpuHandle);
             cpuHandle.Offset(1, dxrDescriptorSize);
 
-            // [13] u8: Albedo (RGBA8) - placed at index 13 for DXR compatibility
+            // IMPORTANT:
+            // DXR global root signature binds 26 descriptor tables in a fixed order
+            // (root parameter 0..25), and we set them by walking the heap linearly:
+            //   rootParam[i] <- heap[i]
+            // Therefore the descriptor HEAP ORDER here must match `CreateGlobalRootSignature()` ranges order.
+            //
+            // For the NRD G-Buffer UAVs, the root signature order is:
+            //   u3, u4, u5, u8, u7, u6, u9, u10
+            // (note that u8/u7/u6 are intentionally re-ordered in the root signature).
+
+            // [13] u8: Albedo (RGBA8)
             gbufferUavDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
             device->CreateUnorderedAccessView(albedo, nullptr, &gbufferUavDesc, cpuHandle);
             cpuHandle.Offset(1, dxrDescriptorSize);
@@ -2547,7 +2559,7 @@ namespace RayTraceVS::DXEngine
             device->CreateUnorderedAccessView(motionVectors, nullptr, &gbufferUavDesc, cpuHandle);
             cpuHandle.Offset(1, dxrDescriptorSize);
 
-            // [15] u6: ViewZ (R32F) - placed at index 15
+            // [15] u6: ViewZ (R32F)
             gbufferUavDesc.Format = DXGI_FORMAT_R32_FLOAT;
             device->CreateUnorderedAccessView(viewZ, nullptr, &gbufferUavDesc, cpuHandle);
             cpuHandle.Offset(1, dxrDescriptorSize);
@@ -2848,7 +2860,7 @@ namespace RayTraceVS::DXEngine
         }
         
         // ============================================
-        // Pass 3: Denoising (NRD)
+        // Pass 3: Denoising (NRD/REBLUR) + Composite
         // ============================================
         if (denoiserEnabled && denoiser && denoiser->IsReady())
         {
@@ -3604,7 +3616,89 @@ namespace RayTraceVS::DXEngine
         LOG_DEBUG("ApplyDenoising: begin");
         auto commandList = dxContext->GetCommandList();
         SetCommandListName(commandList, L"CmdList_ApplyDenoising");
+        auto device = dxContext->GetDevice();
         auto camera = scene->GetCamera();
+
+        // ------------------------------------------------------------
+        // Capture the true "pre-denoise" image (RayGen output) so that
+        // Composite can optionally fall back to it in the distance.
+        // This is NOT the NRD input buffers; it's the actual final render target
+        // content when denoiser is disabled.
+        // ------------------------------------------------------------
+        if (renderTarget && renderTarget->GetResource())
+        {
+            D3D12_RESOURCE_DESC srcDesc = renderTarget->GetResource()->GetDesc();
+
+            bool needRecreate = !preDenoiseColor;
+            if (!needRecreate)
+            {
+                D3D12_RESOURCE_DESC dstDesc = preDenoiseColor->GetDesc();
+                needRecreate = (dstDesc.Width != srcDesc.Width) ||
+                               (dstDesc.Height != srcDesc.Height) ||
+                               (dstDesc.Format != srcDesc.Format);
+            }
+
+            if (needRecreate)
+            {
+                D3D12_RESOURCE_DESC desc = srcDesc;
+                // We only need SRV + CopyDest. No UAV needed.
+                desc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+                CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
+                HRESULT hr = device->CreateCommittedResource(
+                    &heapProps,
+                    D3D12_HEAP_FLAG_NONE,
+                    &desc,
+                    D3D12_RESOURCE_STATE_COPY_DEST,
+                    nullptr,
+                    IID_PPV_ARGS(&preDenoiseColor));
+                if (FAILED(hr))
+                {
+                    LOG_ERROR_HR("ApplyDenoising: failed to create preDenoiseColor", hr);
+                    preDenoiseColor.Reset();
+                }
+                else
+                {
+                    preDenoiseColor->SetName(L"PreDenoiseColor");
+                    preDenoiseColorState = D3D12_RESOURCE_STATE_COPY_DEST;
+                }
+            }
+
+            if (preDenoiseColor)
+            {
+                // Copy render target -> preDenoiseColor
+                // Transition destination back to COPY_DEST if it was left in SRV state.
+                if (preDenoiseColorState != D3D12_RESOURCE_STATE_COPY_DEST)
+                {
+                    D3D12_RESOURCE_BARRIER toCopy = CD3DX12_RESOURCE_BARRIER::Transition(
+                        preDenoiseColor.Get(),
+                        preDenoiseColorState,
+                        D3D12_RESOURCE_STATE_COPY_DEST);
+                    commandList->ResourceBarrier(1, &toCopy);
+                    preDenoiseColorState = D3D12_RESOURCE_STATE_COPY_DEST;
+                }
+
+                D3D12_RESOURCE_BARRIER toCopySrc = CD3DX12_RESOURCE_BARRIER::Transition(
+                    renderTarget->GetResource(),
+                    D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                    D3D12_RESOURCE_STATE_COPY_SOURCE);
+                commandList->ResourceBarrier(1, &toCopySrc);
+
+                commandList->CopyResource(preDenoiseColor.Get(), renderTarget->GetResource());
+
+                D3D12_RESOURCE_BARRIER postBarriers[2] = {};
+                postBarriers[0] = CD3DX12_RESOURCE_BARRIER::Transition(
+                    renderTarget->GetResource(),
+                    D3D12_RESOURCE_STATE_COPY_SOURCE,
+                    D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+                postBarriers[1] = CD3DX12_RESOURCE_BARRIER::Transition(
+                    preDenoiseColor.Get(),
+                    D3D12_RESOURCE_STATE_COPY_DEST,
+                    D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+                commandList->ResourceBarrier(2, postBarriers);
+                preDenoiseColorState = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+            }
+        }
         
         // Build frame settings for denoiser
         DenoiserFrameSettings settings = {};
@@ -3629,11 +3723,10 @@ namespace RayTraceVS::DXEngine
         settings.JitterOffset = XMFLOAT2(0.0f, 0.0f);
         settings.JitterOffsetPrev = XMFLOAT2(0.0f, 0.0f);
         
-        // Motion vector scale (screen space)
-        settings.MotionVectorScale = XMFLOAT2(
-            static_cast<float>(renderTarget->GetWidth()),
-            static_cast<float>(renderTarget->GetHeight())
-        );
+        // Motion vector scale:
+        // RayGen writes motion vectors in PIXEL space already (see NRDEncoding.hlsli / NRD_BuildInputs),
+        // so the scale must be (1,1). Using (width,height) would scale twice and break temporal reprojection.
+        settings.MotionVectorScale = XMFLOAT2(1.0f, 1.0f);
         
         // Camera settings
         settings.CameraNear = 0.1f;
@@ -3641,9 +3734,44 @@ namespace RayTraceVS::DXEngine
         settings.IsFirstFrame = isFirstFrame;
         settings.EnableValidation = false;
         settings.DenoiserStabilization = denoiserStabilization;
+
+        // Main directional light direction for SIGMA
+        settings.MainLightDirection = XMFLOAT3(0.0f, -1.0f, 0.0f);
+        settings.MainLightDirectionValid = 0.0f;
+        float bestDirectionalWeight = -1.0f;
+        const auto& lightsForSigma = scene->GetLights();
+        for (const auto& light : lightsForSigma)
+        {
+            if (light.GetType() != LightType::Directional)
+            {
+                continue;
+            }
+
+            XMFLOAT3 lightDir = light.GetPosition();
+            XMVECTOR dirVec = XMLoadFloat3(&lightDir);
+            float dirLenSq = XMVectorGetX(XMVector3LengthSq(dirVec));
+            if (dirLenSq < 1e-6f)
+            {
+                continue;
+            }
+
+            XMFLOAT4 color = light.GetColor();
+            float luminance = 0.2126f * color.x + 0.7152f * color.y + 0.0722f * color.z;
+            float weight = light.GetIntensity() * luminance;
+            if (weight > bestDirectionalWeight)
+            {
+                // Shader uses lightDir = normalize(-light.position) for directional lights
+                XMVECTOR toLight = XMVector3Normalize(XMVectorNegate(dirVec));
+                XMFLOAT3 normalizedDir;
+                XMStoreFloat3(&normalizedDir, toLight);
+                settings.MainLightDirection = normalizedDir;
+                settings.MainLightDirectionValid = 1.0f;
+                bestDirectionalWeight = weight;
+            }
+        }
         
-        // SIGMA enabled - let it process shadow data
-        denoiser->SetSigmaEnabled(true);
+        // SIGMA omitted - shadow denoising disabled
+        denoiser->SetSigmaEnabled(false);
         
         // CRITICAL: Copy raw specular data BEFORE NRD processes it
         // NRD corrupts the original SpecularRadianceHitDist buffer, so we need a backup
@@ -3764,12 +3892,12 @@ namespace RayTraceVS::DXEngine
         }
         
         // Create root signature for composite pass
-        // Inputs: t0-t10 = DenoisedDiffuse, DenoisedSpecular, Albedo, DenoisedShadow, GBuffer textures, RawSpecularBackup
+        // Inputs: t0-t11 = DenoisedDiffuse, DenoisedSpecular, Albedo, DenoisedShadow, GBuffer textures, RawSpecularBackup, PreDenoiseColor
         // Output: u0 = FinalOutput
         // Constants: b0 = CompositeConstants (8 values)
         
         CD3DX12_DESCRIPTOR_RANGE1 srvRange;
-        srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 11, 0); // t0-t10
+        srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 12, 0); // t0-t11
         
         CD3DX12_DESCRIPTOR_RANGE1 uavRange;
         uavRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0); // u0
@@ -3941,7 +4069,7 @@ namespace RayTraceVS::DXEngine
             DXGI_FORMAT format;
         };
 
-        // t0-t10: Match Composite.hlsl SRV expectations (t2 = GBuffer_Albedo)
+        // t0-t11: Match Composite.hlsl SRV expectations (t2 = GBuffer_Albedo, t11 = PreDenoiseColor)
         CompositeSrvBinding srvs[] = {
             { output.DiffuseRadiance.Get(),        DXGI_FORMAT_R16G16B16A16_FLOAT }, // t0 DenoisedDiffuse
             { output.SpecularRadiance.Get(),       DXGI_FORMAT_R16G16B16A16_FLOAT }, // t1 DenoisedSpecular
@@ -3953,7 +4081,8 @@ namespace RayTraceVS::DXEngine
             { gBuffer.ViewZ.Get(),                 DXGI_FORMAT_R32_FLOAT },          // t7 GBuffer_ViewZ
             { gBuffer.MotionVectors.Get(),         DXGI_FORMAT_R16G16_FLOAT },       // t8 GBuffer_MotionVectors
             { gBuffer.ShadowData.Get(),            DXGI_FORMAT_R16G16_FLOAT },       // t9 GBuffer_ShadowData
-            { gBuffer.RawSpecularBackup.Get(),     DXGI_FORMAT_R16G16B16A16_FLOAT }  // t10 RawSpecularBackup (copy before NRD)
+            { gBuffer.RawSpecularBackup.Get(),     DXGI_FORMAT_R16G16B16A16_FLOAT }, // t10 RawSpecularBackup (copy before NRD)
+            { preDenoiseColor.Get(),               DXGI_FORMAT_R8G8B8A8_UNORM }      // t11 PreDenoiseColor (copy of RayGen output)
         };
 
         for (const auto& srv : srvs)
@@ -3965,9 +4094,9 @@ namespace RayTraceVS::DXEngine
         
         // Store SRV table GPU handle
         CD3DX12_GPU_DESCRIPTOR_HANDLE srvTableHandle = gpuHandle;
-        gpuHandle.Offset(11, descriptorSize); // Move past 11 SRVs (t0-t10)
+        gpuHandle.Offset(12, descriptorSize); // Move past 12 SRVs (t0-t11)
         cpuHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(compositeDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
-        cpuHandle.Offset(11, descriptorSize); // UAV is at index 11, after 11 SRVs (t0-t10)
+        cpuHandle.Offset(12, descriptorSize); // UAV is at index 12, after 12 SRVs (t0-t11)
         
         // u0: Output UAV (render target)
         D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
@@ -3982,7 +4111,7 @@ namespace RayTraceVS::DXEngine
         device->CreateUnorderedAccessView(renderTarget->GetResource(), nullptr, &uavDesc, uavCpuClearHandle);
         
         CD3DX12_GPU_DESCRIPTOR_HANDLE uavTableHandle(compositeDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
-        uavTableHandle.Offset(11, descriptorSize);
+        uavTableHandle.Offset(12, descriptorSize);
         
         // Set descriptor heap (also needed for ClearUnorderedAccessViewFloat)
         ID3D12DescriptorHeap* heaps[] = { compositeDescriptorHeap.Get() };
@@ -4004,7 +4133,7 @@ namespace RayTraceVS::DXEngine
         
         // Set constants: OutputSize (2 uints), ExposureValue, ToneMapOperator, DebugMode, DebugTileScale, UseDenoisedShadow, ShadowStrength, Gamma, PhotonMapSize, MaxPhotons
         // Shadow source: 0 = InputShadow(t9/noisy), 1 = DenoisedShadow(t3/SIGMA), 2 = No shadow (debug)
-        UINT forceUseDenoisedShadow = 1;  // Enable SIGMA denoised shadow
+        UINT forceUseDenoisedShadow = denoiserEnabled ? 1u : 0u;  // Use REBLUR when denoiser is enabled
         
         struct CompositeConstants {
             UINT width;
@@ -4028,6 +4157,18 @@ namespace RayTraceVS::DXEngine
                 debugMode = 9;
             else if (mappedConstantData->PhotonDebugMode == 2)
                 debugMode = 10;
+            else if (mappedConstantData->PhotonDebugMode == 5)
+                debugMode = 11; // Composite: show raw fallback blend factor
+            else if (mappedConstantData->PhotonDebugMode == 6)
+                debugMode = 12; // Composite: show ViewZ visualization
+            else if (mappedConstantData->PhotonDebugMode == 7)
+                debugMode = 13; // Composite: show PreDenoiseColor full-screen
+            else if (mappedConstantData->PhotonDebugMode == 8)
+                debugMode = 14; // Composite: show far-field selection mask (rawT>0.5)
+            else if (mappedConstantData->PhotonDebugMode == 9)
+                debugMode = 15; // Composite: show ViewZ-in-range mask (zStart..zEnd)
+            else if (mappedConstantData->PhotonDebugMode == 10)
+                debugMode = 16; // Composite: show ViewZ linear scale (debug)
         }
         
         CompositeConstants constants = { width, height, exposure, (float)toneMapOperator, debugMode, 0.15f, forceUseDenoisedShadow, shadowStrength, gamma, mappedConstantData ? mappedConstantData->PhotonMapSize : 0u, maxPhotons };

@@ -598,6 +598,21 @@ namespace RayTraceVS.WPF.Views
 
         private void Window_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
         {
+            // F1: Cycle photon debug mode (used for various shader debug visualizations)
+            // 0 = off
+            // 1-2 = existing photon debug modes
+            // 3-4 = material debug (see HLSL)
+            // 5 = Composite: show raw fallback blend factor (rawT)
+            // 6 = Composite: show ViewZ visualization
+            if (e.Key == System.Windows.Input.Key.F1)
+            {
+                photonDebugMode = (photonDebugMode + 1) % 11; // 0..10
+                UpdateInfo();
+                RequestRenderRefresh();
+                e.Handled = true;
+                return;
+            }
+
             if (e.Key == System.Windows.Input.Key.F2)
             {
                 photonDebugMode = 0;
@@ -629,7 +644,6 @@ namespace RayTraceVS.WPF.Views
             if (!isRendering || renderService == null || nodeGraph == null || sceneEvaluator == null)
                 return;
 
-            photonDebugMode = 0;
             var evaluated = sceneEvaluator.EvaluateScene(nodeGraph);
             var sceneParams = new SceneParams(
                 evaluated.Item1, evaluated.Item2, evaluated.Item3,
