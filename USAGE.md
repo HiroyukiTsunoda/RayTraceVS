@@ -301,8 +301,16 @@
 
 ## 参考情報
 
-- **プロジェクトドキュメント**: [README.md](README.md)
-- **ビルドガイド**: [BUILD_GUIDE.md](BUILD_GUIDE.md)
-- **ノードエディタガイド**: [NODE_EDITOR_GUIDE.md](NODE_EDITOR_GUIDE.md)
-- **レンダリング実装詳細**: [RENDERING_IMPLEMENTATION.md](RENDERING_IMPLEMENTATION.md)
-- **実装サマリー**: [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)
+### 基本ドキュメント
+- **[README.md](README.md)** - プロジェクト概要
+- **[NODE_EDITOR_GUIDE.md](NODE_EDITOR_GUIDE.md)** - ノードエディタの詳細ガイド
+
+### 開発者向け
+- **[BUILD_GUIDE.md](BUILD_GUIDE.md)** - ビルド手順
+- **[INSTALLER_GUIDE.md](INSTALLER_GUIDE.md)** - MSIXインストーラー作成
+- **[RENDERING_IMPLEMENTATION.md](RENDERING_IMPLEMENTATION.md)** - レンダリング実装詳細
+- **[IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)** - 実装サマリー
+
+### ライセンス
+- **[LICENSE.md](LICENSE.md)** - MITライセンス
+- **[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)** - サードパーティライセンス

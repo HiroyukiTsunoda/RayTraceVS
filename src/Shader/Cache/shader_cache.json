@@ -5,7 +5,7 @@
   "shaders": {
     "RayGen": {
       "sourceHash": "424702b24fe9f4a3390a5eead33be8dfb1f565670083f749cc82cfa8dcb39a93",
-      "compiledAt": "2026-01-26T20:25:54",
+      "compiledAt": "2026-01-26T21:00:04",
       "dependencies": {
         "Common.hlsli": "8de0694421f105eeb1305c6775ba87a3c4d2a8284cdac1bd1ad59fd015fc4821",
         "NRDEncoding.hlsli": "a7fffb891c008a27a95c65f6d48068e0ef25269899882a8e500d0b23cf0aa8e1"
@@ -13,7 +13,7 @@
     },
     "ClosestHit": {
       "sourceHash": "6bcf7bc79cf7d97f92564f8149b54f85ba3542d1aa38f690aeb0d9303df55844",
-      "compiledAt": "2026-01-26T20:25:54",
+      "compiledAt": "2026-01-26T21:00:04",
       "dependencies": {
         "Common.hlsli": "8de0694421f105eeb1305c6775ba87a3c4d2a8284cdac1bd1ad59fd015fc4821",
         "NRDEncoding.hlsli": "a7fffb891c008a27a95c65f6d48068e0ef25269899882a8e500d0b23cf0aa8e1"
@@ -21,14 +21,14 @@
     },
     "Miss": {
       "sourceHash": "6b0fcce9eba851d5b4d3b133bb8814ea322092c59ca6b74964a46a9e2623b510",
-      "compiledAt": "2026-01-26T20:25:54",
+      "compiledAt": "2026-01-26T21:00:04",
       "dependencies": {
         "Common.hlsli": "8de0694421f105eeb1305c6775ba87a3c4d2a8284cdac1bd1ad59fd015fc4821"
       }
     },
     "ClosestHit_Triangle": {
       "sourceHash": "d29e1d982b2ec07e822847f115f84c239bc91faf59dbfee660a558972a94bbf1",
-      "compiledAt": "2026-01-26T20:25:54",
+      "compiledAt": "2026-01-26T21:00:04",
       "dependencies": {
         "Common.hlsli": "8de0694421f105eeb1305c6775ba87a3c4d2a8284cdac1bd1ad59fd015fc4821",
         "NRDEncoding.hlsli": "a7fffb891c008a27a95c65f6d48068e0ef25269899882a8e500d0b23cf0aa8e1"
@@ -36,57 +36,57 @@
     },
     "Intersection": {
       "sourceHash": "ab492563fedc40d675635404adcae7404f0c9af3d06b869d861d6790e23c7a35",
-      "compiledAt": "2026-01-26T20:25:54",
+      "compiledAt": "2026-01-26T21:00:04",
       "dependencies": {
         "Common.hlsli": "8de0694421f105eeb1305c6775ba87a3c4d2a8284cdac1bd1ad59fd015fc4821"
       }
     },
     "AnyHit_Shadow": {
       "sourceHash": "e991ca3e55485fbe0c8e60847d9e1260fcac3871860900da7f999185893f5ddc",
-      "compiledAt": "2026-01-26T20:25:54",
+      "compiledAt": "2026-01-26T21:00:04",
       "dependencies": {
         "Common.hlsli": "8de0694421f105eeb1305c6775ba87a3c4d2a8284cdac1bd1ad59fd015fc4821"
       }
     },
     "AnyHit_SkipSelf": {
       "sourceHash": "739a89dfa23b70df9ab72b89c67ff2e3430d9e9e1883ae08b8f844cce4128c5c",
-      "compiledAt": "2026-01-26T20:25:54",
+      "compiledAt": "2026-01-26T21:00:04",
       "dependencies": {
         "Common.hlsli": "8de0694421f105eeb1305c6775ba87a3c4d2a8284cdac1bd1ad59fd015fc4821"
       }
     },
     "PhotonEmit": {
       "sourceHash": "31d85ad3c832cf1cd64c53246846317e1690ab0a10f4433e67b1632ea0c91312",
-      "compiledAt": "2026-01-26T20:25:33",
+      "compiledAt": "2026-01-26T20:59:44",
       "dependencies": {
         "Common.hlsli": "8de0694421f105eeb1305c6775ba87a3c4d2a8284cdac1bd1ad59fd015fc4821"
       }
     },
     "PhotonTrace": {
       "sourceHash": "21f94bad127b749150d572cc8e2ebe4e21bf6003f107930e4d7d274b5176ec87",
-      "compiledAt": "2026-01-26T20:25:33",
+      "compiledAt": "2026-01-26T20:59:44",
       "dependencies": {
         "Common.hlsli": "8de0694421f105eeb1305c6775ba87a3c4d2a8284cdac1bd1ad59fd015fc4821"
       }
     },
     "BuildPhotonHashClear": {
       "sourceHash": "b807723df9020efcb90d68a32b5ade6704275e1e7f8f17c58b7aa9d8b172f9f0",
-      "compiledAt": "2026-01-26T20:25:33",
+      "compiledAt": "2026-01-26T20:59:44",
       "dependencies": {}
     },
     "BuildPhotonHashBuild": {
       "sourceHash": "b807723df9020efcb90d68a32b5ade6704275e1e7f8f17c58b7aa9d8b172f9f0",
-      "compiledAt": "2026-01-26T20:25:33",
+      "compiledAt": "2026-01-26T20:59:44",
       "dependencies": {}
     },
     "RayTraceCompute": {
       "sourceHash": "3a2d5a0c216576172dc38cf36d5868fa1e8587dc13614a2fb21bbe0401eb6e70",
-      "compiledAt": "2026-01-26T20:25:54",
+      "compiledAt": "2026-01-26T21:00:03",
       "dependencies": {}
     },
     "Composite": {
       "sourceHash": "1b9d1a11dc40cddf4e1f3f32d870436e9a4ab50ad2926dbdff67a6cf4c84b7f7",
-      "compiledAt": "2026-01-26T20:26:15",
+      "compiledAt": "2026-01-26T21:00:22",
       "dependencies": {}
     }
   }

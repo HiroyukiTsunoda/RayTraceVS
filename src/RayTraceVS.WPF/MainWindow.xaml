@@ -190,9 +190,11 @@
                     </Button>
                 </StackPanel>
                 
-                <!-- 右側の解像度表示 -->
-                <TextBlock Text="1920 x 1080" FontSize="11" Foreground="#888888" 
-                           HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                <!-- 右側の解像度・レンダリング時間表示 -->
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,12,0">
+                    <TextBlock x:Name="RenderTimeText" Text="" FontSize="11" Foreground="#888888" Margin="0,0,8,0"/>
+                    <TextBlock x:Name="ResolutionDisplayText" Text="1920 x 1080" FontSize="11" Foreground="#888888"/>
+                </StackPanel>
             </Grid>
         </Border>
 
