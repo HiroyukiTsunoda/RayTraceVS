@@ -806,14 +806,19 @@ namespace RayTraceVS::DXEngine
         
         commonSettings.denoisingRange = settings.CameraFar;
         commonSettings.frameIndex = m_frameIndex++;
-        // Enable temporal accumulation for better denoising quality
-        // CONTINUE = use previous frame's history for temporal filtering
-        commonSettings.accumulationMode = nrd::AccumulationMode::CONTINUE;
+        // Temporal accumulation:
+        // - First frame / camera cut must restart history, otherwise uninitialized history can cause
+        //   severe overbright / smearing artifacts.
+        // - Continue on subsequent frames for stable denoising.
+        commonSettings.accumulationMode = settings.IsFirstFrame
+            ? nrd::AccumulationMode::RESTART
+            : nrd::AccumulationMode::CONTINUE;
         commonSettings.enableValidation = settings.EnableValidation;
         
         // Log NRD settings for debugging
-        sprintf_s(buf, "NRD Settings: frameIndex=%d, denoisingRange=%.1f, accumulationMode=%d (temporal ON)",
-            commonSettings.frameIndex, commonSettings.denoisingRange, (int)commonSettings.accumulationMode);
+        sprintf_s(buf, "NRD Settings: frameIndex=%d, denoisingRange=%.1f, accumulationMode=%d (firstFrame=%d)",
+            commonSettings.frameIndex, commonSettings.denoisingRange, (int)commonSettings.accumulationMode,
+            settings.IsFirstFrame ? 1 : 0);
         LOG_DEBUG(buf);
         sprintf_s(buf, "NRD Settings: resourceSize=%ux%u, rectSize=%ux%u",
             commonSettings.resourceSize[0], commonSettings.resourceSize[1],
@@ -854,15 +859,30 @@ namespace RayTraceVS::DXEngine
         {
             nrd::SigmaSettings sigmaSettings = {};
             // Light direction for directional light sources (normalized)
-            // Default to sun direction (straight down)
-            sigmaSettings.lightDirection[0] = 0.0f;
-            sigmaSettings.lightDirection[1] = -1.0f;
-            sigmaSettings.lightDirection[2] = 0.0f;
+            // Use scene's main directional light if available
+            XMFLOAT3 sigmaLightDir = settings.MainLightDirection;
+            XMVECTOR lightVec = XMLoadFloat3(&sigmaLightDir);
+            float lightLenSq = XMVectorGetX(XMVector3LengthSq(lightVec));
+            if (settings.MainLightDirectionValid > 0.5f && lightLenSq > 1e-6f)
+            {
+                lightVec = XMVector3Normalize(lightVec);
+                XMStoreFloat3(&sigmaLightDir, lightVec);
+                sigmaSettings.lightDirection[0] = sigmaLightDir.x;
+                sigmaSettings.lightDirection[1] = sigmaLightDir.y;
+                sigmaSettings.lightDirection[2] = sigmaLightDir.z;
+            }
+            else
+            {
+                // Default to sun direction (straight down)
+                sigmaSettings.lightDirection[0] = 0.0f;
+                sigmaSettings.lightDirection[1] = -1.0f;
+                sigmaSettings.lightDirection[2] = 0.0f;
+            }
             // Plane distance sensitivity (controls edge preservation)
-            sigmaSettings.planeDistanceSensitivity = 0.02f;
+            sigmaSettings.planeDistanceSensitivity = 0.01f;
             // Maximum stabilization frames - lower = less history, faster response to changes
             // High values can cause white artifacts to persist at edges
-            sigmaSettings.maxStabilizedFrameNum = 2;
+            sigmaSettings.maxStabilizedFrameNum = 0;
             
             nrd::SetDenoiserSettings(*m_nrdInstance, m_sigmaIdentifier, &sigmaSettings);
             LOG_DEBUG("NRD: SIGMA shadow denoiser settings applied");

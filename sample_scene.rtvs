@@ -77,8 +77,8 @@
       "Id": "a1b2c3d4-e5f6-7890-abcd-333333333333",
       "Type": "CameraNode",
       "Title": "Camera",
-      "PositionX": 2093.80248447205,
-      "PositionY": 2333.1005646527387,
+      "PositionX": 2085.5005976795965,
+      "PositionY": 2412.3458476716064,
       "Properties": {
         "CameraPosition": {
           "X": 0.0,
@@ -106,8 +106,8 @@
       "Id": "a1b2c3d4-e5f6-7890-abcd-555555555555",
       "Type": "SceneNode",
       "Title": "Scene",
-      "PositionX": 2672.4987275041735,
-      "PositionY": 1583.551983246731,
+      "PositionX": 2677.027029390966,
+      "PositionY": 1581.2878323033349,
       "Properties": {
         "ObjectSocketNames": [
           "Object1",
@@ -124,7 +124,7 @@
           "Light4"
         ],
         "SamplesPerPixel": 16,
-        "MaxBounces": 10,
+        "MaxBounces": 6,
         "TraceRecursionDepth": 2,
         "Exposure": 1.0,
         "ToneMapOperator": 2,
@@ -234,8 +234,8 @@
       "Id": "ddcac1f9-fce2-4c28-9d49-c572d6299fbf",
       "Type": "Vector3Node",
       "Title": "Vector3",
-      "PositionX": 1599.657679277244,
-      "PositionY": 2333.0654997176753,
+      "PositionX": 1634.3746604093194,
+      "PositionY": 2409.2919148120145,
       "Properties": {
         "X": 0.0,
         "Y": 2.5,
@@ -246,8 +246,8 @@
       "Id": "5a931f43-1796-447d-9a2d-8933bc0b2270",
       "Type": "Vector3Node",
       "Title": "Vector3",
-      "PositionX": 1792.1511857707505,
-      "PositionY": 2330.600564652739,
+      "PositionX": 1798.943638600939,
+      "PositionY": 2416.638300501796,
       "Properties": {
         "X": 0.0,
         "Y": 1.0,
@@ -523,10 +523,10 @@
       "Id": "b8217bc9-78a1-453e-ba43-fc9536a390ec",
       "Type": "FloatNode",
       "Title": "Float",
-      "PositionX": 1765.5972896668538,
-      "PositionY": 2929.1460191981946,
+      "PositionX": 1761.8237047611933,
+      "PositionY": 2932.919604103855,
       "Properties": {
-        "Value": 10.0
+        "Value": 1.0
       }
     },
     {
@@ -933,7 +933,7 @@
       "PositionX": 1159.117165261875,
       "PositionY": 2241.3056358053204,
       "Properties": {
-        "Value": 0.92
+        "Value": 0.95
       }
     },
     {
@@ -987,8 +987,8 @@
       "PositionX": 1466.2010118153332,
       "PositionY": 1701.8321198921715,
       "Properties": {
-        "X": 0.4,
-        "Y": 0.4,
+        "X": 0.6,
+        "Y": 0.6,
         "Z": 0.0
       }
     },
@@ -1000,8 +1000,8 @@
       "PositionY": 1276.5486539668802,
       "Properties": {
         "X": 0.0,
-        "Y": 0.4,
-        "Z": 0.4
+        "Y": 0.6,
+        "Z": 0.6
       }
     },
     {
@@ -1036,6 +1036,18 @@
             "Z": 0.0
           }
         }
+      }
+    },
+    {
+      "Id": "978bf0ea-5183-4cb3-b526-afa9c6d445cd",
+      "Type": "Vector3Node",
+      "Title": "Vector3",
+      "PositionX": 1591.4923502239599,
+      "PositionY": 2233.5863235871157,
+      "Properties": {
+        "X": 0.05,
+        "Y": 0.05,
+        "Z": 0.05
       }
     }
   ],
@@ -1459,11 +1471,17 @@
       "OutputSocketName": "Object",
       "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
       "InputSocketName": "Object5"
+    },
+    {
+      "OutputNodeId": "978bf0ea-5183-4cb3-b526-afa9c6d445cd",
+      "OutputSocketName": "Vector",
+      "InputNodeId": "e95067f7-f296-46db-9088-6adaf7893999",
+      "InputSocketName": "Absorption"
     }
   ],
   "Viewport": {
-    "PanX": -1043.5568434413096,
-    "PanY": -967.059848099099,
+    "PanX": -1017.9908672985089,
+    "PanY": -1000.6249392183312,
     "Zoom": 0.9400000000000005,
     "IsLeftPanelVisible": true,
     "IsRightPanelVisible": true,

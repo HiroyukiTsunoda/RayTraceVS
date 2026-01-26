@@ -70,6 +70,8 @@ namespace RayTraceVS::DXEngine
         bool IsFirstFrame;
         bool EnableValidation;
         float DenoiserStabilization;
+        XMFLOAT3 MainLightDirection;   // Normalized direction TO the main directional light
+        float MainLightDirectionValid; // 1.0 if valid, 0.0 if not available
     };
 
     // NRD Denoiser wrapper class for D3D12

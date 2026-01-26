@@ -549,6 +549,11 @@ namespace RayTraceVS::DXEngine
         ComPtr<ID3D12DescriptorHeap> compositeUavCpuHeap;
         ComPtr<ID3D12DescriptorHeap> computeUavCpuHeap;
         
+        // Copy of the pre-denoise final color (RayGen output).
+        // Used to selectively fall back to the true "denoiser off" image in Composite.
+        ComPtr<ID3D12Resource> preDenoiseColor;
+        D3D12_RESOURCE_STATES preDenoiseColorState = D3D12_RESOURCE_STATE_COPY_DEST;
+        
         // ============================================
         // Custom Shadow Denoiser (replaces SIGMA)
         // ============================================

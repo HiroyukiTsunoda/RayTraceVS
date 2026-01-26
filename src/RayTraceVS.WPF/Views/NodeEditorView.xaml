@@ -49,10 +49,10 @@
                                              RenderMode="Middle"
                                              Panel.ZIndex="0"/>
             
-            <!-- ノード用キャンバス -->
+            <!-- 非選択ノード用キャンバス -->
             <Canvas x:Name="NodeLayer"
                     Panel.ZIndex="1">
-                <ItemsControl ItemsSource="{Binding Nodes}">
+                <ItemsControl ItemsSource="{Binding UnselectedNodes}">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
                             <Canvas/>
@@ -241,9 +241,187 @@
                                              RenderMode="Full"
                                              Panel.ZIndex="3"/>
             
+            <!-- 選択ノード用キャンバス（接続線より上に描画） -->
+            <Canvas x:Name="SelectedNodeLayer"
+                    Panel.ZIndex="4">
+                <ItemsControl ItemsSource="{Binding SelectedNodes}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <Canvas/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemContainerStyle>
+                        <Style>
+                            <Setter Property="Canvas.Left" Value="{Binding Position.X}"/>
+                            <Setter Property="Canvas.Top" Value="{Binding Position.Y}"/>
+                            <Setter Property="Panel.ZIndex" Value="{Binding CreationIndex}"/>
+                        </Style>
+                    </ItemsControl.ItemContainerStyle>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <!-- ノードの表示（非選択ノードと同じテンプレート） -->
+                            <Border Background="{Binding CategoryColor}" 
+                                    BorderBrush="{Binding IsSelected, Converter={StaticResource BoolToSelectionBrushConverter}}" 
+                                    BorderThickness="2"
+                                    CornerRadius="5"
+                                    MinWidth="150"
+                                    Padding="10"
+                                    Cursor="Hand"
+                                    MouseLeftButtonDown="Node_MouseLeftButtonDown"
+                                    MouseLeftButtonUp="Node_MouseLeftButtonUp"
+                                    MouseMove="Node_MouseMove">
+                                <Border.MinHeight>
+                                    <MultiBinding Converter="{StaticResource SocketCountToHeightConverter}">
+                                        <Binding Path="InputSockets"/>
+                                        <Binding Path="OutputSockets"/>
+                                    </MultiBinding>
+                                </Border.MinHeight>
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Title}" 
+                                               FontWeight="Bold"
+                                               Foreground="{StaticResource TextBrush}"
+                                               HorizontalAlignment="Center"
+                                               Margin="0,0,0,5"/>
+                                    
+                                    <!-- 入力ソケット -->
+                                    <ItemsControl ItemsSource="{Binding InputSockets}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal" Margin="0,2">
+                                                    <Ellipse x:Name="InputSocketEllipse"
+                                                             Width="12" Height="12" 
+                                                             Fill="{Binding SocketColor}"
+                                                             Stroke="{StaticResource AccentBrush}"
+                                                             StrokeThickness="2"
+                                                             Cursor="Cross"
+                                                             DataContext="{Binding}"
+                                                             Loaded="Socket_Loaded"
+                                                             MouseEnter="Socket_MouseEnter"
+                                                             MouseLeave="Socket_MouseLeave"/>
+                                                    <TextBlock Text="{Binding Name}" 
+                                                               Foreground="{StaticResource TextBrush}"
+                                                               FontSize="10"
+                                                               Margin="5,0,0,0"
+                                                               VerticalAlignment="Center"/>
+                                                    <!-- Vector3Node入力用テキストボックス -->
+                                                    <TextBox Width="45"
+                                                             Height="18"
+                                                             FontSize="9"
+                                                             Background="{Binding IsConnected, Converter={StaticResource ConnectedToBackgroundConverter}}"
+                                                             Foreground="White"
+                                                             BorderBrush="#555555"
+                                                             BorderThickness="1"
+                                                             VerticalContentAlignment="Center"
+                                                             Padding="2,0"
+                                                             Margin="3,0,0,0"
+                                                             IsEnabled="{Binding IsConnected, Converter={StaticResource InverseBoolConverter}}"
+                                                             Tag="{Binding}"
+                                                             PreviewTextInput="Vector3TextBox_PreviewTextInput"
+                                                             KeyDown="Vector3TextBox_KeyDown"
+                                                             LostFocus="Vector3TextBox_LostFocus"
+                                                             GotFocus="Vector3TextBox_GotFocus"
+                                                             Loaded="Vector3TextBox_Loaded"
+                                                             Visibility="{Binding ParentNode.HasEditableVector3Inputs, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                                    <!-- Vector4Node入力用テキストボックス -->
+                                                    <TextBox Width="45"
+                                                             Height="18"
+                                                             FontSize="9"
+                                                             Background="{Binding IsConnected, Converter={StaticResource ConnectedToBackgroundConverter}}"
+                                                             Foreground="White"
+                                                             BorderBrush="#555555"
+                                                             BorderThickness="1"
+                                                             VerticalContentAlignment="Center"
+                                                             Padding="2,0"
+                                                             Margin="3,0,0,0"
+                                                             IsEnabled="{Binding IsConnected, Converter={StaticResource InverseBoolConverter}}"
+                                                             Tag="{Binding}"
+                                                             PreviewTextInput="Vector4TextBox_PreviewTextInput"
+                                                             KeyDown="Vector4TextBox_KeyDown"
+                                                             LostFocus="Vector4TextBox_LostFocus"
+                                                             GotFocus="Vector4TextBox_GotFocus"
+                                                             Loaded="Vector4TextBox_Loaded"
+                                                             Visibility="{Binding ParentNode.HasEditableVector4Inputs, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                                    <!-- ColorNode入力用テキストボックス -->
+                                                    <TextBox Width="45"
+                                                             Height="18"
+                                                             FontSize="9"
+                                                             Background="{Binding IsConnected, Converter={StaticResource ConnectedToBackgroundConverter}}"
+                                                             Foreground="White"
+                                                             BorderBrush="#555555"
+                                                             BorderThickness="1"
+                                                             VerticalContentAlignment="Center"
+                                                             Padding="2,0"
+                                                             Margin="3,0,0,0"
+                                                             IsEnabled="{Binding IsConnected, Converter={StaticResource InverseBoolConverter}}"
+                                                             Tag="{Binding}"
+                                                             PreviewTextInput="ColorTextBox_PreviewTextInput"
+                                                             KeyDown="ColorTextBox_KeyDown"
+                                                             LostFocus="ColorTextBox_LostFocus"
+                                                             GotFocus="ColorTextBox_GotFocus"
+                                                             Loaded="ColorTextBox_Loaded"
+                                                             Visibility="{Binding ParentNode.HasEditableColorInputs, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    
+                                    <!-- FloatNode用の値入力テキストボックス -->
+                                    <Grid Visibility="{Binding HasEditableFloat, Converter={StaticResource BoolToVisibilityConverter}}"
+                                          Margin="0,2">
+                                        <TextBox x:Name="FloatValueTextBox"
+                                                 Text="{Binding EditableFloatValue, Mode=TwoWay, UpdateSourceTrigger=LostFocus, StringFormat={}{0:G}}"
+                                                 Width="60"
+                                                 Height="20"
+                                                 FontSize="10"
+                                                 Background="#3A3A3A"
+                                                 Foreground="White"
+                                                 BorderBrush="#555555"
+                                                 BorderThickness="1"
+                                                 HorizontalAlignment="Left"
+                                                 VerticalContentAlignment="Center"
+                                                 Padding="3,0"
+                                                 PreviewTextInput="FloatTextBox_PreviewTextInput"
+                                                 KeyDown="FloatTextBox_KeyDown"
+                                                 LostFocus="FloatTextBox_LostFocus"
+                                                 GotFocus="FloatTextBox_GotFocus"/>
+                                    </Grid>
+
+                                    <!-- 出力ソケット -->
+                                    <ItemsControl ItemsSource="{Binding OutputSockets}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal" 
+                                                           HorizontalAlignment="Right"
+                                                           Margin="0,2">
+                                                    <TextBlock Text="{Binding Name}" 
+                                                               Foreground="{StaticResource TextBrush}"
+                                                               FontSize="10"
+                                                               Margin="0,0,5,0"
+                                                               VerticalAlignment="Center"/>
+                                                    <Ellipse x:Name="OutputSocketEllipse"
+                                                             Width="12" Height="12" 
+                                                             Fill="{Binding SocketColor}"
+                                                             Stroke="{StaticResource AccentBrush}"
+                                                             StrokeThickness="2"
+                                                             Cursor="Cross"
+                                                             DataContext="{Binding}"
+                                                             Loaded="Socket_Loaded"
+                                                             MouseEnter="Socket_MouseEnter"
+                                                             MouseLeave="Socket_MouseLeave"/>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Canvas>
+            
             <!-- プレビュー線・選択矩形用レイヤー（最上層） -->
             <Canvas x:Name="PreviewLayer"
-                    Panel.ZIndex="4"
+                    Panel.ZIndex="5"
                     IsHitTestVisible="False"/>
         </Canvas>
         
