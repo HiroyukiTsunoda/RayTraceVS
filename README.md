@@ -154,7 +154,7 @@ RayTraceVS/
 
 ### マテリアルノード
 - **Universal PBR**: 標準PBRマテリアル（BaseColor/Metallic/Roughness/Emissive）
-- **Material BSDF**: フル機能BSDFマテリアル（+Transmission/IOR/Absorption対応）
+- **BSDF**: フル機能BSDFマテリアル（+Transmission/IOR/Absorption対応）
 - **Emission Material**: 発光専用マテリアル
 
 ### ライトノード

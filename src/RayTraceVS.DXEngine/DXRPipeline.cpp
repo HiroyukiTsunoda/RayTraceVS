@@ -90,16 +90,264 @@ namespace RayTraceVS::DXEngine
         }
     }
 
+    // Get the directory containing the executable
+    static std::wstring GetExecutableDirectory()
+    {
+        wchar_t path[MAX_PATH];
+        DWORD len = GetModuleFileNameW(NULL, path, MAX_PATH);
+        if (len == 0 || len >= MAX_PATH)
+            return L"";
+        
+        std::wstring dir(path);
+        size_t lastSlash = dir.find_last_of(L"\\/");
+        if (lastSlash != std::wstring::npos)
+            return dir.substr(0, lastSlash + 1);
+        return L"";
+    }
+
+    // Normalize path separators to backslash and ensure trailing slash
+    static std::wstring NormalizePath(const std::wstring& path)
+    {
+        std::wstring result = path;
+        for (auto& c : result)
+        {
+            if (c == L'/')
+                c = L'\\';
+        }
+        if (!result.empty() && result.back() != L'\\')
+            result += L'\\';
+        return result;
+    }
+
+    // Check if a file exists (wide path)
+    static bool FileExists(const std::wstring& path)
+    {
+        WIN32_FIND_DATAW findData;
+        HANDLE hFind = FindFirstFileW(path.c_str(), &findData);
+        if (hFind == INVALID_HANDLE_VALUE)
+            return false;
+        FindClose(hFind);
+        return true;
+    }
+
+    // Try to read a simple config file (key=value format)
+    static bool ReadConfigFile(const std::wstring& configPath, 
+                               std::wstring& outShaderSource, 
+                               std::wstring& outShaderCache)
+    {
+        std::ifstream file(configPath);
+        if (!file.is_open())
+            return false;
+
+        std::string line;
+        while (std::getline(file, line))
+        {
+            // Skip empty lines and comments
+            if (line.empty() || line[0] == '#' || line[0] == ';')
+                continue;
+
+            size_t eqPos = line.find('=');
+            if (eqPos == std::string::npos)
+                continue;
+
+            std::string key = line.substr(0, eqPos);
+            std::string value = line.substr(eqPos + 1);
+
+            // Trim whitespace
+            auto trimWs = [](std::string& s) {
+                size_t start = s.find_first_not_of(" \t\r\n");
+                size_t end = s.find_last_not_of(" \t\r\n");
+                if (start == std::string::npos)
+                    s.clear();
+                else
+                    s = s.substr(start, end - start + 1);
+            };
+            trimWs(key);
+            trimWs(value);
+
+            // Convert to wstring
+            std::wstring wvalue(value.begin(), value.end());
+
+            if (key == "shaderSourcePath")
+                outShaderSource = wvalue;
+            else if (key == "shaderCachePath")
+                outShaderCache = wvalue;
+        }
+        return !outShaderSource.empty() || !outShaderCache.empty();
+    }
+
     bool DXRPipeline::InitializeShaderPath()
     {
-        // Fixed shader paths:
-        //   Source: C:\git\RayTraceVS\src\Shader (for .hlsl)
-        //   Cache:  C:\git\RayTraceVS\src\Shader\Cache (for .cso)
-        shaderBasePath = L"C:\\git\\RayTraceVS\\src\\Shader\\Cache\\";
-        shaderSourcePath = L"C:\\git\\RayTraceVS\\src\\Shader\\";
-        
+        // Get executable directory as base for relative paths
+        std::wstring exeDir = GetExecutableDirectory();
+        if (exeDir.empty())
+        {
+            LOG_ERROR("Failed to get executable directory");
+            return false;
+        }
+        LOG_INFO(("Executable directory: " + std::string(exeDir.begin(), exeDir.end())).c_str());
+
+        // Default relative paths from executable location
+        // Assumes: exe is in bin/ or project root, shaders are in src/Shader/
+        std::wstring defaultShaderSource = L"src\\Shader\\";
+        std::wstring defaultShaderCache = L"src\\Shader\\Cache\\";
+
+        // Try to find config file by searching up from executable location
+        std::wstring configShaderSource, configShaderCache;
+        bool configFound = false;
+        std::wstring configBaseDir = exeDir;
+        std::wstring configPath;
+        std::wstring searchBase = exeDir;
+        for (int level = 0; level <= 6 && !configFound; level++)
+        {
+            std::wstring candidate1 = searchBase + L"shader_config.ini";
+            std::wstring candidate2 = searchBase + L"config\\shader_config.ini";
+            if (ReadConfigFile(candidate1, configShaderSource, configShaderCache))
+            {
+                configPath = candidate1;
+                configBaseDir = searchBase;
+                configFound = true;
+                break;
+            }
+            if (ReadConfigFile(candidate2, configShaderSource, configShaderCache))
+            {
+                configPath = candidate2;
+                configBaseDir = searchBase;
+                configFound = true;
+                break;
+            }
+            searchBase += L"..\\";
+        }
+
+        if (configFound)
+        {
+            LOG_INFO(("Config file found: " + std::string(configPath.begin(), configPath.end())).c_str());
+        }
+
+        // Determine final paths
+        if (configFound)
+        {
+            // Use config file values (can be absolute or relative to config location)
+            if (!configShaderSource.empty())
+            {
+                // Check if absolute path
+                if (configShaderSource.length() >= 2 && configShaderSource[1] == L':')
+                    shaderSourcePath = NormalizePath(configShaderSource);
+                else
+                    shaderSourcePath = NormalizePath(configBaseDir + configShaderSource);
+            }
+            else
+            {
+                shaderSourcePath = NormalizePath(configBaseDir + defaultShaderSource);
+            }
+
+            if (!configShaderCache.empty())
+            {
+                if (configShaderCache.length() >= 2 && configShaderCache[1] == L':')
+                    shaderBasePath = NormalizePath(configShaderCache);
+                else
+                    shaderBasePath = NormalizePath(configBaseDir + configShaderCache);
+            }
+            else
+            {
+                shaderBasePath = NormalizePath(configBaseDir + defaultShaderCache);
+            }
+        }
+        else
+        {
+            // No config file - try to auto-detect based on common project layouts
+            bool pathFound = false;
+            const std::vector<std::wstring> shaderCandidates = {
+                L"src\\Shader\\",
+                L"Shader\\"
+            };
+            
+            // First priority: Current working directory (VS debug often sets this to project root)
+            wchar_t cwdBuffer[MAX_PATH];
+            if (GetCurrentDirectoryW(MAX_PATH, cwdBuffer))
+            {
+                std::wstring cwd(cwdBuffer);
+                std::wstring cwdBase = NormalizePath(cwd);
+                for (const auto& candidate : shaderCandidates)
+                {
+                    std::wstring testPath = cwdBase + candidate + L"RayGen.hlsl";
+                    if (FileExists(testPath))
+                    {
+                        shaderSourcePath = NormalizePath(cwdBase + candidate);
+                        shaderBasePath = NormalizePath(cwdBase + candidate + L"Cache\\");
+                        LOG_INFO("Using relative paths from current working directory");
+                        pathFound = true;
+                        break;
+                    }
+                }
+            }
+            
+            // Second priority: Search up from exe directory (up to 5 levels)
+            if (!pathFound)
+            {
+                std::wstring searchBase = exeDir;
+                for (int level = 0; level <= 6 && !pathFound; level++)
+                {
+                    for (const auto& candidate : shaderCandidates)
+                    {
+                        std::wstring testPath = searchBase + candidate + L"RayGen.hlsl";
+                        if (FileExists(testPath))
+                        {
+                            shaderSourcePath = NormalizePath(searchBase + candidate);
+                            shaderBasePath = NormalizePath(searchBase + candidate + L"Cache\\");
+                            char logMsg[256];
+                            sprintf_s(logMsg, "Using relative paths from exe directory (level %d up)", level);
+                            LOG_INFO(logMsg);
+                            pathFound = true;
+                            break;
+                        }
+                    }
+                    // Go up one directory level
+                    searchBase += L"..\\";
+                }
+            }
+            
+            // Third priority: Environment variable
+            if (!pathFound)
+            {
+                wchar_t envBuffer[MAX_PATH];
+                DWORD envLen = GetEnvironmentVariableW(L"RAYTRACEVS_SHADER_PATH", envBuffer, MAX_PATH);
+                if (envLen > 0 && envLen < MAX_PATH)
+                {
+                    std::wstring envPath(envBuffer);
+                    shaderSourcePath = NormalizePath(envPath);
+                    shaderBasePath = NormalizePath(envPath + L"Cache\\");
+                    LOG_INFO("Using paths from RAYTRACEVS_SHADER_PATH environment variable");
+                    pathFound = true;
+                }
+            }
+            
+            if (!pathFound)
+            {
+                LOG_ERROR("Failed to determine shader paths - RayGen.hlsl not found in any expected location");
+                return false;
+            }
+        }
+
         LOG_INFO(("Shader source path: " + std::string(shaderSourcePath.begin(), shaderSourcePath.end())).c_str());
         LOG_INFO(("Shader cache path: " + std::string(shaderBasePath.begin(), shaderBasePath.end())).c_str());
+        
+        // Verify shader source path exists
+        WIN32_FIND_DATAW findData;
+        std::wstring testFile = shaderSourcePath + L"RayGen.hlsl";
+        HANDLE hFind = FindFirstFileW(testFile.c_str(), &findData);
+        if (hFind == INVALID_HANDLE_VALUE)
+        {
+            LOG_ERROR(("Shader source path verification failed - RayGen.hlsl not found at: " + 
+                      std::string(testFile.begin(), testFile.end())).c_str());
+            // Don't fail - the path might still be valid for other operations
+        }
+        else
+        {
+            FindClose(hFind);
+            LOG_INFO("Shader source path verified successfully");
+        }
+
         return true;
     }
 

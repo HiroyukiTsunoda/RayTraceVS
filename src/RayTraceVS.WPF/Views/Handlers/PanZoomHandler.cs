@@ -10,10 +10,19 @@ namespace RayTraceVS.WPF.Views.Handlers
     public class PanZoomHandler
     {
         private readonly EditorInputState _state;
+        private CoordinateTransformer? _coordinateTransformer;
 
         public PanZoomHandler(EditorInputState state)
         {
             _state = state ?? throw new ArgumentNullException(nameof(state));
+        }
+
+        /// <summary>
+        /// CoordinateTransformerを設定
+        /// </summary>
+        public void SetCoordinateTransformer(CoordinateTransformer transformer)
+        {
+            _coordinateTransformer = transformer;
         }
 
         /// <summary>
@@ -78,9 +87,16 @@ namespace RayTraceVS.WPF.Views.Handlers
 
         /// <summary>
         /// スクリーン座標からキャンバス座標への変換
+        /// CoordinateTransformerに委譲
         /// </summary>
         public Point TransformToCanvas(Point screenPoint)
         {
+            if (_coordinateTransformer != null)
+            {
+                return _coordinateTransformer.ToCanvasPoint(screenPoint);
+            }
+            
+            // フォールバック（CoordinateTransformerが未設定の場合）
             return new Point(
                 (screenPoint.X - _state.PanTransform.X) / _state.CurrentZoom,
                 (screenPoint.Y - _state.PanTransform.Y) / _state.CurrentZoom
@@ -89,9 +105,16 @@ namespace RayTraceVS.WPF.Views.Handlers
 
         /// <summary>
         /// キャンバス座標からスクリーン座標への変換
+        /// CoordinateTransformerに委譲
         /// </summary>
         public Point TransformToScreen(Point canvasPoint)
         {
+            if (_coordinateTransformer != null)
+            {
+                return _coordinateTransformer.ToScreenPoint(canvasPoint);
+            }
+            
+            // フォールバック（CoordinateTransformerが未設定の場合）
             return new Point(
                 canvasPoint.X * _state.CurrentZoom + _state.PanTransform.X,
                 canvasPoint.Y * _state.CurrentZoom + _state.PanTransform.Y

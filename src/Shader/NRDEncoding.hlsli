@@ -29,6 +29,35 @@
 #define NRD_ROUGHNESS_ENCODING 1
 #endif
 
+// ============================================================
+// NRD/SIGMA CONSTANTS TABLE
+// ============================================================
+// PURPOSE: Centralized constants for NRD denoiser integration
+// RATIONALE: These values are tuned for NRD's internal algorithms
+// ============================================================
+
+// --- SIGMA Penumbra Constants ---
+// SIGMA expects penumbra in world units, but has internal limits
+#define SIGMA_PENUMBRA_ABSOLUTE_MAX    32768.0  // NRD internal limit (half of FP16_MAX range)
+#define SIGMA_PENUMBRA_PRACTICAL_MAX   100.0    // Above this, SIGMA treats as "almost no shadow"
+#define SIGMA_PENUMBRA_MIN             0.1      // Minimum visible penumbra
+
+// --- ViewZ Constants ---
+// ViewZ: camera-space Z (positive = in front of camera)
+#define VIEWZ_MIN                      0.01     // Avoid zero depth for NRD accumulation
+#define VIEWZ_SKY                      10000.0  // Far distance for sky/miss pixels (SIGMA edge handling)
+
+// --- Motion Vector Constants ---
+// Motion vectors in pixel space, clamped to prevent extreme values
+#define MOTION_VECTOR_CLAMP            64.0     // Max pixels per frame (reasonable at 60fps)
+
+// --- Roughness Thresholds ---
+// Mirror-like surfaces bypass NRD (causes artifacts on low roughness)
+#define MIRROR_BYPASS_ROUGHNESS        0.05     // Below this, use raw specular without NRD
+
+// --- Shadow Constants ---
+#define SHADOW_FULLY_LIT_THRESHOLD     0.99     // Above this, considered fully lit (no shadow)
+
 // ============================================
 // Math Helpers
 // ============================================
@@ -150,7 +179,7 @@ float SIGMA_FrontEnd_PackPenumbra(float distanceToOccluder, float tanOfLightAngu
     float penumbraSize = distanceToOccluder * tanOfLightAngularRadius;
     float penumbraRadius = penumbraSize * 0.5;
 
-    return distanceToOccluder >= NRD_FP16_MAX ? NRD_FP16_MAX : min(penumbraRadius, 32768.0);
+    return distanceToOccluder >= NRD_FP16_MAX ? NRD_FP16_MAX : min(penumbraRadius, SIGMA_PENUMBRA_ABSOLUTE_MAX);
 }
 
 // Local light source
@@ -161,7 +190,7 @@ float SIGMA_FrontEnd_PackPenumbra(float distanceToOccluder, float distanceToLigh
     float penumbraSize = lightSize * distanceToOccluder / max(distanceToLight - distanceToOccluder, NRD_EPS);
     float penumbraRadius = penumbraSize * 0.5;
 
-    return distanceToOccluder >= NRD_FP16_MAX ? NRD_FP16_MAX : min(penumbraRadius, 32768.0);
+    return distanceToOccluder >= NRD_FP16_MAX ? NRD_FP16_MAX : min(penumbraRadius, SIGMA_PENUMBRA_ABSOLUTE_MAX);
 }
 
 // X => IN_TRANSLUCENCY
@@ -234,6 +263,165 @@ void NRD_SeparateDiffuseSpecular(
     // Approximate separation (simplified)
     diffuseRadiance = radiance * diffuseAlbedo / (diffuseAlbedo + specularF0 + 0.001);
     specularRadiance = radiance - diffuseRadiance;
+}
+
+// ============================================
+// NRD Input Builder
+// ============================================
+// Centralized coordinate system conversion for NRD inputs.
+// THIS IS THE AUTHORITATIVE SOURCE for NRD coordinate conventions.
+//
+// Coordinate System:
+//   View Space: X = right, Y = up, Z = forward (into screen)
+//   ViewZ: Positive distance along camera forward direction
+//   Motion Vector: Screen-space pixel displacement (current - previous)
+
+struct NRDInputs
+{
+    float3 viewSpaceNormal;     // Normal in view space
+    float  viewZ;               // Linear depth (positive, distance along forward)
+    float2 motionVector;        // Screen-space motion in pixels
+    float  albedoAlpha;         // 1.0 for hits, 0.0 for misses (sky detection)
+};
+
+// Build NRD inputs with correct coordinate system transformations
+// All NRD-related coordinate conversions should use this function.
+//
+// Parameters:
+//   worldNormal     - Surface normal in world space
+//   worldHitPos     - Hit position in world space
+//   cameraPos       - Camera position in world space
+//   cameraRight     - Camera right vector (normalized)
+//   cameraUp        - Camera up vector (normalized)
+//   cameraForward   - Camera forward vector (normalized, points into scene)
+//   currViewProj    - Current frame's view-projection matrix
+//   prevViewProj    - Previous frame's view-projection matrix
+//   screenSize      - Screen dimensions (width, height)
+//   anyHit          - True if ray hit geometry, false for sky/miss
+//
+NRDInputs NRD_BuildInputs(
+    float3 worldNormal,
+    float3 worldHitPos,
+    float3 cameraPos,
+    float3 cameraRight,
+    float3 cameraUp,
+    float3 cameraForward,
+    float4x4 currViewProj,
+    float4x4 prevViewProj,
+    float2 screenSize,
+    bool anyHit)
+{
+    NRDInputs result;
+    
+    // ========================================
+    // View Space Normal
+    // ========================================
+    // Transform world-space normal to view space using camera basis vectors.
+    // View space convention: X=right, Y=up, Z=forward (into screen)
+    result.viewSpaceNormal.x = dot(worldNormal, cameraRight);
+    result.viewSpaceNormal.y = dot(worldNormal, cameraUp);
+    result.viewSpaceNormal.z = dot(worldNormal, cameraForward);
+    result.viewSpaceNormal = normalize(result.viewSpaceNormal);
+    
+    // ========================================
+    // ViewZ (Linear Depth)
+    // ========================================
+    // NRD/SIGMA expects POSITIVE view depth (distance along camera forward).
+    // For miss pixels, use a large value (not 0) so SIGMA can properly
+    // handle edge filtering. Zero viewZ causes discontinuities.
+    if (anyHit)
+    {
+        float3 hitOffset = worldHitPos - cameraPos;
+        result.viewZ = dot(hitOffset, cameraForward);  // Positive distance along forward
+        result.viewZ = max(result.viewZ, VIEWZ_MIN);   // Minimum positive depth (avoid zero)
+        result.albedoAlpha = 1.0;                      // Mark as hit
+    }
+    else
+    {
+        // Use large depth for misses - helps SIGMA handle edges properly
+        result.viewZ = VIEWZ_SKY;                      // Far distance for sky/miss pixels
+        result.albedoAlpha = 0.0;                      // Mark as miss for Composite shader
+    }
+    
+    // ========================================
+    // Motion Vector
+    // ========================================
+    // Screen-space pixel delta: (current - previous) position
+    // This is the correct, unmodified motion vector for NRD.
+    // Do NOT apply any damping here - use NRD settings if stabilization is needed.
+    if (anyHit)
+    {
+        float4 currClip = mul(float4(worldHitPos, 1.0), currViewProj);
+        float4 prevClip = mul(float4(worldHitPos, 1.0), prevViewProj);
+        
+        float2 currNdc = currClip.xy / currClip.w;
+        float2 prevNdc = prevClip.xy / prevClip.w;
+        
+        // NDC delta: range [-2, 2]
+        float2 ndcDelta = currNdc - prevNdc;
+        
+        // Convert to pixel space: NDC * (screenSize / 2)
+        float2 pixelScale = screenSize * 0.5;
+        result.motionVector = ndcDelta * pixelScale;
+        
+        // Clamp to reasonable range to prevent extreme values
+        result.motionVector = clamp(result.motionVector, float2(-MOTION_VECTOR_CLAMP, -MOTION_VECTOR_CLAMP), float2(MOTION_VECTOR_CLAMP, MOTION_VECTOR_CLAMP));
+    }
+    else
+    {
+        result.motionVector = float2(0, 0);
+    }
+    
+    return result;
+}
+
+// Convenience function to compute only ViewZ
+// Use when you only need depth without full NRD input building
+float NRD_ComputeViewZ(float3 worldHitPos, float3 cameraPos, float3 cameraForward, bool anyHit)
+{
+    if (anyHit)
+    {
+        float3 hitOffset = worldHitPos - cameraPos;
+        float viewZ = dot(hitOffset, cameraForward);
+        return max(viewZ, VIEWZ_MIN);
+    }
+    return VIEWZ_SKY;
+}
+
+// Convenience function to compute only view-space normal
+// Use when you only need the normal transformation
+float3 NRD_ComputeViewSpaceNormal(float3 worldNormal, float3 cameraRight, float3 cameraUp, float3 cameraForward)
+{
+    float3 viewNormal;
+    viewNormal.x = dot(worldNormal, cameraRight);
+    viewNormal.y = dot(worldNormal, cameraUp);
+    viewNormal.z = dot(worldNormal, cameraForward);
+    return normalize(viewNormal);
+}
+
+// Convenience function to compute only motion vector
+// Use when you only need motion without full NRD input building
+float2 NRD_ComputeMotionVector(
+    float3 worldHitPos,
+    float4x4 currViewProj,
+    float4x4 prevViewProj,
+    float2 screenSize,
+    bool anyHit)
+{
+    if (!anyHit)
+        return float2(0, 0);
+    
+    float4 currClip = mul(float4(worldHitPos, 1.0), currViewProj);
+    float4 prevClip = mul(float4(worldHitPos, 1.0), prevViewProj);
+    
+    float2 currNdc = currClip.xy / currClip.w;
+    float2 prevNdc = prevClip.xy / prevClip.w;
+    
+    float2 ndcDelta = currNdc - prevNdc;
+    float2 pixelScale = screenSize * 0.5;
+    float2 motion = ndcDelta * pixelScale;
+    
+    return clamp(motion, float2(-MOTION_VECTOR_CLAMP, -MOTION_VECTOR_CLAMP), float2(MOTION_VECTOR_CLAMP, MOTION_VECTOR_CLAMP));
 }
 
 #endif // NRD_ENCODING_HLSLI

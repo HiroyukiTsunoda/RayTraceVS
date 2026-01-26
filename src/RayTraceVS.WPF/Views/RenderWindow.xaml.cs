@@ -53,17 +53,30 @@ namespace RayTraceVS.WPF.Views
         private SceneParams? _pendingSceneParams = null;
         private readonly object _renderLock = new object();
         
-        // 解像度を1920x1080に固定
-        private const int RenderWidth = 1920;
-        private const int RenderHeight = 1080;
+        // レンダリング解像度（コンストラクタで設定）
+        private readonly int RenderWidth;
+        private readonly int RenderHeight;
         
         // テンポラルデノイズのための最低描画回数
         // 1回目: 履歴なし、2回目: テンポラル蓄積開始、3回目以降: 安定化
         private const int MinRenderPassesForTemporal = 1; // DEBUG: reduced from 5 to isolate crash
 
-        public RenderWindow()
+        public RenderWindow() : this(1920, 1080)
         {
+        }
+        
+        public RenderWindow(int width, int height)
+        {
+            RenderWidth = width;
+            RenderHeight = height;
+            
             InitializeComponent();
+            
+            // 解像度に応じてウィンドウサイズを設定
+            RenderImage.Width = width;
+            RenderImage.Height = height;
+            Title = $"レンダリング結果 - RayTraceVS ({width}x{height})";
+            ResolutionText.Text = $"解像度: {width}x{height}";
         }
 
         public void SetNodeGraph(NodeGraph graph)
@@ -123,7 +136,7 @@ namespace RayTraceVS.WPF.Views
                 // ウィンドウハンドル取得
                 var windowHandle = new WindowInteropHelper(this).Handle;
                 
-                // DPIスケーリングを取得して、物理ピクセル1920x1080になるようWPFサイズを計算
+                // DPIスケーリングを取得して、物理ピクセルで正確なサイズになるようWPFサイズを計算
                 var source = PresentationSource.FromVisual(this);
                 double dpiScaleX = 1.0;
                 double dpiScaleY = 1.0;
@@ -164,7 +177,7 @@ namespace RayTraceVS.WPF.Views
                     null);
                 RenderImage.Source = renderBitmap;
                 
-                // DPI補正したサイズで初期表示（物理ピクセル1920x1080）
+                // DPI補正したサイズで初期表示（物理ピクセルで正確なサイズ）
                 RenderImage.Width = wpfWidth;
                 RenderImage.Height = wpfHeight;
                 RenderImage.Stretch = Stretch.None;

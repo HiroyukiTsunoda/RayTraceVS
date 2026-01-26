@@ -16,6 +16,7 @@ namespace RayTraceVS.WPF.Services
     /// <summary>
     /// FBXメッシュのキャッシュ管理サービス
     /// 起動時にFBXをスキャンし、必要に応じてキャッシュに変換する
+    /// メッシュデータは遅延読み込み（Lazy Loading）で必要時に読み込む
     /// </summary>
     public class MeshCacheService
     {
@@ -23,7 +24,11 @@ namespace RayTraceVS.WPF.Services
         private const uint CACHE_VERSION = 1;
         private const int FLOATS_PER_VERTEX = 8; // position(3) + padding(1) + normal(3) + padding(1)
 
-        private readonly Dictionary<string, CachedMeshData> _meshCache = new();
+        // メタデータのみを保持（実際のデータは遅延読み込み）
+        private readonly Dictionary<string, MeshMetadata> _meshMetadata = new();
+        // 読み込み済みのメッシュデータをキャッシュ
+        private readonly Dictionary<string, CachedMeshData> _loadedMeshes = new();
+        private readonly object _loadLock = new();
         private CacheManifest? _manifest;
 
         /// <summary>
@@ -39,21 +44,24 @@ namespace RayTraceVS.WPF.Services
         /// <summary>
         /// 利用可能なメッシュ名のリスト（キャッシュ済みのみ）
         /// </summary>
-        public IReadOnlyList<string> AvailableMeshes => _meshCache.Keys.ToList();
+        public IReadOnlyList<string> AvailableMeshes => _meshMetadata.Keys.ToList();
 
         /// <summary>
         /// 初期化（起動時に呼び出し）
         /// FBXファイルがなくても正常に起動する
+        /// メッシュデータは遅延読み込みのため、起動時はメタデータのみスキャン
         /// </summary>
         public async Task InitializeAsync()
         {
+            var sw = Stopwatch.StartNew();
             try
             {
                 EnsureDirectoriesExist();
                 LoadManifest();
                 CleanupOrphanedCaches();
                 await ConvertOutdatedFBXFilesAsync();
-                LoadAllMeshesToMemory();
+                ScanAllMeshFiles(); // メタデータのみスキャン（高速）
+                Debug.WriteLine($"MeshCacheService初期化完了: {sw.ElapsedMilliseconds}ms, メッシュ数: {_meshMetadata.Count}");
             }
             catch (Exception ex)
             {
@@ -68,15 +76,53 @@ namespace RayTraceVS.WPF.Services
         /// </summary>
         public bool HasMesh(string meshName)
         {
-            return _meshCache.ContainsKey(meshName);
+            return _meshMetadata.ContainsKey(meshName);
         }
 
         /// <summary>
-        /// メッシュデータを取得
+        /// メッシュデータを取得（遅延読み込み）
+        /// 初回アクセス時にファイルから読み込み、以降はメモリキャッシュを返す
         /// </summary>
         public CachedMeshData? GetMesh(string meshName)
         {
-            return _meshCache.TryGetValue(meshName, out var data) ? data : null;
+            // まず読み込み済みキャッシュをチェック
+            if (_loadedMeshes.TryGetValue(meshName, out var cachedData))
+            {
+                return cachedData;
+            }
+
+            // メタデータが存在するかチェック
+            if (!_meshMetadata.TryGetValue(meshName, out var metadata))
+            {
+                return null;
+            }
+
+            // ファイルから読み込み（スレッドセーフ）
+            lock (_loadLock)
+            {
+                // ダブルチェック（他のスレッドが読み込み済みかもしれない）
+                if (_loadedMeshes.TryGetValue(meshName, out cachedData))
+                {
+                    return cachedData;
+                }
+
+                var sw = Stopwatch.StartNew();
+                var meshData = LoadMeshFromCache(metadata.CachePath);
+                if (meshData != null)
+                {
+                    _loadedMeshes[meshName] = meshData;
+                    Debug.WriteLine($"Loaded mesh on demand: {meshName} ({meshData.VertexCount} vertices, {meshData.TriangleCount} triangles) in {sw.ElapsedMilliseconds}ms");
+                }
+                return meshData;
+            }
+        }
+
+        /// <summary>
+        /// メッシュのメタデータを取得（読み込みなし）
+        /// </summary>
+        public MeshMetadata? GetMeshMetadata(string meshName)
+        {
+            return _meshMetadata.TryGetValue(meshName, out var metadata) ? metadata : null;
         }
 
         private void EnsureDirectoriesExist()
@@ -553,7 +599,11 @@ namespace RayTraceVS.WPF.Services
             }
         }
 
-        private void LoadAllMeshesToMemory()
+        /// <summary>
+        /// キャッシュフォルダ内のすべてのメッシュファイルをスキャンし、メタデータのみを読み込む
+        /// 実際のメッシュデータは遅延読み込みで必要時に読み込む
+        /// </summary>
+        private void ScanAllMeshFiles()
         {
             if (!Directory.Exists(CacheFolder))
                 return;
@@ -562,12 +612,55 @@ namespace RayTraceVS.WPF.Services
             foreach (var cachePath in cacheFiles)
             {
                 var meshName = Path.GetFileNameWithoutExtension(cachePath);
-                var meshData = LoadMeshFromCache(cachePath);
-                if (meshData != null)
+                var metadata = ReadMeshMetadata(cachePath);
+                if (metadata != null)
                 {
-                    _meshCache[meshName] = meshData;
-                    Debug.WriteLine($"Loaded mesh: {meshName} ({meshData.VertexCount} vertices, {meshData.TriangleCount} triangles)");
+                    _meshMetadata[meshName] = metadata;
+                    Debug.WriteLine($"Scanned mesh: {meshName} ({metadata.VertexCount} vertices, {metadata.TriangleCount} triangles)");
                 }
+            }
+        }
+
+        /// <summary>
+        /// メッシュファイルからメタデータ（ヘッダー）のみを読み込む
+        /// </summary>
+        private MeshMetadata? ReadMeshMetadata(string cachePath)
+        {
+            if (!File.Exists(cachePath))
+                return null;
+
+            try
+            {
+                using var stream = new FileStream(cachePath, FileMode.Open, FileAccess.Read);
+                using var reader = new BinaryReader(stream);
+
+                // Header (40 bytes)
+                var magic = new string(reader.ReadChars(4));
+                if (magic != CACHE_MAGIC)
+                    return null;
+
+                var version = reader.ReadUInt32();
+                if (version != CACHE_VERSION)
+                    return null;
+
+                var vertexCount = reader.ReadUInt32();
+                var indexCount = reader.ReadUInt32();
+                var boundsMin = new Vector3(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
+                var boundsMax = new Vector3(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
+
+                return new MeshMetadata
+                {
+                    CachePath = cachePath,
+                    VertexCount = (int)vertexCount,
+                    IndexCount = (int)indexCount,
+                    TriangleCount = (int)(indexCount / 3),
+                    BoundsMin = boundsMin,
+                    BoundsMax = boundsMax
+                };
+            }
+            catch
+            {
+                return null;
             }
         }
 
@@ -665,5 +758,42 @@ namespace RayTraceVS.WPF.Services
 
         [JsonProperty("indexCount")]
         public int IndexCount { get; set; }
+    }
+
+    /// <summary>
+    /// メッシュのメタデータ（遅延読み込み用）
+    /// ヘッダー情報のみを保持し、実際のデータはGetMesh()時に読み込む
+    /// </summary>
+    public class MeshMetadata
+    {
+        /// <summary>
+        /// キャッシュファイルのパス
+        /// </summary>
+        public string CachePath { get; set; } = "";
+
+        /// <summary>
+        /// 頂点数
+        /// </summary>
+        public int VertexCount { get; set; }
+
+        /// <summary>
+        /// インデックス数
+        /// </summary>
+        public int IndexCount { get; set; }
+
+        /// <summary>
+        /// 三角形数
+        /// </summary>
+        public int TriangleCount { get; set; }
+
+        /// <summary>
+        /// バウンディングボックス最小値
+        /// </summary>
+        public Vector3 BoundsMin { get; set; }
+
+        /// <summary>
+        /// バウンディングボックス最大値
+        /// </summary>
+        public Vector3 BoundsMax { get; set; }
     }
 }

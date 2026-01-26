@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using System.Windows;
 using RayTraceVS.WPF.Services;
@@ -7,7 +8,8 @@ namespace RayTraceVS.WPF
     public partial class App : Application
     {
 #if DEBUG
-        private const string DebugLogPath = @"C:\git\RayTraceVS\debug.log";
+        // Debug log path relative to the executable location
+        private static readonly string DebugLogPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "debug.log");
 #endif
 
         /// <summary>

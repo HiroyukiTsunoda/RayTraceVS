@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:controls="clr-namespace:RayTraceVS.WPF.Views.Controls"
              mc:Ignorable="d" 
              d:DesignHeight="450" d:DesignWidth="800"
              ClipToBounds="True"
@@ -41,10 +42,12 @@
                 </DrawingBrush>
             </Canvas.Background>
             
-            <!-- 接続線の中間部分用キャンバス（最下層） -->
-            <Canvas x:Name="MiddleConnectionLayer"
-                    Panel.ZIndex="0"
-                    IsHitTestVisible="False"/>
+            <!-- 接続線の中間部分用レイヤー（最下層） - 非選択ノードの接続線 -->
+            <!-- DrawingVisualで一括描画することでパフォーマンス向上 -->
+            <controls:ConnectionLineRenderer x:Name="MiddleConnectionRenderer"
+                                             Connections="{Binding UnselectedNodeConnections}"
+                                             RenderMode="Middle"
+                                             Panel.ZIndex="0"/>
             
             <!-- ノード用キャンバス -->
             <Canvas x:Name="NodeLayer"
@@ -224,26 +227,26 @@
                 </ItemsControl>
             </Canvas>
             
-            <!-- 接続線の端部分用キャンバス（ノードより上） -->
-            <Canvas x:Name="EndSegmentLayer"
-                    Panel.ZIndex="2"
-                    IsHitTestVisible="False"/>
+            <!-- 接続線の端部分用レイヤー（ノードより上） - 非選択ノードの接続線 -->
+            <!-- DrawingVisualで一括描画することでパフォーマンス向上 -->
+            <controls:ConnectionLineRenderer x:Name="EndSegmentRenderer"
+                                             Connections="{Binding UnselectedNodeConnections}"
+                                             RenderMode="StartEnd"
+                                             Panel.ZIndex="2"/>
             
-            <!-- 選択ノードの接続線用キャンバス（最上層） -->
-            <Canvas x:Name="SelectedConnectionLayer"
-                    Panel.ZIndex="3"
+            <!-- 選択ノードの接続線用レイヤー（ノードより上） -->
+            <!-- DrawingVisualで一括描画することでパフォーマンス向上 -->
+            <controls:ConnectionLineRenderer x:Name="SelectedConnectionRenderer"
+                                             Connections="{Binding SelectedNodeConnections}"
+                                             RenderMode="Full"
+                                             Panel.ZIndex="3"/>
+            
+            <!-- プレビュー線・選択矩形用レイヤー（最上層） -->
+            <Canvas x:Name="PreviewLayer"
+                    Panel.ZIndex="4"
                     IsHitTestVisible="False"/>
         </Canvas>
         
-        <!-- 後方互換性のためConnectionLayerは維持（非表示、使用しない） -->
-        <Canvas x:Name="ConnectionLayer"
-                Panel.ZIndex="1"
-                Width="12800"
-                Height="7200"
-                ClipToBounds="True"
-                IsHitTestVisible="False"
-                Visibility="Collapsed"/>
-
         <!-- ナビゲーション情報 -->
         <Border VerticalAlignment="Top" HorizontalAlignment="Right" 
                 Margin="10" Background="#80000000" Padding="5">

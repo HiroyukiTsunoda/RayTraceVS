@@ -854,39 +854,25 @@ void RayGen()
     float outRoughness = anyHit ? primaryRoughness : 1.0;
     float3 outAlbedo = anyHit ? primaryAlbedo : float3(1.0, 1.0, 1.0);
     
-    // Convert world space normal to view space for NRD
-    // View space: X=right, Y=up, Z=forward (into screen)
-    float3 viewSpaceNormal;
-    viewSpaceNormal.x = dot(worldNormal, cameraRight);
-    viewSpaceNormal.y = dot(worldNormal, cameraUp);
-    viewSpaceNormal.z = dot(worldNormal, cameraForward);
-    viewSpaceNormal = normalize(viewSpaceNormal);
+    // Build NRD inputs using centralized coordinate system conversion
+    // See NRDEncoding.hlsli for the authoritative coordinate convention documentation
+    NRDInputs nrdInputs = NRD_BuildInputs(
+        worldNormal,
+        primaryPosition,
+        cameraPos,
+        cameraRight,
+        cameraUp,
+        cameraForward,
+        Scene.ViewProjection,
+        Scene.PrevViewProjection,
+        float2(Scene.ScreenWidth, Scene.ScreenHeight),
+        anyHit
+    );
     
-    // Calculate correct linear view depth (ViewZ)
-    // NRD/SIGMA expects POSITIVE view depth (distance along camera forward)
-    // IMPORTANT: For miss pixels, use a large value (not 0) so SIGMA can properly
-    // handle edge filtering. Zero viewZ causes discontinuities that confuse SIGMA.
-    float outViewZ;
-    float outAlbedoAlpha;  // 1.0 for hits, 0.0 for misses (used in Composite for sky detection)
-    if (anyHit)
-    {
-        float3 hitOffset = primaryPosition - cameraPos;
-        outViewZ = dot(hitOffset, cameraForward);  // Positive distance along forward
-        outViewZ = max(outViewZ, 0.01);  // Minimum positive depth (avoid zero)
-        outAlbedoAlpha = 1.0;
-    }
-    else
-    {
-        // Use large depth for misses - this helps SIGMA handle edges properly
-        // by avoiding sharp depth discontinuities (0 vs large value)
-        outViewZ = 10000.0;  // Far distance for sky/miss pixels
-        outAlbedoAlpha = 0.0;  // Mark as miss for Composite shader
-    }
-    
-    // Pack normal and roughness for NRD (using view space normal)
-    GBuffer_NormalRoughness[launchIndex] = NRD_FrontEnd_PackNormalAndRoughness(viewSpaceNormal, outRoughness);
-    GBuffer_ViewZ[launchIndex] = outViewZ;
-    GBuffer_Albedo[launchIndex] = float4(outAlbedo, outAlbedoAlpha);
+    // Pack normal and roughness for NRD (using view space normal from NRD_BuildInputs)
+    GBuffer_NormalRoughness[launchIndex] = NRD_FrontEnd_PackNormalAndRoughness(nrdInputs.viewSpaceNormal, outRoughness);
+    GBuffer_ViewZ[launchIndex] = nrdInputs.viewZ;
+    GBuffer_Albedo[launchIndex] = float4(outAlbedo, nrdInputs.albedoAlpha);
     
     // SIGMA shadow inputs - Use RAW PRIMARY SAMPLE data, NOT averaged!
     // SIGMA expects noisy single-sample input for temporal reconstruction
@@ -894,11 +880,12 @@ void RayGen()
     
     // SIGMA penumbra encoding:
     // - NRD_FP16_MAX (65504) = fully lit (no shadow, no occluder)
-    // - Small value (0.1 to ~100) = shadow with penumbra size in world units
+    // - Small value (SIGMA_PENUMBRA_MIN to SIGMA_PENUMBRA_PRACTICAL_MAX) = shadow with penumbra size in world units
     // IMPORTANT: SIGMA expects penumbra to be much smaller than NRD_FP16_MAX
     // Values > ~1000 are treated as "almost no shadow"
+    // See NRDEncoding.hlsli for constant definitions and rationale
     float sigmaPenumbra;
-    if (primaryShadowVisibility > 0.99)
+    if (primaryShadowVisibility > SHADOW_FULLY_LIT_THRESHOLD)
     {
         sigmaPenumbra = NRD_FP16_MAX;  // Fully lit - no shadow
     }
@@ -906,8 +893,8 @@ void RayGen()
     {
         // Shadow area - clamp penumbra to reasonable range for SIGMA
         // primaryShadowPenumbra can be very large due to light size calculations
-        // Clamp to max 100 to ensure SIGMA recognizes it as shadow
-        sigmaPenumbra = clamp(primaryShadowPenumbra, 0.1, 100.0);
+        // Clamp to SIGMA_PENUMBRA_PRACTICAL_MAX to ensure SIGMA recognizes it as shadow
+        sigmaPenumbra = clamp(primaryShadowPenumbra, SIGMA_PENUMBRA_MIN, SIGMA_PENUMBRA_PRACTICAL_MAX);
     }
     
     // Sanitize shadow values before SIGMA - NaN/Inf or out-of-range values cause white sparkles
@@ -926,20 +913,8 @@ void RayGen()
     );
     GBuffer_ShadowTranslucency[launchIndex] = packedTranslucency;
     
-    // Motion vectors: screen-space pixel delta (current - previous)
-    float2 motion = float2(0, 0);
-    if (anyHit)
-    {
-        float4 currClip = mul(float4(primaryPosition, 1.0), Scene.ViewProjection);
-        float4 prevClip = mul(float4(primaryPosition, 1.0), Scene.PrevViewProjection);
-        float2 currNdc = currClip.xy / currClip.w;
-        float2 prevNdc = prevClip.xy / prevClip.w;
-        float2 ndcDelta = currNdc - prevNdc;
-        // NDC -1..1 to pixel delta (scaled down to avoid overshoot)
-        float2 pixelScale = float2(Scene.ScreenWidth, Scene.ScreenHeight) * 0.5;
-        motion = ndcDelta * pixelScale * 0.1; // dampen motion for stability
-        // Clamp to reasonable range
-        motion = clamp(motion, float2(-8, -8), float2(8, 8));
-    }
-    GBuffer_MotionVectors[launchIndex] = motion;
+    // Motion vectors: use centralized calculation from NRD_BuildInputs
+    // Note: No damping applied - correct pixel-space motion for NRD
+    // If stabilization is needed, adjust NRD settings (maxAccumulatedFrameNum, etc.)
+    GBuffer_MotionVectors[launchIndex] = nrdInputs.motionVector;
 }

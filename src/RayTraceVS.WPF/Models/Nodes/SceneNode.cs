@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using RayTraceVS.WPF.Models.Data;
@@ -11,6 +12,11 @@ namespace RayTraceVS.WPF.Models.Nodes
         private int objectSocketCount = 0;
         private int lightSocketCount = 0;
 
+#if DEBUG
+        // Debug log path relative to the executable location
+        private static readonly string DebugLogPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "debug.log");
+#endif
+
         private int _samplesPerPixel = 2;
         public int SamplesPerPixel
         {
@@ -18,13 +24,13 @@ namespace RayTraceVS.WPF.Models.Nodes
             set
             {
 #if DEBUG
-                try { System.IO.File.AppendAllText(@"C:\git\RayTraceVS\debug.log", $"[SceneNode] SamplesPerPixel setter called with: {value}, current: {_samplesPerPixel}\n"); } catch { }
+                try { File.AppendAllText(DebugLogPath, $"[SceneNode] SamplesPerPixel setter called with: {value}, current: {_samplesPerPixel}\n"); } catch { }
 #endif
                 if (SetProperty(ref _samplesPerPixel, value))
                 {
                     MarkDirty();
 #if DEBUG
-                    try { System.IO.File.AppendAllText(@"C:\git\RayTraceVS\debug.log", $"[SceneNode] SamplesPerPixel changed to: {value}, MarkDirty called\n"); } catch { }
+                    try { File.AppendAllText(DebugLogPath, $"[SceneNode] SamplesPerPixel changed to: {value}, MarkDirty called\n"); } catch { }
 #endif
                 }
             }

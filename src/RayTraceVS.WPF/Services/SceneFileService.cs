@@ -719,6 +719,10 @@ namespace RayTraceVS.WPF.Services
         
         // コンポーネントパレットのExpander開閉状態
         public ExpanderStates? ExpanderStates { get; set; }
+        
+        // レンダリング解像度（デフォルトは1920x1080）
+        public int RenderWidth { get; set; } = 1920;
+        public int RenderHeight { get; set; } = 1080;
     }
     
     /// <summary>

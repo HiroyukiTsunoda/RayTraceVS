@@ -587,7 +587,7 @@
     {
       "Id": "1421c25d-c665-46e5-a66c-95e3cf7871ad",
       "Type": "MaterialBSDFNode",
-      "Title": "Material BSDF",
+      "Title": "BSDF",
       "PositionX": 1750.7731174126618,
       "PositionY": 1507.2325821370378,
       "Properties": {
@@ -759,7 +759,7 @@
     {
       "Id": "1617550e-1ef3-4181-827f-4a2fa22edc0d",
       "Type": "MaterialBSDFNode",
-      "Title": "Material BSDF",
+      "Title": "BSDF",
       "PositionX": 1722.4588591280826,
       "PositionY": 1172.8745418415733,
       "Properties": {
@@ -812,7 +812,7 @@
     {
       "Id": "e95067f7-f296-46db-9088-6adaf7893999",
       "Type": "MaterialBSDFNode",
-      "Title": "Material BSDF",
+      "Title": "BSDF",
       "PositionX": 1803.4087550224667,
       "PositionY": 2125.8237551484426,
       "Properties": {
@@ -1002,6 +1002,40 @@
         "X": 0.0,
         "Y": 0.4,
         "Z": 0.4
+      }
+    },
+    {
+      "Id": "01d4dc11-2a8c-4153-a23d-9a24a1e80edd",
+      "Type": "FBXMeshNode",
+      "Title": "WineGlass",
+      "PositionX": 2077.2501385659957,
+      "PositionY": 1999.8401863986528,
+      "Properties": {
+        "MeshName": "WineGlass",
+        "Transform": {
+          "Position": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "Rotation": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0,
+            "W": 1.0,
+            "IsIdentity": true
+          },
+          "Scale": {
+            "X": 1.0,
+            "Y": 1.0,
+            "Z": 1.0
+          },
+          "EulerAngles": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          }
+        }
       }
     }
   ],
@@ -1331,18 +1365,6 @@
       "InputSocketName": "Scale"
     },
     {
-      "OutputNodeId": "252760db-13ab-40f1-a848-c4003b7f1745",
-      "OutputSocketName": "Transform",
-      "InputNodeId": "dd915a63-04be-4e65-ae5a-efe250a86e3e",
-      "InputSocketName": "Transform"
-    },
-    {
-      "OutputNodeId": "e95067f7-f296-46db-9088-6adaf7893999",
-      "OutputSocketName": "Material",
-      "InputNodeId": "dd915a63-04be-4e65-ae5a-efe250a86e3e",
-      "InputSocketName": "Material"
-    },
-    {
       "OutputNodeId": "a1b2c3d4-e5f6-7890-abcd-333333333333",
       "OutputSocketName": "Camera",
       "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
@@ -1385,12 +1407,6 @@
       "InputSocketName": "Object4"
     },
     {
-      "OutputNodeId": "dd915a63-04be-4e65-ae5a-efe250a86e3e",
-      "OutputSocketName": "Object",
-      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
-      "InputSocketName": "Object5"
-    },
-    {
       "OutputNodeId": "1574bc15-76ea-4253-bde5-8f62befa63a3",
       "OutputSocketName": "Light",
       "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
@@ -1425,12 +1441,30 @@
       "OutputSocketName": "Vector",
       "InputNodeId": "1617550e-1ef3-4181-827f-4a2fa22edc0d",
       "InputSocketName": "Absorption"
+    },
+    {
+      "OutputNodeId": "252760db-13ab-40f1-a848-c4003b7f1745",
+      "OutputSocketName": "Transform",
+      "InputNodeId": "dd915a63-04be-4e65-ae5a-efe250a86e3e",
+      "InputSocketName": "Transform"
+    },
+    {
+      "OutputNodeId": "e95067f7-f296-46db-9088-6adaf7893999",
+      "OutputSocketName": "Material",
+      "InputNodeId": "dd915a63-04be-4e65-ae5a-efe250a86e3e",
+      "InputSocketName": "Material"
+    },
+    {
+      "OutputNodeId": "dd915a63-04be-4e65-ae5a-efe250a86e3e",
+      "OutputSocketName": "Object",
+      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
+      "InputSocketName": "Object5"
     }
   ],
   "Viewport": {
-    "PanX": -359.8538925245066,
-    "PanY": -612.132046815156,
-    "Zoom": 0.7000000000000005,
+    "PanX": -1043.5568434413096,
+    "PanY": -967.059848099099,
+    "Zoom": 0.9400000000000005,
     "IsLeftPanelVisible": true,
     "IsRightPanelVisible": true,
     "ExpanderStates": {
@@ -1441,6 +1475,8 @@
       "IsCameraExpanded": true,
       "IsLightExpanded": true,
       "IsSceneExpanded": true
-    }
+    },
+    "RenderWidth": 1920,
+    "RenderHeight": 1080
   }
 }

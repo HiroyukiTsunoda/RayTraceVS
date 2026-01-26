@@ -17,71 +17,97 @@ using RayTraceVS.WPF.ViewModels;
 using RayTraceVS.WPF.Models;
 using RayTraceVS.WPF.Models.Nodes;
 using RayTraceVS.WPF.Utils;
+using RayTraceVS.WPF.Views.Handlers;
 
 namespace RayTraceVS.WPF.Views
 {
     public partial class NodeEditorView : UserControl
     {
-        private Point lastMousePosition;
-        private bool isPanning = false;
-        private bool isDraggingNode = false;
-        private bool isDraggingConnection = false;
-        private bool isRectSelecting = false;
-        private Node? draggedNode = null;
-        private NodeSocket? draggedSocket = null;
-        private Ellipse? draggedSocketElement = null;
-        private Point dragStartOffset;
-        private Line? previewLine = null;
+        // ハンドラーと共有状態
+        private readonly EditorInputState _inputState;
+        private readonly CoordinateTransformer _coordTransformer;
+        private readonly PanZoomHandler _panZoomHandler;
+        private readonly SelectionHandler _selectionHandler;
+        private readonly NodeDragHandler _nodeDragHandler;
+        private readonly ConnectionHandler _connectionHandler;
+        private readonly TextBoxInputHandler _textBoxInputHandler;
+        private readonly EditCommandHandler _editCommandHandler;
+        
+        // EditorInputState へのショートカットプロパティ（移行期間中の互換性のため）
+        private Point lastMousePosition { get => _inputState.LastMousePosition; set => _inputState.LastMousePosition = value; }
+        private bool isPanning { get => _inputState.IsPanning; set => _inputState.IsPanning = value; }
+        private bool isDraggingNode { get => _inputState.IsDraggingNode; set => _inputState.IsDraggingNode = value; }
+        private bool isDraggingConnection { get => _inputState.IsDraggingConnection; set => _inputState.IsDraggingConnection = value; }
+        private bool isRectSelecting { get => _inputState.IsRectSelecting; set => _inputState.IsRectSelecting = value; }
+        private Node? draggedNode { get => _inputState.DraggedNode; set => _inputState.DraggedNode = value; }
+        private NodeSocket? draggedSocket { get => _inputState.DraggedSocket; set => _inputState.DraggedSocket = value; }
+        private Ellipse? draggedSocketElement { get => _inputState.DraggedSocketElement; set => _inputState.DraggedSocketElement = value; }
+        private Point dragStartOffset { get => _inputState.DragStartOffset; set => _inputState.DragStartOffset = value; }
+        private Line? previewLine { get => _inputState.PreviewLine; set => _inputState.PreviewLine = value; }
         
         // 複数選択関連
-        private HashSet<Node> selectedNodes = new HashSet<Node>();
-        private Point rectSelectStartPoint;
-        private Rectangle? selectionRectangle = null;
-        private Dictionary<Node, Point> multiDragOffsets = new Dictionary<Node, Point>();
-        
-        // ドラッグ開始時の位置を記録（Undo用）
-        private Dictionary<Node, Point> dragStartPositions = new Dictionary<Node, Point>();
-        
-        // 接続ドラッグ開始時に一時削除した接続（キャンセル時に復元するため）
-        private NodeConnection? _tempRemovedConnection = null;
-        // 一時削除時にSceneNodeから削除されたソケット情報
-        private NodeSocket? _tempRemovedSocket = null;
-        private int _tempRemovedSocketIndex = -1;
+        private HashSet<Node> selectedNodes => _inputState.SelectedNodes;
+        private Point rectSelectStartPoint { get => _inputState.RectSelectStartPoint; set => _inputState.RectSelectStartPoint = value; }
+        private Rectangle? selectionRectangle { get => _inputState.SelectionRectangle; set => _inputState.SelectionRectangle = value; }
+        private Dictionary<Node, Point> multiDragOffsets => _inputState.MultiDragOffsets;
         
         // パラメーター変更のUndo用（TextBoxのフォーカス取得時に変更前の値を記録）
-        private Dictionary<TextBox, float> _textBoxOriginalValues = new Dictionary<TextBox, float>();
+        private Dictionary<TextBox, float> _textBoxOriginalValues => _inputState.TextBoxOriginalValues;
         
         // パン・ズーム用
-        private TranslateTransform panTransform = new TranslateTransform();
-        private ScaleTransform zoomTransform = new ScaleTransform();
-        private TransformGroup transformGroup = new TransformGroup();
+        private TranslateTransform panTransform => _inputState.PanTransform;
+        private ScaleTransform zoomTransform => _inputState.ZoomTransform;
+        private TransformGroup transformGroup => _inputState.TransformGroup;
         
-        private double currentZoom = 1.0;
-        private const double MinZoom = 0.1;
-        private const double MaxZoom = 5.0;
-        private const double ZoomSpeed = 0.001;
-        
-        // 接続線のPath要素を管理（後方互換性のため維持）
-        private Dictionary<NodeConnection, Path> connectionPaths = new Dictionary<NodeConnection, Path>();
-        
-        // 分割された接続線のPath要素を管理
-        private Dictionary<NodeConnection, Path> middlePaths = new Dictionary<NodeConnection, Path>();
-        private Dictionary<NodeConnection, Path> startSegmentPaths = new Dictionary<NodeConnection, Path>();
-        private Dictionary<NodeConnection, Path> endSegmentPaths = new Dictionary<NodeConnection, Path>();
+        private double currentZoom { get => _inputState.CurrentZoom; set => _inputState.CurrentZoom = value; }
+        private const double MinZoom = EditorInputState.MinZoom;
+        private const double MaxZoom = EditorInputState.MaxZoom;
+        private const double ZoomSpeed = EditorInputState.ZoomSpeed;
 
         public NodeEditorView()
         {
             InitializeComponent();
             
+            // ハンドラーと共有状態を初期化
+            _inputState = new EditorInputState();
+            _inputState.GetViewModel = GetViewModel;
+            
+            // 座標変換を一元管理するトランスフォーマーを初期化
+            _coordTransformer = new CoordinateTransformer(_inputState, this);
+            
+            _panZoomHandler = new PanZoomHandler(_inputState);
+            _panZoomHandler.SetCoordinateTransformer(_coordTransformer);
+            
+            _selectionHandler = new SelectionHandler(_inputState)
+            {
+                OnSelectionChanged = UpdateConnectionLayersForSelectionChange,
+                GetNodeSize = GetNodeSizeForSelection
+            };
+            _nodeDragHandler = new NodeDragHandler(_inputState, OnNodeMoved)
+            {
+                OnRequestLayoutUpdate = () => NodeCanvas.UpdateLayout()
+            };
+            _connectionHandler = new ConnectionHandler(_inputState);
+            _textBoxInputHandler = new TextBoxInputHandler(_inputState)
+            {
+                ClearFocusToCanvas = () => { Keyboard.ClearFocus(); NodeCanvas.Focus(); },
+                GetViewModel = GetViewModel
+            };
+            _editCommandHandler = new EditCommandHandler(_inputState)
+            {
+                GetViewModel = GetViewModel,
+                ClearSelections = vm => _selectionHandler.ClearAllSelections(vm),
+                PerformCopy = HandleCopy,
+                PerformPaste = HandlePaste
+            };
+            
+            // UIコンポーネント参照を設定
+            _inputState.NodeCanvas = NodeCanvas;
+            _inputState.PreviewLayer = PreviewLayer;
+            
             // トランスフォームを設定
-            transformGroup.Children.Add(zoomTransform);
-            transformGroup.Children.Add(panTransform);
             NodeCanvas.RenderTransform = transformGroup;
             NodeCanvas.RenderTransformOrigin = new Point(0, 0);
-            // 新しいレイヤーはNodeCanvas内にあるため、親のトランスフォームが適用される
-            // 後方互換性のためConnectionLayerのトランスフォームも設定
-            ConnectionLayer.RenderTransform = transformGroup;
-            ConnectionLayer.RenderTransformOrigin = new Point(0, 0);
             
             // ロード後にフォーカスを設定
             Loaded += (s, e) =>
@@ -111,190 +137,27 @@ namespace RayTraceVS.WPF.Views
         }
         
         /// <summary>
-        /// 接続線のPath要素を再構築（分割されたレイヤーに追加）
+        /// ノードが移動されたときのコールバック（ハンドラーから呼び出される）
         /// </summary>
-        private void RebuildConnectionPaths()
+        private void OnNodeMoved(Node node)
         {
-            var viewModel = GetViewModel();
-            if (viewModel == null) return;
-
-            // 既存の接続線Pathをすべて削除
-            ClearAllConnectionPaths();
-
-            // 新しい接続線Pathを追加
-            foreach (var connection in viewModel.Connections)
-            {
-                AddConnectionToLayers(connection);
-            }
+            UpdateSocketPositionsFromNodePosition(node);
+            UpdateNodeConnections(node);
         }
-
+        
         /// <summary>
-        /// すべての接続線Pathをクリア
+        /// 選択判定用のノードサイズを取得するコールバック
         /// </summary>
-        private void ClearAllConnectionPaths()
+        private Size? GetNodeSizeForSelection(Node node)
         {
-            // SelectedConnectionLayer上の一部要素は保持（ドラッグ中プレビュー線など）
-            var preservedPreview = previewLine;
-            var preservedSelection = selectionRectangle;
-
-            // 中間部分
-            foreach (var path in middlePaths.Values)
+            var container = FindNodeContainer(node);
+            if (container != null)
             {
-                MiddleConnectionLayer.Children.Remove(path);
+                return new Size(container.ActualWidth, container.ActualHeight);
             }
-            middlePaths.Clear();
-
-            // 始点側端部分
-            foreach (var path in startSegmentPaths.Values)
-            {
-                EndSegmentLayer.Children.Remove(path);
-            }
-            startSegmentPaths.Clear();
-
-            // 終点側端部分
-            foreach (var path in endSegmentPaths.Values)
-            {
-                EndSegmentLayer.Children.Remove(path);
-            }
-            endSegmentPaths.Clear();
-
-            // 選択ノード用レイヤー
-            SelectedConnectionLayer.Children.Clear();
-
-            if (preservedPreview != null)
-            {
-                SelectedConnectionLayer.Children.Add(preservedPreview);
-            }
-            if (preservedSelection != null)
-            {
-                SelectedConnectionLayer.Children.Add(preservedSelection);
-            }
-
-            // 後方互換性のため古いPathも削除
-            foreach (var path in connectionPaths.Values)
-            {
-                ConnectionLayer.Children.Remove(path);
-            }
-            connectionPaths.Clear();
+            return null;
         }
-
-        /// <summary>
-        /// 接続線を適切なレイヤーに追加
-        /// </summary>
-        private void AddConnectionToLayers(NodeConnection connection)
-        {
-            var outputNode = connection.OutputSocket?.ParentNode;
-            var inputNode = connection.InputSocket?.ParentNode;
-            
-            if (outputNode == null || inputNode == null)
-                return;
-
-            bool isOutputSelected = outputNode.IsSelected;
-            bool isInputSelected = inputNode.IsSelected;
-            bool isSelected = isOutputSelected || isInputSelected;
-
-            if (isSelected)
-            {
-                // 選択ノードの接続線は全体をSelectedConnectionLayerに描画
-                var fullPath = new Path
-                {
-                    Stroke = connection.ConnectionColor,
-                    StrokeThickness = 3,
-                    Data = connection.PathGeometry,
-                    IsHitTestVisible = false,
-                    Opacity = 0.9
-                };
-                SelectedConnectionLayer.Children.Add(fullPath);
-                connectionPaths[connection] = fullPath;
-                
-                // 変更を監視
-                connection.PropertyChanged += ConnectionPropertyChangedHandler;
-            }
-            else
-            {
-                // 非選択ノードの接続線は分割して描画
-                
-                // 中間部分（最下層）
-                var middlePath = new Path
-                {
-                    Stroke = connection.ConnectionColor,
-                    StrokeThickness = 3,
-                    Data = connection.MiddlePathGeometry,
-                    IsHitTestVisible = false,
-                    Opacity = 0.9
-                };
-                MiddleConnectionLayer.Children.Add(middlePath);
-                middlePaths[connection] = middlePath;
-
-                // 始点側端部分（出力ノードのZIndexに合わせる）
-                var startPath = new Path
-                {
-                    Stroke = connection.ConnectionColor,
-                    StrokeThickness = 3,
-                    Data = connection.StartSegmentGeometry,
-                    IsHitTestVisible = false,
-                    Opacity = 0.9
-                };
-                Panel.SetZIndex(startPath, outputNode.CreationIndex + 1);
-                EndSegmentLayer.Children.Add(startPath);
-                startSegmentPaths[connection] = startPath;
-
-                // 終点側端部分（入力ノードのZIndexに合わせる）
-                var endPath = new Path
-                {
-                    Stroke = connection.ConnectionColor,
-                    StrokeThickness = 3,
-                    Data = connection.EndSegmentGeometry,
-                    IsHitTestVisible = false,
-                    Opacity = 0.9
-                };
-                Panel.SetZIndex(endPath, inputNode.CreationIndex + 1);
-                EndSegmentLayer.Children.Add(endPath);
-                endSegmentPaths[connection] = endPath;
-
-                // 変更を監視
-                connection.PropertyChanged += ConnectionSegmentPropertyChangedHandler;
-            }
-        }
-
-        /// <summary>
-        /// 接続線のプロパティ変更ハンドラ（選択時用）
-        /// </summary>
-        private void ConnectionPropertyChangedHandler(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
-        {
-            if (sender is NodeConnection connection && 
-                e.PropertyName == nameof(NodeConnection.PathGeometry) && 
-                connectionPaths.TryGetValue(connection, out var path))
-            {
-                path.Data = connection.PathGeometry;
-            }
-        }
-
-        /// <summary>
-        /// 接続線のプロパティ変更ハンドラ（非選択時の分割表示用）
-        /// </summary>
-        private void ConnectionSegmentPropertyChangedHandler(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
-        {
-            if (sender is not NodeConnection connection)
-                return;
-
-            switch (e.PropertyName)
-            {
-                case nameof(NodeConnection.MiddlePathGeometry):
-                    if (middlePaths.TryGetValue(connection, out var middlePath))
-                        middlePath.Data = connection.MiddlePathGeometry;
-                    break;
-                case nameof(NodeConnection.StartSegmentGeometry):
-                    if (startSegmentPaths.TryGetValue(connection, out var startPath))
-                        startPath.Data = connection.StartSegmentGeometry;
-                    break;
-                case nameof(NodeConnection.EndSegmentGeometry):
-                    if (endSegmentPaths.TryGetValue(connection, out var endPath))
-                        endPath.Data = connection.EndSegmentGeometry;
-                    break;
-            }
-        }
-
+        
         /// <summary>
         /// 選択状態が変更されたときに接続線のレイヤーを更新
         /// </summary>
@@ -303,8 +166,8 @@ namespace RayTraceVS.WPF.Views
             var viewModel = GetViewModel();
             if (viewModel == null) return;
 
-            // 接続線を再構築
-            RebuildConnectionPaths();
+            // ItemsControlのフィルタリングビューを更新
+            viewModel.RefreshConnectionViews();
         }
 
         /// <summary>
@@ -350,14 +213,13 @@ namespace RayTraceVS.WPF.Views
         {
             try
             {
-                // Ellipseの中心のCanvas上の座標を取得
-                var transform = ellipse.TransformToAncestor(NodeCanvas);
-                var centerPoint = transform.Transform(new Point(ellipse.ActualWidth / 2, ellipse.ActualHeight / 2));
+                // CoordinateTransformerを使用してEllipseの中心座標を取得
+                var centerPoint = _coordTransformer.GetElementCenterOnCanvas(ellipse);
                 socket.Position = centerPoint;
             }
             catch (Exception ex)
             {
-                // TransformToAncestor can fail if the element is not in the visual tree
+                // GetElementCenterOnCanvas can fail if the element is not in the visual tree
                 System.Diagnostics.Debug.WriteLine($"UpdateSocketPositionFromUI: 座標変換に失敗 - {ex.Message}");
             }
         }
@@ -386,10 +248,11 @@ namespace RayTraceVS.WPF.Views
             foreach (var connection in viewModel.Connections)
             {
                 connection.UpdatePath();
+                connection.UpdateIsSelected();
             }
             
-            // 接続線を再構築（必ず最前面に描画される）
-            RebuildConnectionPaths();
+            // 接続線のフィルタリングビューを更新
+            viewModel.RefreshConnectionViews();
         }
 
         /// <summary>
@@ -447,7 +310,6 @@ namespace RayTraceVS.WPF.Views
             
             // トランスフォームの変更を即座に反映
             NodeCanvas.UpdateLayout();
-            ConnectionLayer.UpdateLayout();
         }
         
         /// <summary>
@@ -535,7 +397,7 @@ namespace RayTraceVS.WPF.Views
             var viewModel = GetViewModel();
             if (viewModel == null) return;
 
-            var mousePos = e.GetPosition(NodeCanvas);
+            var mousePos = _coordTransformer.GetCanvasPosition(e);
             
             // ノードやソケットをヒットテストで探す
             var hitElement = NodeCanvas.InputHitTest(mousePos) as DependencyObject;
@@ -557,7 +419,7 @@ namespace RayTraceVS.WPF.Views
                     var existingConnection = viewModel.Connections.FirstOrDefault(c => c.InputSocket == nodeSocket);
                     if (existingConnection != null)
                     {
-                        // 既存の接続を削除し、出力ソケット側からドラッグを開始
+                        // 出力ソケット側からドラッグを開始（接続は削除せず記憶のみ）
                         var outputSocket = existingConnection.OutputSocket;
                         
                         if (outputSocket != null)
@@ -565,8 +427,7 @@ namespace RayTraceVS.WPF.Views
                             // 既存の接続線が持っている出力ソケットの位置を使用（最も正確）
                             Point savedOutputSocketPos = outputSocket.Position;
                             
-                            draggedSocket = outputSocket;
-                            draggedSocketElement = null;
+                            Ellipse? outputSocketElement = null;
                             
                             // UI要素も探しておく（ドラッグ中の更新用）
                             var outputNode = outputSocket.ParentNode;
@@ -575,46 +436,16 @@ namespace RayTraceVS.WPF.Views
                                 var outputNodeContainer = FindNodeContainer(outputNode);
                                 if (outputNodeContainer != null)
                                 {
-                                    draggedSocketElement = FindSocketElement(outputNodeContainer, outputSocket);
+                                    outputSocketElement = FindSocketElement(outputNodeContainer, outputSocket);
                                 }
                             }
                             
-                            // 接続を一時的に削除（キャンセル時に復元するため）
-                            _tempRemovedConnection = existingConnection;
-                            
-                            // SceneNodeのソケット情報を記録（削除される前に）
-                            _tempRemovedSocket = null;
-                            _tempRemovedSocketIndex = -1;
-                            if (nodeSocket.ParentNode is SceneNode sceneNode1)
-                            {
-                                _tempRemovedSocketIndex = sceneNode1.InputSockets.IndexOf(nodeSocket);
-                            }
-                            
-                            // ソケット数を記録
-                            int socketCountBefore1 = 0;
-                            SceneNode? sn1 = nodeSocket.ParentNode as SceneNode;
-                            if (sn1 != null) socketCountBefore1 = sn1.InputSockets.Count;
-                            
-                            viewModel.RemoveConnection(existingConnection);
-                            
-                            // ソケットが削除されたか確認
-                            if (sn1 != null && sn1.InputSockets.Count < socketCountBefore1 && !sn1.InputSockets.Contains(nodeSocket))
-                            {
-                                _tempRemovedSocket = nodeSocket;
-                            }
-                            
-                            // 接続のドラッグ開始
-                            isDraggingConnection = true;
-                            CreatePreviewLine(outputSocket);
-                            
-                            // 既存の接続線が持っていた正確な位置を使用
-                            if (previewLine != null)
-                            {
-                                previewLine.X1 = savedOutputSocketPos.X;
-                                previewLine.Y1 = savedOutputSocketPos.Y;
-                                previewLine.X2 = savedOutputSocketPos.X;
-                                previewLine.Y2 = savedOutputSocketPos.Y;
-                            }
+                            // 接続のドラッグ開始（ハンドラーに委譲、接続は削除せず記憶のみ）
+                            _connectionHandler.StartConnectionDragFromExisting(
+                                existingConnection, 
+                                outputSocket, 
+                                outputSocketElement, 
+                                savedOutputSocketPos);
                             
                             NodeCanvas.CaptureMouse();
                             e.Handled = true;
@@ -623,22 +454,9 @@ namespace RayTraceVS.WPF.Views
                     }
                 }
                 
-                // 接続のドラッグ開始（通常の新規接続）
-                isDraggingConnection = true;
-                draggedSocket = nodeSocket;
-                draggedSocketElement = socket;
-                ClearTempRemovedConnectionState();  // 新規接続なので一時削除した接続はない
-                CreatePreviewLine(nodeSocket);
-                
-                // 初期位置を設定
+                // 接続のドラッグ開始（ハンドラーに委譲、新規接続）
                 var socketPos = GetSocketElementPosition(socket);
-                if (previewLine != null)
-                {
-                    previewLine.X1 = socketPos.X;
-                    previewLine.Y1 = socketPos.Y;
-                    previewLine.X2 = socketPos.X;
-                    previewLine.Y2 = socketPos.Y;
-                }
+                _connectionHandler.StartConnectionDrag(nodeSocket, socket, socketPos);
                 
                 NodeCanvas.CaptureMouse();
                 e.Handled = true;
@@ -651,84 +469,41 @@ namespace RayTraceVS.WPF.Views
             if (border != null && border.DataContext is Node node)
             {
                 
-                // 既に選択されているノードをクリックした場合は複数選択を維持
+                // 既に選択されているノードをクリックした場合は複数選択を維持してドラッグ開始（ハンドラーに委譲）
                 if (selectedNodes.Contains(node))
                 {
-                    // 複数選択されている場合は全てのノードのオフセットを計算
-                    isDraggingNode = true;
-                    draggedNode = node;
-                    multiDragOffsets.Clear();
-                    dragStartPositions.Clear();
-                    
-                    foreach (var selectedNode in selectedNodes)
-                    {
-                        multiDragOffsets[selectedNode] = new Point(
-                            mousePos.X - selectedNode.Position.X,
-                            mousePos.Y - selectedNode.Position.Y
-                        );
-                        // ドラッグ開始位置を記録（Undo用）
-                        dragStartPositions[selectedNode] = selectedNode.Position;
-                    }
-                    
+                    _nodeDragHandler.StartDrag(node, mousePos, selectedNodes);
                     NodeCanvas.CaptureMouse();
                     e.Handled = true;
                     return;
                 }
                 
-                // 新しいノードを単一選択
-                ClearAllSelections(viewModel);
+                // 新しいノードを単一選択（ハンドラーに委譲）
+                _selectionHandler.SelectNode(node, viewModel);
                 
-                node.IsSelected = true;
-                selectedNodes.Add(node);
-                viewModel.SelectedNode = node; // プロパティパネル用に設定
-                
-                // 選択状態が変更されたので接続線のレイヤーを更新
-                UpdateConnectionLayersForSelectionChange();
-                
-                isDraggingNode = true;
-                draggedNode = node;
-                
-                // 常にmultiDragOffsetsを使用（単一選択でも統一）
-                multiDragOffsets.Clear();
-                multiDragOffsets[node] = new Point(mousePos.X - node.Position.X, mousePos.Y - node.Position.Y);
-                
-                // ドラッグ開始位置を記録（Undo用）
-                dragStartPositions.Clear();
-                dragStartPositions[node] = node.Position;
-                
-                // フォールバック用にdragStartOffsetも設定
-                dragStartOffset = new Point(mousePos.X - node.Position.X, mousePos.Y - node.Position.Y);
+                // ノードドラッグ開始（ハンドラーに委譲）
+                _nodeDragHandler.StartDrag(node, mousePos, new[] { node });
                 
                 NodeCanvas.CaptureMouse();
                 e.Handled = true;
                 return;
             }
             
-            // 何もない場所をクリックした場合は矩形選択開始
-            ClearAllSelections(viewModel);
-            
-            // 矩形選択開始
-            isRectSelecting = true;
-            rectSelectStartPoint = mousePos;
-            CreateSelectionRectangle(mousePos);
+            // 何もない場所をクリックした場合は矩形選択開始（ハンドラーに委譲）
+            _selectionHandler.ClearAllSelections(viewModel);
+            _selectionHandler.StartRectSelection(mousePos);
             NodeCanvas.CaptureMouse();
             e.Handled = true;
         }
 
         private void Canvas_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
         {
-            // 矩形選択終了
+            // 矩形選択終了（ハンドラーに委譲）
             if (isRectSelecting)
             {
                 var viewModel = GetViewModel();
-                if (viewModel != null)
-                {
-                    var mousePos = e.GetPosition(NodeCanvas);
-                    SelectNodesInRectangle(viewModel, rectSelectStartPoint, mousePos);
-                }
-                
-                RemoveSelectionRectangle();
-                isRectSelecting = false;
+                var mousePos = _coordTransformer.GetCanvasPosition(e);
+                _selectionHandler.EndRectSelection(viewModel, mousePos);
                 NodeCanvas.ReleaseMouseCapture();
                 e.Handled = true;
                 return;
@@ -737,7 +512,7 @@ namespace RayTraceVS.WPF.Views
             if (isDraggingConnection && draggedSocket != null)
             {
                 // 接続先のソケットを探す（拡張ヒット判定）
-                var mousePos = e.GetPosition(NodeCanvas);
+                var mousePos = _coordTransformer.GetCanvasPosition(e);
                 var (targetElement, targetNodeSocket) = FindNearestSocket(mousePos);
                 
                 if (targetNodeSocket != null)
@@ -747,156 +522,97 @@ namespace RayTraceVS.WPF.Views
                 }
                 else
                 {
-                    // 何もない場所にドロップした場合、接続を削除（Undo可能）
-                    CommitTempRemovedConnection();
+                    // 何もない場所にドロップした場合、元接続を削除（Undo可能）
+                    var originalConnection = _connectionHandler.OriginalConnection;
+                    if (originalConnection != null)
+                    {
+                        var viewModel = GetViewModel();
+                        if (viewModel != null)
+                        {
+                            viewModel.CommandManager.Execute(new RemoveConnectionCommand(viewModel, originalConnection));
+                        }
+                    }
                 }
                 
-                // プレビュー線を削除
-                RemovePreviewLine();
+                // 接続ドラッグを終了（ハンドラーに委譲）
+                _connectionHandler.CancelConnectionDrag();
             }
             
-            // ノードドラッグ終了時の処理
-            if (isDraggingNode)
+            // ノードドラッグ終了時の処理（ハンドラーに委譲）
+            if (_nodeDragHandler.IsDragging)
             {
-                FinishNodeDrag();
+                var viewModel = GetViewModel();
+                _nodeDragHandler.EndDrag(viewModel?.CommandManager);
             }
             
             // ドラッグ状態をリセット
-            isDraggingNode = false;
             isDraggingConnection = false;
-            draggedNode = null;
             draggedSocket = null;
-            multiDragOffsets.Clear();
-            dragStartPositions.Clear();
             NodeCanvas.ReleaseMouseCapture();
         }
 
         private void Canvas_MouseMove(object sender, MouseEventArgs e)
         {
-            // 矩形選択中
+            // 矩形選択中（ハンドラーに委譲）
             if (isRectSelecting && e.LeftButton == MouseButtonState.Pressed)
             {
-                var mousePos = e.GetPosition(NodeCanvas);
-                UpdateSelectionRectangle(mousePos);
+                var mousePos = _coordTransformer.GetCanvasPosition(e);
+                _selectionHandler.UpdateRectSelection(mousePos);
                 e.Handled = true;
                 return;
             }
             
-            // ノードのドラッグ（複数選択対応）
-            if (isDraggingNode && draggedNode != null && e.LeftButton == MouseButtonState.Pressed)
+            // ノードのドラッグ（ハンドラーに委譲）
+            if (_nodeDragHandler.IsDragging && e.LeftButton == MouseButtonState.Pressed)
             {
-                var mousePos = e.GetPosition(NodeCanvas);
-                
-                // multiDragOffsetsを使用（単一・複数の両方に対応）
-                if (multiDragOffsets.Count > 0)
-                {
-                    foreach (var kvp in multiDragOffsets)
-                    {
-                        var node = kvp.Key;
-                        var offset = kvp.Value;
-                        
-                        node.Position = new Point(
-                            mousePos.X - offset.X,
-                            mousePos.Y - offset.Y
-                        );
-                        UpdateSocketPositionsFromNodePosition(node);
-                    }
-                }
-                else
-                {
-                    // フォールバック：単一ノードの移動（dragStartOffsetを使用）
-                    draggedNode.Position = new Point(
-                        mousePos.X - dragStartOffset.X,
-                        mousePos.Y - dragStartOffset.Y
-                    );
-                    UpdateSocketPositionsFromNodePosition(draggedNode);
-                }
-                
-                // レイアウト更新を強制
-                NodeCanvas.UpdateLayout();
-                
-                // 接続線を更新
-                IEnumerable<Node> nodesToUpdate = multiDragOffsets.Count > 0 ? multiDragOffsets.Keys : new[] { draggedNode };
-                foreach (var node in nodesToUpdate)
-                {
-                    UpdateNodeConnections(node);
-                }
-                
+                var mousePos = _coordTransformer.GetCanvasPosition(e);
+                _nodeDragHandler.UpdateDrag(mousePos);
                 e.Handled = true;
                 return;
             }
             
-            // 接続のドラッグ中
-            if (isDraggingConnection && draggedSocket != null && e.LeftButton == MouseButtonState.Pressed)
+            // 接続のドラッグ中（ハンドラーに委譲）
+            if (_connectionHandler.IsDragging && e.LeftButton == MouseButtonState.Pressed)
             {
-                var mousePos = e.GetPosition(NodeCanvas);
-                UpdatePreviewLine(mousePos);
+                var mousePos = _coordTransformer.GetCanvasPosition(e);
+                _connectionHandler.UpdateConnectionDrag(mousePos);
                 
                 // ホバーしているソケットをチェックして、互換性を表示（拡張ヒット判定）
                 var (targetElement, targetNodeSocket) = FindNearestSocket(mousePos);
                 if (targetNodeSocket != null)
                 {
-                    UpdatePreviewLineCompatibility(targetNodeSocket);
+                    _connectionHandler.UpdatePreviewLineCompatibility(targetNodeSocket);
                 }
                 else
                 {
                     // ソケットから離れた場合はデフォルトの色に戻す
-                    ResetPreviewLineColor();
+                    _connectionHandler.ResetPreviewLineColor();
                 }
                 
                 e.Handled = true;
                 return;
             }
             
-            // パン操作
+            // パン操作（ハンドラーに委譲）
             if (isPanning && e.RightButton == MouseButtonState.Pressed)
             {
-                Point currentPosition = e.GetPosition(this);
-                Vector delta = currentPosition - lastMousePosition;
-                
-                panTransform.X += delta.X;
-                panTransform.Y += delta.Y;
-                
-                lastMousePosition = currentPosition;
+                _panZoomHandler.UpdatePan(_coordTransformer.GetScreenPosition(e));
                 e.Handled = true;
             }
         }
 
         private void Canvas_MouseRightButtonDown(object sender, MouseButtonEventArgs e)
         {
-            // パン開始
-            isPanning = true;
-            lastMousePosition = e.GetPosition(this);
+            // パン開始（ハンドラーに委譲）
+            _panZoomHandler.StartPan(_coordTransformer.GetScreenPosition(e));
             NodeCanvas.CaptureMouse();
             e.Handled = true;
         }
 
         private void Canvas_MouseWheel(object sender, MouseWheelEventArgs e)
         {
-            // マウス位置をビューポート（UserControl）に対して取得
-            var mousePos = e.GetPosition(this);
-            
-            double zoomDelta = e.Delta * ZoomSpeed;
-            double newZoom = currentZoom + zoomDelta;
-            newZoom = Math.Max(MinZoom, Math.Min(MaxZoom, newZoom));
-            
-            if (newZoom != currentZoom)
-            {
-                // マウスカーソル位置のキャンバス座標を計算（ズーム前）
-                double canvasX = (mousePos.X - panTransform.X) / currentZoom;
-                double canvasY = (mousePos.Y - panTransform.Y) / currentZoom;
-                
-                // 新しいズームレベルを適用
-                zoomTransform.ScaleX = newZoom;
-                zoomTransform.ScaleY = newZoom;
-                
-                // 同じキャンバス座標がマウスの下に来るようにパンを調整
-                panTransform.X = mousePos.X - canvasX * newZoom;
-                panTransform.Y = mousePos.Y - canvasY * newZoom;
-                
-                currentZoom = newZoom;
-            }
-            
+            // ズーム処理（ハンドラーに委譲）
+            _panZoomHandler.HandleZoom(e, _coordTransformer.GetScreenPosition(e));
             e.Handled = true;
         }
 
@@ -956,12 +672,8 @@ namespace RayTraceVS.WPF.Views
         
         private void HandleDeleteKey(KeyEventArgs e)
         {
-            // Deleteキーでノードを削除（複数選択対応）
-            if (e.Key == Key.Delete && selectedNodes.Count > 0)
-            {
-                DeleteSelectedNodesInternal();
-                e.Handled = true;
-            }
+            // Deleteキーでノードを削除（ハンドラーに委譲）
+            _editCommandHandler.HandleDeleteKey(e);
         }
         
         #region コピー＆ペースト
@@ -1078,7 +790,7 @@ namespace RayTraceVS.WPF.Views
                 if (clipboardData?.Nodes == null || clipboardData.Nodes.Count == 0) return;
                 
                 // マウス位置を取得（Canvas座標系）
-                var mousePos = Mouse.GetPosition(NodeCanvas);
+                var mousePos = _coordTransformer.GetCurrentCanvasPosition();
                 
                 // コピー元のノードの位置の中心を計算
                 double minX = clipboardData.Nodes.Min(n => n.PositionX);
@@ -1129,8 +841,8 @@ namespace RayTraceVS.WPF.Views
                     }
                 }
                 
-                // 選択をクリア
-                ClearAllSelections(viewModel);
+                // 選択をクリア（ハンドラーに委譲）
+                _selectionHandler.ClearAllSelections(viewModel);
                 
                 // コマンドとして実行（Undo対応）
                 if (newNodes.Count > 0)
@@ -1727,38 +1439,8 @@ namespace RayTraceVS.WPF.Views
         /// </summary>
         public void DeleteSelectedNodes()
         {
-            if (selectedNodes.Count > 0)
-            {
-                DeleteSelectedNodesInternal();
-            }
-        }
-
-        /// <summary>
-        /// 選択されたノードを削除する内部処理（コマンド経由）
-        /// </summary>
-        private void DeleteSelectedNodesInternal()
-        {
-            var viewModel = GetViewModel();
-            if (viewModel == null) return;
-
-            var nodesToDelete = selectedNodes.ToList();
-            ClearAllSelections(viewModel);
-
-            if (nodesToDelete.Count == 1)
-            {
-                // 単一ノード削除
-                viewModel.CommandManager.Execute(new RemoveNodeCommand(viewModel, nodesToDelete[0]));
-            }
-            else if (nodesToDelete.Count > 1)
-            {
-                // 複数ノード削除 - CompositeCommandでまとめる
-                var composite = new CompositeCommand($"{nodesToDelete.Count}個のノードを削除");
-                foreach (var node in nodesToDelete)
-                {
-                    composite.Add(new RemoveNodeCommand(viewModel, node));
-                }
-                viewModel.CommandManager.Execute(composite);
-            }
+            // ハンドラーに委譲
+            _editCommandHandler.DeleteSelectedNodes();
         }
 
         // ノード上でのマウスイベント
@@ -1775,7 +1457,7 @@ namespace RayTraceVS.WPF.Views
             if (border == null || !(border.DataContext is Node node)) return;
 
 
-            var mousePos = e.GetPosition(NodeCanvas);
+            var mousePos = _coordTransformer.GetCanvasPosition(e);
             
             // ソケットのクリックかどうか確認
             var hitElement = border.InputHitTest(e.GetPosition(border)) as DependencyObject;
@@ -1789,7 +1471,7 @@ namespace RayTraceVS.WPF.Views
                     var existingConnection = viewModel.Connections.FirstOrDefault(c => c.InputSocket == nodeSocket);
                     if (existingConnection != null)
                     {
-                        // 既存の接続を削除し、出力ソケット側からドラッグを開始
+                        // 出力ソケット側からドラッグを開始（接続は削除せず記憶のみ）
                         var outputSocket = existingConnection.OutputSocket;
                         
                         if (outputSocket != null)
@@ -1797,8 +1479,7 @@ namespace RayTraceVS.WPF.Views
                             // 既存の接続線が持っている出力ソケットの位置を使用（最も正確）
                             Point savedOutputSocketPos = outputSocket.Position;
                             
-                            draggedSocket = outputSocket;
-                            draggedSocketElement = null;
+                            Ellipse? outputSocketElement = null;
                             
                             // UI要素も探しておく（ドラッグ中の更新用）
                             var outputNode = outputSocket.ParentNode;
@@ -1807,46 +1488,16 @@ namespace RayTraceVS.WPF.Views
                                 var outputNodeContainer = FindNodeContainer(outputNode);
                                 if (outputNodeContainer != null)
                                 {
-                                    draggedSocketElement = FindSocketElement(outputNodeContainer, outputSocket);
+                                    outputSocketElement = FindSocketElement(outputNodeContainer, outputSocket);
                                 }
                             }
                             
-                            // 接続を一時的に削除（キャンセル時に復元するため）
-                            _tempRemovedConnection = existingConnection;
-                            
-                            // SceneNodeのソケット情報を記録（削除される前に）
-                            _tempRemovedSocket = null;
-                            _tempRemovedSocketIndex = -1;
-                            if (nodeSocket.ParentNode is SceneNode sceneNode2)
-                            {
-                                _tempRemovedSocketIndex = sceneNode2.InputSockets.IndexOf(nodeSocket);
-                            }
-                            
-                            // ソケット数を記録
-                            int socketCountBefore2 = 0;
-                            SceneNode? sn2 = nodeSocket.ParentNode as SceneNode;
-                            if (sn2 != null) socketCountBefore2 = sn2.InputSockets.Count;
-                            
-                            viewModel.RemoveConnection(existingConnection);
-                            
-                            // ソケットが削除されたか確認
-                            if (sn2 != null && sn2.InputSockets.Count < socketCountBefore2 && !sn2.InputSockets.Contains(nodeSocket))
-                            {
-                                _tempRemovedSocket = nodeSocket;
-                            }
-                            
-                            // 接続のドラッグ開始
-                            isDraggingConnection = true;
-                            CreatePreviewLine(outputSocket);
-                            
-                            // 既存の接続線が持っていた正確な位置を使用
-                            if (previewLine != null)
-                            {
-                                previewLine.X1 = savedOutputSocketPos.X;
-                                previewLine.Y1 = savedOutputSocketPos.Y;
-                                previewLine.X2 = savedOutputSocketPos.X;
-                                previewLine.Y2 = savedOutputSocketPos.Y;
-                            }
+                            // 接続のドラッグ開始（ハンドラーに委譲、接続は削除せず記憶のみ）
+                            _connectionHandler.StartConnectionDragFromExisting(
+                                existingConnection, 
+                                outputSocket, 
+                                outputSocketElement, 
+                                savedOutputSocketPos);
                             
                             // Canvasにマウスをキャプチャさせる（ノード全体ではなく）
                             NodeCanvas.CaptureMouse();
@@ -1856,22 +1507,9 @@ namespace RayTraceVS.WPF.Views
                     }
                 }
                 
-                // 接続のドラッグ開始（通常の新規接続）
-                isDraggingConnection = true;
-                draggedSocket = nodeSocket;
-                draggedSocketElement = socket;
-                _tempRemovedConnection = null;  // 新規接続なので一時削除した接続はない
-                CreatePreviewLine(nodeSocket);
-                
-                // 初期位置を設定
+                // 接続のドラッグ開始（ハンドラーに委譲、新規接続）
                 var socketPos = GetSocketElementPosition(socket);
-                if (previewLine != null)
-                {
-                    previewLine.X1 = socketPos.X;
-                    previewLine.Y1 = socketPos.Y;
-                    previewLine.X2 = socketPos.X;
-                    previewLine.Y2 = socketPos.Y;
-                }
+                _connectionHandler.StartConnectionDrag(nodeSocket, socket, socketPos);
                 
                 // Canvasにマウスをキャプチャさせる（ノード全体ではなく）
                 NodeCanvas.CaptureMouse();
@@ -1879,53 +1517,20 @@ namespace RayTraceVS.WPF.Views
                 return;
             }
 
-            // 既に選択されているノードをクリックした場合は複数選択を維持
+            // 既に選択されているノードをクリックした場合は複数選択を維持してドラッグ開始（ハンドラーに委譲）
             if (selectedNodes.Contains(node))
             {
-                // 複数選択されている場合は全てのノードのオフセットを計算
-                isDraggingNode = true;
-                draggedNode = node;
-                multiDragOffsets.Clear();
-                dragStartPositions.Clear();
-                
-                foreach (var selectedNode in selectedNodes)
-                {
-                    multiDragOffsets[selectedNode] = new Point(
-                        mousePos.X - selectedNode.Position.X,
-                        mousePos.Y - selectedNode.Position.Y
-                    );
-                    // ドラッグ開始位置を記録（Undo用）
-                    dragStartPositions[selectedNode] = selectedNode.Position;
-                }
-                
+                _nodeDragHandler.StartDrag(node, mousePos, selectedNodes);
                 NodeCanvas.CaptureMouse();
                 e.Handled = true;
                 return;
             }
             
-            // 新しいノードを単一選択
-            ClearAllSelections(viewModel);
+            // 新しいノードを単一選択（ハンドラーに委譲）
+            _selectionHandler.SelectNode(node, viewModel);
             
-            node.IsSelected = true;
-            selectedNodes.Add(node);
-            viewModel.SelectedNode = node; // プロパティパネル用に設定
-            
-            // 選択状態が変更されたので接続線のレイヤーを更新
-            UpdateConnectionLayersForSelectionChange();
-            
-            isDraggingNode = true;
-            draggedNode = node;
-            
-            // 常にmultiDragOffsetsを使用（単一選択でも統一）
-            multiDragOffsets.Clear();
-            multiDragOffsets[node] = new Point(mousePos.X - node.Position.X, mousePos.Y - node.Position.Y);
-            
-            // ドラッグ開始位置を記録（Undo用）
-            dragStartPositions.Clear();
-            dragStartPositions[node] = node.Position;
-            
-            // フォールバック用にdragStartOffsetも設定
-            dragStartOffset = new Point(mousePos.X - node.Position.X, mousePos.Y - node.Position.Y);
+            // ノードドラッグ開始（ハンドラーに委譲）
+            _nodeDragHandler.StartDrag(node, mousePos, new[] { node });
             
             // NodeCanvasでマウスキャプチャ（Borderでキャプチャするとそのノードが最前面に来てしまう）
             NodeCanvas.CaptureMouse();
@@ -1938,182 +1543,55 @@ namespace RayTraceVS.WPF.Views
             if (border == null) return;
 
 
-            if (isDraggingConnection && draggedSocket != null)
+            if (_connectionHandler.IsDragging)
             {
                 // 接続先のソケットを探す（拡張ヒット判定）
-                var mousePos = e.GetPosition(NodeCanvas);
+                var mousePos = _coordTransformer.GetCanvasPosition(e);
                 var (targetElement, targetNodeSocket) = FindNearestSocket(mousePos);
                 
-                if (targetNodeSocket != null)
+                if (targetNodeSocket != null && _connectionHandler.DraggedSocket != null)
                 {
-                    CreateConnection(draggedSocket, targetNodeSocket);
+                    CreateConnection(_connectionHandler.DraggedSocket, targetNodeSocket);
                 }
                 else
                 {
-                    // 何もない場所にドロップした場合、接続を削除（Undo可能）
-                    CommitTempRemovedConnection();
+                    // 何もない場所にドロップした場合、元接続を削除（Undo可能）
+                    var originalConnection = _connectionHandler.OriginalConnection;
+                    if (originalConnection != null)
+                    {
+                        var viewModel = GetViewModel();
+                        if (viewModel != null)
+                        {
+                            viewModel.CommandManager.Execute(new RemoveConnectionCommand(viewModel, originalConnection));
+                        }
+                    }
                 }
                 
-                // プレビュー線を削除
-                RemovePreviewLine();
+                // 接続ドラッグを終了（ハンドラーに委譲）
+                _connectionHandler.CancelConnectionDrag();
                 
-                // ドラッグ状態をリセット
-                isDraggingConnection = false;
-                draggedSocket = null;
-                draggedSocketElement = null;
                 NodeCanvas.ReleaseMouseCapture();
                 e.Handled = true;
                 return;
             }
             
-            if (isDraggingNode)
+            // ノードドラッグ終了（ハンドラーに委譲）
+            if (_nodeDragHandler.IsDragging)
             {
-                FinishNodeDrag();
-                isDraggingNode = false;
-                draggedNode = null;
-                multiDragOffsets.Clear();
-                dragStartPositions.Clear();
+                var viewModel = GetViewModel();
+                _nodeDragHandler.EndDrag(viewModel?.CommandManager);
                 // NodeCanvasでマウスリリース
                 NodeCanvas.ReleaseMouseCapture();
                 e.Handled = true;
             }
         }
-
-        /// <summary>
-        /// ノードドラッグ終了時の処理（移動コマンドを発行）
-        /// </summary>
-        private void FinishNodeDrag()
-        {
-            var viewModel = GetViewModel();
-            if (viewModel == null || dragStartPositions.Count == 0) return;
-
-            // 移動したノードを収集
-            var movedNodes = new List<(Node Node, Point OldPosition, Point NewPosition)>();
-            foreach (var kvp in dragStartPositions)
-            {
-                var node = kvp.Key;
-                var startPos = kvp.Value;
-                if (node.Position != startPos)
-                {
-                    movedNodes.Add((node, startPos, node.Position));
-                }
-            }
-
-            if (movedNodes.Count == 0) return;
-
-            if (movedNodes.Count == 1)
-            {
-                // 単一ノード移動
-                var (node, oldPos, newPos) = movedNodes[0];
-                viewModel.CommandManager.RegisterExecuted(new MoveNodeCommand(node, oldPos, newPos));
-            }
-            else
-            {
-                // 複数ノード移動
-                var moves = movedNodes.ToArray();
-                viewModel.CommandManager.RegisterExecuted(new MoveNodesCommand(moves));
-            }
-        }
-
-        /// <summary>
-        /// 接続ドラッグがキャンセルされた場合（Escapeキー）、一時削除した接続を復元
-        /// </summary>
-        private void RestoreTempRemovedConnection()
-        {
-            if (_tempRemovedConnection == null) return;
-
-            var viewModel = GetViewModel();
-            if (viewModel == null)
-            {
-                ClearTempRemovedConnectionState();
-                return;
-            }
-
-            // SceneNodeのソケットを復元（削除されていた場合）
-            if (_tempRemovedSocket != null && _tempRemovedSocket.ParentNode is SceneNode sceneNode)
-            {
-                if (!sceneNode.InputSockets.Contains(_tempRemovedSocket))
-                {
-                    if (_tempRemovedSocketIndex >= 0 && _tempRemovedSocketIndex <= sceneNode.InputSockets.Count)
-                    {
-                        sceneNode.InputSockets.Insert(_tempRemovedSocketIndex, _tempRemovedSocket);
-                    }
-                    else
-                    {
-                        sceneNode.InputSockets.Add(_tempRemovedSocket);
-                    }
-                }
-            }
-
-            // 元の接続を復元（履歴に残さない）
-            viewModel.AddConnection(_tempRemovedConnection);
-            ClearTempRemovedConnectionState();
-        }
-
-        /// <summary>
-        /// 接続ドラッグで何もない場所にドロップした場合、接続削除をコマンドとして記録
-        /// </summary>
-        private void CommitTempRemovedConnection()
-        {
-            if (_tempRemovedConnection == null) return;
-
-            var viewModel = GetViewModel();
-            if (viewModel == null)
-            {
-                ClearTempRemovedConnectionState();
-                return;
-            }
-
-            // 接続削除をコマンドとして記録（Undo可能）
-            // 注: 接続は既に削除されているので、RegisterExecutedを使用
-            // ソケット情報も渡す
-            viewModel.CommandManager.RegisterExecuted(
-                new RemoveConnectionCommand(viewModel, _tempRemovedConnection, _tempRemovedSocket, _tempRemovedSocketIndex));
-            ClearTempRemovedConnectionState();
-        }
-
-        /// <summary>
-        /// 一時削除の接続状態をクリア
-        /// </summary>
-        private void ClearTempRemovedConnectionState()
-        {
-            _tempRemovedConnection = null;
-            _tempRemovedSocket = null;
-            _tempRemovedSocketIndex = -1;
-        }
-
         private void Node_MouseMove(object sender, MouseEventArgs e)
         {
-            
-            if (isDraggingNode && draggedNode != null && e.LeftButton == MouseButtonState.Pressed)
+            // ノードドラッグ更新（ハンドラーに委譲）
+            if (_nodeDragHandler.IsDragging && e.LeftButton == MouseButtonState.Pressed)
             {
-                var mousePos = e.GetPosition(NodeCanvas);
-                
-                // multiDragOffsetsを使用（単一・複数の両方に対応）
-                if (multiDragOffsets.Count > 0)
-                {
-                    foreach (var kvp in multiDragOffsets)
-                    {
-                        var node = kvp.Key;
-                        var offset = kvp.Value;
-                        
-                        node.Position = new Point(
-                            mousePos.X - offset.X,
-                            mousePos.Y - offset.Y
-                        );
-                        UpdateSocketPositionsFromNodePosition(node);
-                    }
-                }
-                else
-                {
-                    // フォールバック：単一ノードの移動（dragStartOffsetを使用）
-                    draggedNode.Position = new Point(
-                        mousePos.X - dragStartOffset.X,
-                        mousePos.Y - dragStartOffset.Y
-                    );
-                    UpdateSocketPositionsFromNodePosition(draggedNode);
-                }
-                
+                var mousePos = _coordTransformer.GetCanvasPosition(e);
+                _nodeDragHandler.UpdateDrag(mousePos);
                 e.Handled = true;
             }
         }
@@ -2197,7 +1675,7 @@ namespace RayTraceVS.WPF.Views
                 sceneNode.RenumberSceneSockets();
                 UpdateAllSocketPositionsForNode(sceneNode);
                 UpdateNodeConnections(sceneNode);
-                RebuildConnectionPaths();
+                GetViewModel()?.RefreshConnectionViews();
             }), DispatcherPriority.Loaded);
         }
 
@@ -2218,7 +1696,7 @@ namespace RayTraceVS.WPF.Views
                     UpdateAllSocketPositionsForNode(sceneNode);
                     UpdateNodeConnections(sceneNode);
                 }
-                RebuildConnectionPaths();
+                viewModel.RefreshConnectionViews();
             }), DispatcherPriority.Loaded);
         }
 
@@ -2336,7 +1814,7 @@ namespace RayTraceVS.WPF.Views
             }
             
             // ターゲットソケットの要素を見つける
-            var mousePos = Mouse.GetPosition(NodeCanvas);
+            var mousePos = _coordTransformer.GetCurrentCanvasPosition();
             var hitElement = NodeCanvas.InputHitTest(mousePos) as DependencyObject;
             var targetElement = FindVisualParent<Ellipse>(hitElement);
             
@@ -2372,20 +1850,36 @@ namespace RayTraceVS.WPF.Views
             // 新しい接続を作成（ソケット位置が設定された後なので正しく描画される）
             var connection = new NodeConnection(outputSocket, inputSocket);
             
+            // ドラッグ開始時の元接続を取得
+            var originalConnection = _connectionHandler.OriginalConnection;
+            
             // 既存の接続を確認（入力ソケットには1つの接続のみ）
-            // ただし、一時削除した接続がある場合は除外
-            var existingConnection = viewModel.Connections.FirstOrDefault(c => c.InputSocket == inputSocket);
+            // ただし、ドラッグ開始時の元接続（OriginalConnection）は除外
+            var existingConnection = viewModel.Connections.FirstOrDefault(c => 
+                c.InputSocket == inputSocket && c != originalConnection);
             
             if (existingConnection != null)
             {
                 // 既存接続がある場合は置換コマンドを使用
                 viewModel.CommandManager.Execute(new ReplaceConnectionCommand(viewModel, existingConnection, connection));
+                
+                // 元接続がある場合（別のソケットへの接続）は元接続も削除
+                if (originalConnection != null)
+                {
+                    viewModel.CommandManager.Execute(new RemoveConnectionCommand(viewModel, originalConnection));
+                }
             }
-            else if (_tempRemovedConnection != null && _tempRemovedConnection.InputSocket == inputSocket)
+            else if (originalConnection != null && originalConnection.InputSocket == inputSocket)
             {
-                // ドラッグ開始時に一時削除した接続への再接続の場合は置換コマンドを使用
-                viewModel.CommandManager.Execute(new ReplaceConnectionCommand(viewModel, _tempRemovedConnection, connection));
-                _tempRemovedConnection = null;
+                // ドラッグ開始時の元接続と同じ入力ソケットへの再接続の場合は置換コマンドを使用
+                viewModel.CommandManager.Execute(new ReplaceConnectionCommand(viewModel, originalConnection, connection));
+            }
+            else if (originalConnection != null)
+            {
+                // ドラッグ開始時の元接続とは異なる入力ソケットへの接続
+                // 元接続を削除し、新接続を追加
+                viewModel.CommandManager.Execute(new RemoveConnectionCommand(viewModel, originalConnection));
+                viewModel.CommandManager.Execute(new AddConnectionCommand(viewModel, connection));
             }
             else
             {
@@ -2522,117 +2016,19 @@ namespace RayTraceVS.WPF.Views
                     connection.UpdatePath();
                 }
             }
+            
+            // ConnectionLineRendererの再描画をリクエスト
+            RequestConnectionRender();
         }
-
-        // プレビュー線を作成
-        private void CreatePreviewLine(NodeSocket socket)
+        
+        /// <summary>
+        /// 全てのConnectionLineRendererの再描画をリクエスト
+        /// </summary>
+        private void RequestConnectionRender()
         {
-            if (previewLine != null)
-            {
-                SelectedConnectionLayer.Children.Remove(previewLine);
-            }
-
-            previewLine = new Line
-            {
-                Stroke = socket.SocketColor,
-                StrokeThickness = 2,
-                StrokeDashArray = new DoubleCollection { 5, 3 },
-                IsHitTestVisible = false,
-                Opacity = 0.7  // デフォルトは少し薄く
-            };
-
-            // 初期位置は後で更新されるので、とりあえず0,0に設定
-            previewLine.X1 = 0;
-            previewLine.Y1 = 0;
-            previewLine.X2 = 0;
-            previewLine.Y2 = 0;
-
-            SelectedConnectionLayer.Children.Add(previewLine);
-        }
-
-        // プレビュー線を更新
-        private void UpdatePreviewLine(Point endPoint)
-        {
-            if (previewLine == null || draggedSocket == null) return;
-
-            Point startPos;
-            if (draggedSocketElement != null)
-            {
-                // UI要素から位置を取得
-                startPos = GetSocketElementPosition(draggedSocketElement);
-            }
-            else
-            {
-                // UI要素が見つからない場合は、ソケットが既に持っている位置を使用
-                startPos = draggedSocket.Position;
-            }
-
-            previewLine.X1 = startPos.X;
-            previewLine.Y1 = startPos.Y;
-            previewLine.X2 = endPoint.X;
-            previewLine.Y2 = endPoint.Y;
-        }
-
-        // プレビュー線の色を互換性に応じて更新
-        private void UpdatePreviewLineCompatibility(NodeSocket targetSocket)
-        {
-            if (previewLine == null || draggedSocket == null) return;
-
-            // 出力→入力の確認
-            bool isValidDirection = (!draggedSocket.IsInput && targetSocket.IsInput) ||
-                                   (draggedSocket.IsInput && !targetSocket.IsInput);
-
-            // 同じノードかどうか確認
-            bool isSameNode = draggedSocket.ParentNode == targetSocket.ParentNode;
-
-            // 型の互換性を確認
-            bool isCompatible = false;
-            if (!draggedSocket.IsInput && targetSocket.IsInput)
-            {
-                isCompatible = AreSocketTypesCompatible(draggedSocket.SocketType, targetSocket.SocketType);
-            }
-            else if (draggedSocket.IsInput && !targetSocket.IsInput)
-            {
-                isCompatible = AreSocketTypesCompatible(targetSocket.SocketType, draggedSocket.SocketType);
-            }
-
-            // 互換性に応じて色とスタイルを変更
-            if (isValidDirection && !isSameNode && isCompatible)
-            {
-                // 接続可能：実線、通常の色、不透明度1.0
-                previewLine.Stroke = draggedSocket.SocketColor;
-                previewLine.StrokeDashArray = null; // 実線
-                previewLine.Opacity = 1.0;
-            }
-            else
-            {
-                // 接続不可能：実線、赤色、不透明度0.5
-                previewLine.Stroke = BrushCache.Get(Colors.Red);
-                previewLine.StrokeDashArray = null; // 実線
-                previewLine.Opacity = 0.5;
-            }
-        }
-
-        // プレビュー線の色をデフォルトに戻す
-        private void ResetPreviewLineColor()
-        {
-            if (previewLine == null || draggedSocket == null) return;
-
-            // デフォルトの状態：点線、ソケットの色、不透明度0.7
-            previewLine.Stroke = draggedSocket.SocketColor;
-            previewLine.StrokeDashArray = new DoubleCollection { 5, 3 }; // 点線
-            previewLine.Opacity = 0.7;
-        }
-
-        // プレビュー線を削除
-        private void RemovePreviewLine()
-        {
-            if (previewLine != null)
-            {
-                SelectedConnectionLayer.Children.Remove(previewLine);
-                previewLine = null;
-            }
-            draggedSocketElement = null;
+            MiddleConnectionRenderer?.RequestRender();
+            EndSegmentRenderer?.RequestRender();
+            SelectedConnectionRenderer?.RequestRender();
         }
 
         // ソケットの位置を取得（実際のUI要素から）
@@ -2640,10 +2036,8 @@ namespace RayTraceVS.WPF.Views
         {
             try
             {
-                // Ellipseの中心位置をキャンバス座標系に変換
-                var transform = socketElement.TransformToAncestor(NodeCanvas);
-                var center = new Point(socketElement.Width / 2, socketElement.Height / 2);
-                return transform.Transform(center);
+                // CoordinateTransformerを使用してEllipseの中心座標を取得
+                return _coordTransformer.GetElementCenterOnCanvas(socketElement);
             }
             catch
             {
@@ -2817,167 +2211,13 @@ namespace RayTraceVS.WPF.Views
             // ソケット要素のCanvas上での実際の位置を取得
             try
             {
-                var transform = socketElement.TransformToAncestor(NodeCanvas);
-                var point = transform.Transform(new Point(socketElement.ActualWidth / 2, socketElement.ActualHeight / 2));
-                return point;
+                // CoordinateTransformerを使用してソケット要素の中心座標を取得
+                return _coordTransformer.GetElementCenterOnCanvas(socketElement);
             }
             catch
             {
                 // 変換に失敗した場合は計算で推定
                 return GetSocketPosition(socket);
-            }
-        }
-
-        // 複数選択関連のヘルパーメソッド
-        
-        /// <summary>
-        /// 全ての選択をクリア
-        /// </summary>
-        private void ClearAllSelections(MainViewModel viewModel)
-        {
-            bool hadSelection = selectedNodes.Count > 0 || viewModel.SelectedNode != null;
-            
-            foreach (var node in selectedNodes)
-            {
-                node.IsSelected = false;
-            }
-            selectedNodes.Clear();
-            
-            // プロパティパネルは変化させない（SelectedNodeはnullのまま）
-            if (viewModel.SelectedNode != null)
-            {
-                viewModel.SelectedNode.IsSelected = false;
-                viewModel.SelectedNode = null;
-            }
-            
-            // 選択状態が変更された場合、接続線のレイヤーを更新
-            if (hadSelection)
-            {
-                UpdateConnectionLayersForSelectionChange();
-            }
-        }
-
-        /// <summary>
-        /// 矩形選択用の矩形を作成
-        /// </summary>
-        private void CreateSelectionRectangle(Point startPoint)
-        {
-            if (selectionRectangle != null)
-            {
-                SelectedConnectionLayer.Children.Remove(selectionRectangle);
-            }
-
-            selectionRectangle = new Rectangle
-            {
-                Stroke = BrushCache.Get(100, 150, 255),
-                StrokeThickness = 1,
-                Fill = BrushCache.Get(30, 100, 150, 255),
-                IsHitTestVisible = false
-            };
-
-            SelectedConnectionLayer.Children.Add(selectionRectangle);
-            Canvas.SetLeft(selectionRectangle, startPoint.X);
-            Canvas.SetTop(selectionRectangle, startPoint.Y);
-            selectionRectangle.Width = 0;
-            selectionRectangle.Height = 0;
-        }
-
-        /// <summary>
-        /// 矩形選択用の矩形を更新
-        /// </summary>
-        private void UpdateSelectionRectangle(Point currentPoint)
-        {
-            if (selectionRectangle == null) return;
-
-            double left = Math.Min(rectSelectStartPoint.X, currentPoint.X);
-            double top = Math.Min(rectSelectStartPoint.Y, currentPoint.Y);
-            double width = Math.Abs(currentPoint.X - rectSelectStartPoint.X);
-            double height = Math.Abs(currentPoint.Y - rectSelectStartPoint.Y);
-
-            Canvas.SetLeft(selectionRectangle, left);
-            Canvas.SetTop(selectionRectangle, top);
-            selectionRectangle.Width = width;
-            selectionRectangle.Height = height;
-        }
-
-        /// <summary>
-        /// 矩形選択用の矩形を削除
-        /// </summary>
-        private void RemoveSelectionRectangle()
-        {
-            if (selectionRectangle != null)
-            {
-                SelectedConnectionLayer.Children.Remove(selectionRectangle);
-                selectionRectangle = null;
-            }
-        }
-
-        /// <summary>
-        /// 矩形内に完全に収まっているノードを選択
-        /// </summary>
-        private void SelectNodesInRectangle(MainViewModel viewModel, Point startPoint, Point endPoint)
-        {
-            double left = Math.Min(startPoint.X, endPoint.X);
-            double top = Math.Min(startPoint.Y, endPoint.Y);
-            double right = Math.Max(startPoint.X, endPoint.X);
-            double bottom = Math.Max(startPoint.Y, endPoint.Y);
-
-            var rect = new Rect(left, top, right - left, bottom - top);
-
-            // 全てのノードをチェック
-            foreach (var node in viewModel.Nodes)
-            {
-                // ノードの境界を取得（概算）
-                var nodeContainer = FindNodeContainer(node);
-                if (nodeContainer != null)
-                {
-                    var nodeRect = new Rect(
-                        node.Position.X,
-                        node.Position.Y,
-                        nodeContainer.ActualWidth,
-                        nodeContainer.ActualHeight
-                    );
-
-                    // ノードが矩形内に完全に収まっているかチェック
-                    if (rect.Contains(nodeRect))
-                    {
-                        node.IsSelected = true;
-                        selectedNodes.Add(node);
-                    }
-                }
-                else
-                {
-                    // コンテナが見つからない場合は概算サイズで判定
-                    var nodeRect = new Rect(
-                        node.Position.X,
-                        node.Position.Y,
-                        150, // 最小幅
-                        Math.Max(60, 30 + Math.Max(node.InputSockets.Count, node.OutputSockets.Count) * 20)
-                    );
-
-                    if (rect.Contains(nodeRect))
-                    {
-                        node.IsSelected = true;
-                        selectedNodes.Add(node);
-                    }
-                }
-            }
-            
-            // 単一ノード選択の場合のみ、プロパティパネルに表示
-            if (selectedNodes.Count == 1)
-            {
-                viewModel.SelectedNode = selectedNodes.First();
-            }
-            else
-            {
-                // 複数選択または選択なしの場合はプロパティパネルをクリア
-                viewModel.SelectedNode = null;
-            }
-            
-            // 選択状態が変更されたので接続線のレイヤーを更新
-            if (selectedNodes.Count > 0)
-            {
-                UpdateConnectionLayersForSelectionChange();
             }
         }
 

@@ -338,9 +338,12 @@ namespace RayTraceVS::DXEngine
         bool dxrPipelineReady = false;
         ResourceStateTracker resourceStateTracker;
 
-        // Shader paths (fixed locations)
-        // - shaderSourcePath: C:\git\RayTraceVS\src\Shader\ (for .hlsl source files)
-        // - shaderBasePath:   C:\git\RayTraceVS\src\Shader\Cache\ (for .cso compiled files)
+        // Shader paths (resolved at runtime)
+        // Paths are resolved in the following order of priority:
+        // 1. shader_config.ini file (if found)
+        // 2. Relative paths from executable location (src/Shader/)
+        // 3. RAYTRACEVS_SHADER_PATH environment variable
+        // 4. Relative paths from current working directory
         std::wstring shaderBasePath;      // Cache directory for .cso files
         std::wstring shaderSourcePath;    // Source directory for .hlsl files
         bool InitializeShaderPath();
