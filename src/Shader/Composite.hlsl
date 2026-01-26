@@ -3,6 +3,21 @@
 // This is used after NRD denoising to produce the final image
 // Now also supports SIGMA-denoised shadows
 
+// ============================================================
+// COLOR SPACE RULES
+// ============================================================
+// 1. All intermediate calculations are in LINEAR space
+// 2. sRGB conversion happens ONLY at final output (CSMain line ~410)
+// 3. Debug modes must NOT apply sRGB individually - use finalOutput path
+// 4. Exposure is applied in LINEAR space BEFORE tonemapping
+// ============================================================
+
+// ============================================================
+// GAMMA CONSTANTS
+// ============================================================
+#define GAMMA_SRGB_STANDARD 2.2
+#define GAMMA_SRGB_TOLERANCE 0.01
+
 #include "NRDEncoding.hlsli"
 
 // Output render target
@@ -162,93 +177,98 @@ void CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
     float2 uv = (float2(pixelCoord) + 0.5) / float2(OutputSize);
     
     float3 finalColor;
-
+    
+    // ========================================
+    // Debug Modes 2-10: Unified output path
+    // All debug outputs are computed in LINEAR space and converted to sRGB once at the end
+    // ========================================
+    float3 debugOutput = float3(0, 0, 0);
+    bool useDebugOutput = false;
+    
     // Debug Mode 2: full-screen input shadow visibility
     if (DebugMode == 2)
     {
         float2 shadowIn = GBuffer_ShadowData.SampleLevel(LinearSampler, uv, 0);
         float shadowVis = shadowIn.y;  // Y = visibility (0 = shadow, 1 = lit)
-        finalColor = float3(shadowVis, shadowVis, shadowVis);
-        OutputTexture[pixelCoord] = float4(LinearToSRGB(finalColor), 1.0);
-        return;
+        debugOutput = float3(shadowVis, shadowVis, shadowVis);
+        useDebugOutput = true;
     }
     // Debug Mode 3: full-screen denoised shadow visibility
-    if (DebugMode == 3)
+    else if (DebugMode == 3)
     {
         float shadowOut = SIGMA_BackEnd_UnpackShadow(DenoisedShadow.SampleLevel(LinearSampler, uv, 0)).x;
-        finalColor = float3(shadowOut, shadowOut, shadowOut);
-        OutputTexture[pixelCoord] = float4(LinearToSRGB(finalColor), 1.0);
-        return;
+        debugOutput = float3(shadowOut, shadowOut, shadowOut);
+        useDebugOutput = true;
     }
     // Debug Mode 4: split-screen input vs denoised shadow
-    if (DebugMode == 4)
+    else if (DebugMode == 4)
     {
         if (uv.x < 0.5)
         {
             float2 shadowIn = GBuffer_ShadowData.SampleLevel(LinearSampler, uv, 0);
             float shadowVis = shadowIn.y;
-            finalColor = float3(shadowVis, shadowVis, shadowVis);
+            debugOutput = float3(shadowVis, shadowVis, shadowVis);
         }
         else
         {
             float shadowOut = SIGMA_BackEnd_UnpackShadow(DenoisedShadow.SampleLevel(LinearSampler, uv, 0)).x;
-            finalColor = float3(shadowOut, shadowOut, shadowOut);
+            debugOutput = float3(shadowOut, shadowOut, shadowOut);
         }
-        OutputTexture[pixelCoord] = float4(LinearToSRGB(finalColor), 1.0);
-        return;
+        useDebugOutput = true;
     }
-    // Debug Mode 5: solid magenta (composite sanity check)
-    if (DebugMode == 5)
+    // Debug Mode 5: solid magenta (composite sanity check) - already in sRGB
+    else if (DebugMode == 5)
     {
         OutputTexture[pixelCoord] = float4(1.0, 0.0, 1.0, 1.0);
         return;
     }
     // Debug Mode 6: Show denoised diffuse only (no albedo, no shadow)
-    if (DebugMode == 6)
+    else if (DebugMode == 6)
     {
         float3 diffOnly = DenoisedDiffuse.SampleLevel(LinearSampler, uv, 0).rgb;
-        // Apply exposure and tone mapping for visibility
         diffOnly *= ExposureValue;
-        float3 tonemapped = ACESFilm(diffOnly);
-        OutputTexture[pixelCoord] = float4(LinearToSRGB(tonemapped), 1.0);
-        return;
+        debugOutput = ACESFilm(diffOnly);
+        useDebugOutput = true;
     }
     // Debug Mode 7: Show diffuse * albedo (no shadow)
-    if (DebugMode == 7)
+    else if (DebugMode == 7)
     {
         float3 diff = DenoisedDiffuse.SampleLevel(LinearSampler, uv, 0).rgb;
         float3 alb = AlbedoTexture.SampleLevel(LinearSampler, uv, 0).rgb;
         float3 result = diff * alb * ExposureValue;
-        float3 tonemapped = ACESFilm(result);
-        OutputTexture[pixelCoord] = float4(LinearToSRGB(tonemapped), 1.0);
-        return;
+        debugOutput = ACESFilm(result);
+        useDebugOutput = true;
     }
     // Debug Mode 8: Show GBuffer_DiffuseIn (raw input before NRD)
-    if (DebugMode == 8)
+    else if (DebugMode == 8)
     {
         float3 rawDiff = GBuffer_DiffuseIn.SampleLevel(LinearSampler, uv, 0).rgb;
         rawDiff *= ExposureValue;
-        float3 tonemapped = ACESFilm(rawDiff);
-        OutputTexture[pixelCoord] = float4(LinearToSRGB(tonemapped), 1.0);
-        return;
+        debugOutput = ACESFilm(rawDiff);
+        useDebugOutput = true;
     }
     // Debug Mode 9: Photon contribution (linear)
-    if (DebugMode == 9)
+    else if (DebugMode == 9)
     {
         float3 photonOnly = GBuffer_DiffuseIn.SampleLevel(LinearSampler, uv, 0).rgb;
         photonOnly *= ExposureValue;
-        float3 tonemapped = ACESFilm(photonOnly);
-        OutputTexture[pixelCoord] = float4(LinearToSRGB(tonemapped), 1.0);
-        return;
+        debugOutput = ACESFilm(photonOnly);
+        useDebugOutput = true;
     }
     // Debug Mode 10: Photon contribution heatmap
-    if (DebugMode == 10)
+    else if (DebugMode == 10)
     {
         float3 photonOnly = GBuffer_DiffuseIn.SampleLevel(LinearSampler, uv, 0).rgb;
         float intensity = Luminance(photonOnly);
         float mapped = log2(1.0 + intensity * 4.0) / 4.0;
-        float3 heat = Heatmap(mapped);
-        OutputTexture[pixelCoord] = float4(LinearToSRGB(heat), 1.0);
+        debugOutput = Heatmap(mapped);
+        useDebugOutput = true;
+    }
+    
+    // Unified debug output path - sRGB conversion happens ONLY here
+    if (useDebugOutput)
+    {
+        OutputTexture[pixelCoord] = float4(LinearToSRGB(debugOutput), 1.0);
         return;
     }
     
@@ -404,8 +424,8 @@ void CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
     }
     
     // Apply gamma correction and output
-    // Use custom gamma if not 2.2, otherwise use accurate sRGB curve
-    if (abs(GammaValue - 2.2) < 0.01)
+    // Use accurate sRGB curve when gamma is standard (2.2), otherwise use power function
+    if (abs(GammaValue - GAMMA_SRGB_STANDARD) < GAMMA_SRGB_TOLERANCE)
     {
         finalColor = LinearToSRGB(saturate(tonemapped));
     }

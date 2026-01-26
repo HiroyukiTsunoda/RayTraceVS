@@ -46,12 +46,12 @@ namespace RayTraceVS.WPF.Views.Handlers
         public const double MaxZoom = 5.0;
         public const double ZoomSpeed = 0.001;
         
-        // 接続線のPath要素管理
-        public Dictionary<NodeConnection, Path> ConnectionPaths { get; } = new Dictionary<NodeConnection, Path>();
+        // パラメーター変更のUndo用（TextBoxのフォーカス取得時に変更前の値を記録）
+        public Dictionary<TextBox, float> TextBoxOriginalValues { get; } = new Dictionary<TextBox, float>();
         
         // UIコンポーネント参照
         public Canvas? NodeCanvas { get; set; }
-        public Canvas? ConnectionLayer { get; set; }
+        public Canvas? PreviewLayer { get; set; }
         
         public EditorInputState()
         {

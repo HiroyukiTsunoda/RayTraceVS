@@ -57,7 +57,7 @@
 - **Universal PBR**: 標準PBRマテリアル（Metallic-Roughnessワークフロー）
   - 入力: Base Color、Metallic、Roughness、Emissive
   - 用途: 基本的な不透明マテリアル
-- **Material BSDF**: フル機能BSDFマテリアル（Principled BSDF風）
+- **BSDF**: フル機能BSDFマテリアル（Principled BSDF風）
   - 入力: Base Color、Metallic、Roughness、Transmission、IOR、Emission、Absorption
   - 用途: ガラス、液体、カラーシャドウなど高度なマテリアル
 - **Emission Material**: 発光専用マテリアル

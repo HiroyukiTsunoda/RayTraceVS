@@ -18,41 +18,44 @@ namespace RayTraceVS.WPF.Models
         private NodeSocket? inputSocket;
 
         [ObservableProperty]
-        private PathGeometry? pathGeometry;
+        private Geometry? pathGeometry;
 
-        // 分割された接続線のパーツ
+        // 分割された接続線のパーツ（StreamGeometryで高速化）
         [ObservableProperty]
-        private PathGeometry? middlePathGeometry;  // 中間部分（最下層）
-
-        [ObservableProperty]
-        private PathGeometry? startSegmentGeometry;  // 始点側の端部分
+        private Geometry? middlePathGeometry;  // 中間部分（最下層）
 
         [ObservableProperty]
-        private PathGeometry? endSegmentGeometry;  // 終点側の端部分
+        private Geometry? startSegmentGeometry;  // 始点側の端部分
+
+        [ObservableProperty]
+        private Geometry? endSegmentGeometry;  // 終点側の端部分
+
+        // 接続線の選択状態（どちらかのノードが選択されている場合true）
+        [ObservableProperty]
+        private bool isSelected;
 
         // イベントハンドラを保持（解除可能にするため）
         private EventHandler? _outputPositionHandler;
         private EventHandler? _inputPositionHandler;
+        
+        // ノードの選択状態変更を監視するハンドラ
+        private System.ComponentModel.PropertyChangedEventHandler? _outputNodeSelectionHandler;
+        private System.ComponentModel.PropertyChangedEventHandler? _inputNodeSelectionHandler;
 
-        // PathGeometry関連オブジェクトを再利用
-        private PathFigure? _pathFigure;
-        private BezierSegment? _bezierSegment;
-        
-        // 分割用PathFigureとBezierSegment
-        private PathFigure? _middlePathFigure;
-        private BezierSegment? _middleBezierSegment;
-        private PathFigure? _startPathFigure;
-        private BezierSegment? _startBezierSegment;
-        private PathFigure? _endPathFigure;
-        private BezierSegment? _endBezierSegment;
-        
         private bool _disposed;
+        
+        // ダーティフラグ（遅延更新用）
+        private bool _isDirty;
 
         // デフォルトの接続線の色（キャッシュ済み）
         private static readonly Brush DefaultConnectionColor = BrushCache.Get(0x00, 0x7A, 0xCC);
 
         // 接続線の色を出力ソケットの型に基づいて決定
         public Brush ConnectionColor => outputSocket?.SocketColor ?? DefaultConnectionColor;
+
+        // 端部分のZIndex（ノードのCreationIndexに基づく）
+        public int StartSegmentZIndex => outputSocket?.ParentNode?.CreationIndex + 1 ?? 0;
+        public int EndSegmentZIndex => inputSocket?.ParentNode?.CreationIndex + 1 ?? 0;
 
         public NodeConnection()
         {
@@ -78,7 +81,71 @@ namespace RayTraceVS.WPF.Models
             {
                 inputSocket.PositionChanged += _inputPositionHandler;
             }
+            
+            // ノードの選択状態変更を監視
+            _outputNodeSelectionHandler = (s, e) => OnNodeSelectionChanged(e);
+            _inputNodeSelectionHandler = (s, e) => OnNodeSelectionChanged(e);
+            
+            if (outputSocket?.ParentNode != null)
+            {
+                outputSocket.ParentNode.PropertyChanged += _outputNodeSelectionHandler;
+            }
+            if (inputSocket?.ParentNode != null)
+            {
+                inputSocket.ParentNode.PropertyChanged += _inputNodeSelectionHandler;
+            }
+            
+            // 初期選択状態を設定
+            UpdateIsSelected();
         }
+        
+        /// <summary>
+        /// ノードの選択状態が変更されたときに呼ばれる
+        /// </summary>
+        private void OnNodeSelectionChanged(System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(Node.IsSelected))
+            {
+                UpdateIsSelected();
+            }
+        }
+        
+        /// <summary>
+        /// 接続線の選択状態を更新（どちらかのノードが選択されていればtrue）
+        /// </summary>
+        public void UpdateIsSelected()
+        {
+            IsSelected = (outputSocket?.ParentNode?.IsSelected ?? false) || 
+                         (inputSocket?.ParentNode?.IsSelected ?? false);
+        }
+        
+        /// <summary>
+        /// 接続線を更新が必要な状態としてマーク（遅延更新用）
+        /// </summary>
+        public void MarkDirty()
+        {
+            _isDirty = true;
+        }
+        
+        /// <summary>
+        /// ダーティフラグが立っている場合のみ更新を実行
+        /// </summary>
+        /// <returns>更新が実行された場合true</returns>
+        public bool UpdateIfDirty()
+        {
+            if (_isDirty)
+            {
+                UpdatePath();
+                _isDirty = false;
+                return true;
+            }
+            return false;
+        }
+        
+        /// <summary>
+        /// ダーティフラグの状態を取得
+        /// </summary>
+        public bool IsDirty => _isDirty;
 
         public void UpdatePath()
         {
@@ -106,30 +173,26 @@ namespace RayTraceVS.WPF.Models
             var controlPoint1 = new Point(startPoint.X + controlPointOffset, startPoint.Y);
             var controlPoint2 = new Point(endPoint.X - controlPointOffset, endPoint.Y);
 
-            // 既存オブジェクトを再利用（毎回新規作成しない）
-            if (_bezierSegment == null)
-            {
-                _bezierSegment = new BezierSegment(controlPoint1, controlPoint2, endPoint, true);
-                _pathFigure = new PathFigure
-                {
-                    StartPoint = startPoint,
-                    IsClosed = false
-                };
-                _pathFigure.Segments.Add(_bezierSegment);
-                PathGeometry = new PathGeometry();
-                PathGeometry.Figures.Add(_pathFigure);
-            }
-            else
-            {
-                // 既存オブジェクトのプロパティを更新
-                _pathFigure!.StartPoint = startPoint;
-                _bezierSegment.Point1 = controlPoint1;
-                _bezierSegment.Point2 = controlPoint2;
-                _bezierSegment.Point3 = endPoint;
-            }
+            // StreamGeometryで高速描画（Freeze済みの不変オブジェクト）
+            PathGeometry = CreateBezierStreamGeometry(startPoint, controlPoint1, controlPoint2, endPoint);
 
             // 分割されたパーツを更新
             UpdateSegmentedPaths(startPoint, controlPoint1, controlPoint2, endPoint);
+        }
+
+        /// <summary>
+        /// StreamGeometryでベジェ曲線を作成（Freeze済みで高速）
+        /// </summary>
+        private static StreamGeometry CreateBezierStreamGeometry(Point start, Point ctrl1, Point ctrl2, Point end)
+        {
+            var geometry = new StreamGeometry();
+            using (var ctx = geometry.Open())
+            {
+                ctx.BeginFigure(start, false, false);
+                ctx.BezierTo(ctrl1, ctrl2, end, true, false);
+            }
+            geometry.Freeze(); // 重要: パフォーマンス向上
+            return geometry;
         }
 
         /// <summary>
@@ -289,21 +352,7 @@ namespace RayTraceVS.WPF.Models
         /// </summary>
         private void UpdateStartSegment(Point start, Point ctrl1, Point ctrl2, Point end)
         {
-            if (_startBezierSegment == null)
-            {
-                _startBezierSegment = new BezierSegment(ctrl1, ctrl2, end, true);
-                _startPathFigure = new PathFigure { StartPoint = start, IsClosed = false };
-                _startPathFigure.Segments.Add(_startBezierSegment);
-                StartSegmentGeometry = new PathGeometry();
-                StartSegmentGeometry.Figures.Add(_startPathFigure);
-            }
-            else
-            {
-                _startPathFigure!.StartPoint = start;
-                _startBezierSegment.Point1 = ctrl1;
-                _startBezierSegment.Point2 = ctrl2;
-                _startBezierSegment.Point3 = end;
-            }
+            StartSegmentGeometry = CreateBezierStreamGeometry(start, ctrl1, ctrl2, end);
         }
 
         /// <summary>
@@ -311,21 +360,7 @@ namespace RayTraceVS.WPF.Models
         /// </summary>
         private void UpdateMiddleSegment(Point start, Point ctrl1, Point ctrl2, Point end)
         {
-            if (_middleBezierSegment == null)
-            {
-                _middleBezierSegment = new BezierSegment(ctrl1, ctrl2, end, true);
-                _middlePathFigure = new PathFigure { StartPoint = start, IsClosed = false };
-                _middlePathFigure.Segments.Add(_middleBezierSegment);
-                MiddlePathGeometry = new PathGeometry();
-                MiddlePathGeometry.Figures.Add(_middlePathFigure);
-            }
-            else
-            {
-                _middlePathFigure!.StartPoint = start;
-                _middleBezierSegment.Point1 = ctrl1;
-                _middleBezierSegment.Point2 = ctrl2;
-                _middleBezierSegment.Point3 = end;
-            }
+            MiddlePathGeometry = CreateBezierStreamGeometry(start, ctrl1, ctrl2, end);
         }
 
         /// <summary>
@@ -333,21 +368,7 @@ namespace RayTraceVS.WPF.Models
         /// </summary>
         private void UpdateEndSegment(Point start, Point ctrl1, Point ctrl2, Point end)
         {
-            if (_endBezierSegment == null)
-            {
-                _endBezierSegment = new BezierSegment(ctrl1, ctrl2, end, true);
-                _endPathFigure = new PathFigure { StartPoint = start, IsClosed = false };
-                _endPathFigure.Segments.Add(_endBezierSegment);
-                EndSegmentGeometry = new PathGeometry();
-                EndSegmentGeometry.Figures.Add(_endPathFigure);
-            }
-            else
-            {
-                _endPathFigure!.StartPoint = start;
-                _endBezierSegment.Point1 = ctrl1;
-                _endBezierSegment.Point2 = ctrl2;
-                _endBezierSegment.Point3 = end;
-            }
+            EndSegmentGeometry = CreateBezierStreamGeometry(start, ctrl1, ctrl2, end);
         }
 
         private Point CalculateSocketPosition(NodeSocket socket, bool isInput)
@@ -395,9 +416,21 @@ namespace RayTraceVS.WPF.Models
                 {
                     inputSocket.PositionChanged -= _inputPositionHandler;
                 }
+                
+                // ノードの選択状態変更ハンドラを解除
+                if (outputSocket?.ParentNode != null && _outputNodeSelectionHandler != null)
+                {
+                    outputSocket.ParentNode.PropertyChanged -= _outputNodeSelectionHandler;
+                }
+                if (inputSocket?.ParentNode != null && _inputNodeSelectionHandler != null)
+                {
+                    inputSocket.ParentNode.PropertyChanged -= _inputNodeSelectionHandler;
+                }
 
                 _outputPositionHandler = null;
                 _inputPositionHandler = null;
+                _outputNodeSelectionHandler = null;
+                _inputNodeSelectionHandler = null;
             }
 
             _disposed = true;

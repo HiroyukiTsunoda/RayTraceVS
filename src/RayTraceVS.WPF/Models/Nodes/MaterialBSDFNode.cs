@@ -116,7 +116,7 @@ namespace RayTraceVS.WPF.Models.Nodes
             }
         }
 
-        public MaterialBSDFNode() : base("Material BSDF", NodeCategory.Material)
+        public MaterialBSDFNode() : base("BSDF", NodeCategory.Material)
         {
             // 入力ソケット
             AddInputSocket("Base Color", SocketType.Color);

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Shapes;
@@ -16,6 +17,16 @@ namespace RayTraceVS.WPF.Views.Handlers
     public class SelectionHandler
     {
         private readonly EditorInputState _state;
+        
+        /// <summary>
+        /// 選択状態が変更されたときに呼び出されるコールバック
+        /// </summary>
+        public Action? OnSelectionChanged { get; set; }
+        
+        /// <summary>
+        /// ノードのサイズを取得する関数（外部から設定）
+        /// </summary>
+        public Func<Node, Size?>? GetNodeSize { get; set; }
 
         public SelectionHandler(EditorInputState state)
         {
@@ -29,12 +40,26 @@ namespace RayTraceVS.WPF.Views.Handlers
         {
             if (viewModel == null) return;
 
-            viewModel.SelectedNode = null;
-            foreach (var n in viewModel.Nodes)
+            bool hadSelection = _state.SelectedNodes.Count > 0 || viewModel.SelectedNode != null;
+            
+            foreach (var node in _state.SelectedNodes)
             {
-                n.IsSelected = false;
+                node.IsSelected = false;
             }
             _state.SelectedNodes.Clear();
+            
+            // プロパティパネル用のSelectedNodeもクリア
+            if (viewModel.SelectedNode != null)
+            {
+                viewModel.SelectedNode.IsSelected = false;
+                viewModel.SelectedNode = null;
+            }
+            
+            // 選択状態が変更された場合、コールバックを呼び出す
+            if (hadSelection)
+            {
+                OnSelectionChanged?.Invoke();
+            }
         }
 
         /// <summary>
@@ -50,6 +75,8 @@ namespace RayTraceVS.WPF.Views.Handlers
             node.IsSelected = true;
             _state.SelectedNodes.Add(node);
             viewModel.SelectedNode = node;
+            
+            OnSelectionChanged?.Invoke();
         }
 
         /// <summary>
@@ -64,7 +91,7 @@ namespace RayTraceVS.WPF.Views.Handlers
                 if (viewModel.SelectedNode == node)
                 {
                     viewModel.SelectedNode = _state.SelectedNodes.Count > 0 
-                        ? System.Linq.Enumerable.First(_state.SelectedNodes) 
+                        ? _state.SelectedNodes.First() 
                         : null;
                 }
             }
@@ -74,6 +101,8 @@ namespace RayTraceVS.WPF.Views.Handlers
                 _state.SelectedNodes.Add(node);
                 viewModel.SelectedNode = node;
             }
+            
+            OnSelectionChanged?.Invoke();
         }
 
         /// <summary>
@@ -137,6 +166,12 @@ namespace RayTraceVS.WPF.Views.Handlers
 
         private void CreateSelectionRectangle(Point startPoint)
         {
+            // 既存の矩形があれば削除
+            if (_state.SelectionRectangle != null)
+            {
+                _state.PreviewLayer?.Children.Remove(_state.SelectionRectangle);
+            }
+            
             _state.SelectionRectangle = new Rectangle
             {
                 Stroke = BrushCache.Get(100, 150, 255),
@@ -145,12 +180,12 @@ namespace RayTraceVS.WPF.Views.Handlers
                 IsHitTestVisible = false
             };
 
+            // PreviewLayerに追加（最上層に表示）
+            _state.PreviewLayer?.Children.Add(_state.SelectionRectangle);
             Canvas.SetLeft(_state.SelectionRectangle, startPoint.X);
             Canvas.SetTop(_state.SelectionRectangle, startPoint.Y);
             _state.SelectionRectangle.Width = 0;
             _state.SelectionRectangle.Height = 0;
-
-            _state.NodeCanvas?.Children.Add(_state.SelectionRectangle);
         }
 
         private void UpdateSelectionRectangle(Point currentPoint)
@@ -172,9 +207,9 @@ namespace RayTraceVS.WPF.Views.Handlers
 
         private void RemoveSelectionRectangle()
         {
-            if (_state.SelectionRectangle != null && _state.NodeCanvas != null)
+            if (_state.SelectionRectangle != null)
             {
-                _state.NodeCanvas.Children.Remove(_state.SelectionRectangle);
+                _state.PreviewLayer?.Children.Remove(_state.SelectionRectangle);
                 _state.SelectionRectangle = null;
             }
         }
@@ -194,23 +229,63 @@ namespace RayTraceVS.WPF.Views.Handlers
 
             if (!addToSelection)
             {
-                ClearAllSelections(viewModel);
+                // コールバックを呼ばないようにするため、直接クリア
+                foreach (var node in _state.SelectedNodes)
+                {
+                    node.IsSelected = false;
+                }
+                _state.SelectedNodes.Clear();
+                if (viewModel.SelectedNode != null)
+                {
+                    viewModel.SelectedNode.IsSelected = false;
+                    viewModel.SelectedNode = null;
+                }
             }
 
             // 範囲内のノードを選択
-            double nodeWidth = 150;
-            double nodeHeight = 100;
-
             foreach (var node in viewModel.Nodes)
             {
+                // GetNodeSizeが設定されていればそれを使用、なければ概算
+                var nodeSize = GetNodeSize?.Invoke(node);
+                double nodeWidth, nodeHeight;
+                
+                if (nodeSize.HasValue)
+                {
+                    nodeWidth = nodeSize.Value.Width;
+                    nodeHeight = nodeSize.Value.Height;
+                }
+                else
+                {
+                    // 概算サイズ
+                    nodeWidth = 150;
+                    nodeHeight = Math.Max(60, 30 + Math.Max(node.InputSockets.Count, node.OutputSockets.Count) * 20);
+                }
+                
                 var nodeRect = new Rect(node.Position.X, node.Position.Y, nodeWidth, nodeHeight);
                 
-                if (selectionRect.IntersectsWith(nodeRect))
+                // ノードが矩形内に完全に収まっているかチェック
+                if (selectionRect.Contains(nodeRect))
                 {
                     node.IsSelected = true;
                     _state.SelectedNodes.Add(node);
-                    viewModel.SelectedNode = node;
                 }
+            }
+            
+            // 単一ノード選択の場合のみ、プロパティパネルに表示
+            if (_state.SelectedNodes.Count == 1)
+            {
+                viewModel.SelectedNode = _state.SelectedNodes.First();
+            }
+            else
+            {
+                // 複数選択または選択なしの場合はプロパティパネルをクリア
+                viewModel.SelectedNode = null;
+            }
+            
+            // 選択状態が変更されたのでコールバックを呼び出す
+            if (_state.SelectedNodes.Count > 0)
+            {
+                OnSelectionChanged?.Invoke();
             }
         }
 

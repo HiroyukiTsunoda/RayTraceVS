@@ -1,10 +1,12 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using System;
 using System.Collections.ObjectModel;
-using RayTraceVS.WPF.Commands;
-using RayTraceVS.WPF.Models;
+using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
+using RayTraceVS.WPF.Commands;
+using RayTraceVS.WPF.Models;
 
 namespace RayTraceVS.WPF.ViewModels
 {
@@ -23,6 +25,16 @@ namespace RayTraceVS.WPF.ViewModels
         private ObservableCollection<NodeConnection> connections;
 
         /// <summary>
+        /// 選択ノードに関連する接続線
+        /// </summary>
+        public ObservableCollection<NodeConnection> SelectedNodeConnections { get; } = new();
+
+        /// <summary>
+        /// 非選択ノードの接続線
+        /// </summary>
+        public ObservableCollection<NodeConnection> UnselectedNodeConnections { get; } = new();
+
+        /// <summary>
         /// Undo/Redo操作を管理するコマンドマネージャ
         /// </summary>
         public CommandManager CommandManager { get; } = new();
@@ -37,6 +49,93 @@ namespace RayTraceVS.WPF.ViewModels
             nodeGraph = new NodeGraph();
             nodes = new ObservableCollection<Node>();
             connections = new ObservableCollection<NodeConnection>();
+            
+            // コレクション変更時にビューを更新
+            connections.CollectionChanged += OnConnectionsCollectionChanged;
+        }
+        
+        /// <summary>
+        /// 接続線コレクションが変更されたとき
+        /// </summary>
+        private void OnConnectionsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        {
+            // 新しく追加された接続のIsSelected変更を監視
+            if (e.NewItems != null)
+            {
+                foreach (NodeConnection conn in e.NewItems)
+                {
+                    conn.PropertyChanged += OnConnectionPropertyChanged;
+                    // 適切なコレクションに追加
+                    if (conn.IsSelected)
+                        SelectedNodeConnections.Add(conn);
+                    else
+                        UnselectedNodeConnections.Add(conn);
+                }
+            }
+            
+            // 削除された接続の監視を解除
+            if (e.OldItems != null)
+            {
+                foreach (NodeConnection conn in e.OldItems)
+                {
+                    conn.PropertyChanged -= OnConnectionPropertyChanged;
+                    // 両方のコレクションから削除
+                    SelectedNodeConnections.Remove(conn);
+                    UnselectedNodeConnections.Remove(conn);
+                }
+            }
+        }
+        
+        /// <summary>
+        /// 接続のプロパティが変更されたとき（IsSelectedの変更を検知）
+        /// </summary>
+        private void OnConnectionPropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(NodeConnection.IsSelected) && sender is NodeConnection conn)
+            {
+                // 選択状態に応じてコレクション間を移動
+                if (conn.IsSelected)
+                {
+                    if (UnselectedNodeConnections.Remove(conn))
+                    {
+                        SelectedNodeConnections.Add(conn);
+                    }
+                }
+                else
+                {
+                    if (SelectedNodeConnections.Remove(conn))
+                    {
+                        UnselectedNodeConnections.Add(conn);
+                    }
+                }
+            }
+        }
+        
+        /// <summary>
+        /// 接続線のフィルタリングビューを更新（互換性のため維持）
+        /// </summary>
+        public void RefreshConnectionViews()
+        {
+            // ObservableCollectionを使用しているため、手動更新は不要
+            // ただし、状態の不整合を修正するためにフルリビルドを行う
+            RebuildConnectionCollections();
+        }
+        
+        /// <summary>
+        /// 選択/非選択の接続線コレクションを再構築
+        /// </summary>
+        private void RebuildConnectionCollections()
+        {
+            SelectedNodeConnections.Clear();
+            UnselectedNodeConnections.Clear();
+            
+            foreach (var conn in connections)
+            {
+                if (conn.IsSelected)
+                    SelectedNodeConnections.Add(conn);
+                else
+                    UnselectedNodeConnections.Add(conn);
+            }
         }
 
         public void AddNode(Node node)

@@ -19,6 +19,10 @@ namespace RayTraceVS.WPF
         private bool hasUnsavedChanges;
         private bool isRendering = false;
         private bool isSavingScreenshot = false;
+        
+        // レンダリング解像度（デフォルトは1920x1080）
+        private int renderWidth = 1920;
+        private int renderHeight = 1080;
 
         public MainWindow()
         {
@@ -441,6 +445,11 @@ namespace RayTraceVS.WPF
                     
                     // Expanderの開閉状態を復元
                     ComponentPalette.SetExpanderStates(viewportState.ExpanderStates);
+                    
+                    // レンダリング解像度を復元
+                    renderWidth = viewportState.RenderWidth;
+                    renderHeight = viewportState.RenderHeight;
+                    SetResolutionComboBox(renderWidth, renderHeight);
                 }
                 
                 // UIのレンダリング完了後に接続線を更新
@@ -585,6 +594,10 @@ namespace RayTraceVS.WPF
                     // Expanderの開閉状態も保存
                     viewportState.ExpanderStates = ComponentPalette.GetExpanderStates();
                     
+                    // レンダリング解像度も保存
+                    viewportState.RenderWidth = renderWidth;
+                    viewportState.RenderHeight = renderHeight;
+                    
                     sceneService.SaveScene(filePath, viewModel.Nodes, viewModel.Connections, viewportState);
                     
                     // 保存成功：未保存フラグをリセットしてタイトル更新
@@ -655,6 +668,49 @@ namespace RayTraceVS.WPF
             UpdateRenderingState(false);
         }
         
+        // 解像度選択のイベントハンドラ
+        private void ResolutionComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        {
+            if (ResolutionComboBox.SelectedItem is System.Windows.Controls.ComboBoxItem selectedItem)
+            {
+                var tag = selectedItem.Tag?.ToString();
+                if (!string.IsNullOrEmpty(tag) && tag.Contains("x"))
+                {
+                    var parts = tag.Split('x');
+                    if (parts.Length == 2 && int.TryParse(parts[0], out int width) && int.TryParse(parts[1], out int height))
+                    {
+                        renderWidth = width;
+                        renderHeight = height;
+                        
+                        // レンダリング中の場合は既存のウィンドウを閉じて再起動が必要
+                        // （ここでは変更をマークするだけ）
+                        if (!hasUnsavedChanges)
+                        {
+                            hasUnsavedChanges = true;
+                            UpdateTitle();
+                        }
+                    }
+                }
+            }
+        }
+        
+        // 解像度に応じてComboBoxの選択を設定
+        private void SetResolutionComboBox(int width, int height)
+        {
+            var targetTag = $"{width}x{height}";
+            foreach (var item in ResolutionComboBox.Items)
+            {
+                if (item is System.Windows.Controls.ComboBoxItem comboBoxItem && 
+                    comboBoxItem.Tag?.ToString() == targetTag)
+                {
+                    ResolutionComboBox.SelectedItem = comboBoxItem;
+                    return;
+                }
+            }
+            // マッチしない場合はデフォルトの1920x1080を選択
+            ResolutionComboBox.SelectedIndex = 2;
+        }
+        
         // ツールバーボタンのイベントハンドラ
         private void PlayButton_Click(object sender, RoutedEventArgs e)
         {
@@ -678,7 +734,7 @@ namespace RayTraceVS.WPF
             // レンダリングウィンドウを開く
             if (renderWindow == null || !renderWindow.IsLoaded)
             {
-                renderWindow = new RenderWindow();
+                renderWindow = new RenderWindow(renderWidth, renderHeight);
                 
                 if (viewModel != null)
                 {
