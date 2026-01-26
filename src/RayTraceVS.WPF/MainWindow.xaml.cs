@@ -103,6 +103,9 @@ namespace RayTraceVS.WPF
             Activate();
             Focus();
             System.Windows.Input.Keyboard.Focus(this);
+            
+            // 解像度表示を初期化
+            UpdateResolutionDisplay();
         }
 
         private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
@@ -682,6 +685,9 @@ namespace RayTraceVS.WPF
                         renderWidth = width;
                         renderHeight = height;
                         
+                        // 右上の解像度表示を更新
+                        UpdateResolutionDisplay();
+                        
                         // レンダリング中の場合は既存のウィンドウを閉じて再起動が必要
                         // （ここでは変更をマークするだけ）
                         if (!hasUnsavedChanges)
@@ -692,6 +698,43 @@ namespace RayTraceVS.WPF
                     }
                 }
             }
+        }
+        
+        // 解像度表示を更新
+        private void UpdateResolutionDisplay()
+        {
+            if (ResolutionDisplayText != null)
+            {
+                ResolutionDisplayText.Text = $"{renderWidth} x {renderHeight}";
+            }
+        }
+        
+        // レンダリング時間の表示を更新
+        private void UpdateRenderTimeDisplay(double milliseconds)
+        {
+            if (RenderTimeText != null)
+            {
+                RenderTimeText.Text = $"{milliseconds:F1} ms";
+            }
+        }
+        
+        // レンダリング時間の表示をクリア
+        private void ClearRenderTimeDisplay()
+        {
+            if (RenderTimeText != null)
+            {
+                RenderTimeText.Text = "";
+            }
+        }
+        
+        // レンダリング完了イベントハンドラ
+        private void OnRenderCompleted(double milliseconds)
+        {
+            // UIスレッドで実行
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                UpdateRenderTimeDisplay(milliseconds);
+            }));
         }
         
         // 解像度に応じてComboBoxの選択を設定
@@ -741,9 +784,13 @@ namespace RayTraceVS.WPF
                     renderWindow.SetNodeGraph(viewModel.NodeGraph);
                 }
                 
+                // レンダリング完了イベントを購読
+                renderWindow.RenderCompleted += OnRenderCompleted;
+                
                 renderWindow.Closed += (s, args) => 
                 {
                     UpdateRenderingState(false);
+                    ClearRenderTimeDisplay();
                     renderWindow = null;
                 };
                 

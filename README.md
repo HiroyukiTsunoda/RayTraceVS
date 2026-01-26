@@ -65,6 +65,10 @@ RayTraceVS/
 │   │   ├── SceneData.h                     # データ構造
 │   │   └── Marshalling.h/.cpp              # データ変換
 │   │
+│   ├── RayTraceVS.Package/                 # MSIXパッケージングプロジェクト
+│   │   ├── Package.appxmanifest            # アプリマニフェスト
+│   │   └── Images/                         # アプリアイコン
+│   │
 │   └── Shader/                             # シェーダーソース（共有）
 │       ├── Common.hlsli                    # 共通定義（空間ハッシュ対応）
 │       ├── NRDEncoding.hlsli               # NRDエンコーディング
@@ -314,11 +318,19 @@ RayTraceVS/
 
 ## ドキュメント
 
-- **[BUILD_GUIDE.md](BUILD_GUIDE.md)** - 詳細なビルド手順とトラブルシューティング
+### 使い方
 - **[USAGE.md](USAGE.md)** - アプリケーションの使い方
 - **[NODE_EDITOR_GUIDE.md](NODE_EDITOR_GUIDE.md)** - ノードエディタの詳細ガイド
+
+### 開発者向け
+- **[BUILD_GUIDE.md](BUILD_GUIDE.md)** - 詳細なビルド手順とトラブルシューティング
+- **[INSTALLER_GUIDE.md](INSTALLER_GUIDE.md)** - MSIXインストーラー作成ガイド
 - **[RENDERING_IMPLEMENTATION.md](RENDERING_IMPLEMENTATION.md)** - レンダリング実装の技術詳細
 - **[IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)** - 実装状況サマリー
+
+### ライセンス
+- **[LICENSE.md](LICENSE.md)** - MITライセンス
+- **[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)** - サードパーティライセンス一覧
 
 ## 今後の拡張予定
 
@@ -354,7 +366,9 @@ RayTraceVS/
 
 ## ライセンス
 
-MIT License
+MIT License - 詳細は **[LICENSE.md](LICENSE.md)** を参照
+
+サードパーティライブラリのライセンスは **[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)** を参照
 
 ## 作者
 

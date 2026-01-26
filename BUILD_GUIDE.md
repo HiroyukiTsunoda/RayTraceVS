@@ -176,12 +176,16 @@ msbuild RayTraceVS.sln /p:Configuration=Release /p:Platform=x64
 
 > 💡 シェーダーキャッシュ（`shader_cache.json`）は初回起動時に自動生成されます。ソースファイルが変更されると自動的に再コンパイルされます。
 
-### インストーラー作成（オプション）
+### インストーラー作成（MSIXパッケージ）
 
-WiX Toolsetなどを使用してインストーラーを作成できます:
-1. WiX Toolsetをインストール
-2. インストーラープロジェクトを追加
-3. 必須ファイルとランタイムを含める
+RayTraceVSはMSIXパッケージとして配布できます。詳細は **[INSTALLER_GUIDE.md](INSTALLER_GUIDE.md)** を参照してください。
+
+**簡易手順**:
+1. Visual Studioで `RayTraceVS.Package` プロジェクトを右クリック
+2. 「発行」→「アプリパッケージの作成...」を選択
+3. サイドローディング方式を選択
+4. 署名用証明書を選択（開発用は自己署名可）
+5. パッケージを作成
 
 ## 開発のヒント
 

@@ -8,11 +8,13 @@
 
 #### 1. プロジェクト構造（solution-setup）
 - ✅ Visual Studioソリューション（`.sln`）
-- ✅ 3つのプロジェクト構成
+- ✅ 4つのプロジェクト構成
   - RayTraceVS.WPF（C# WPF）
   - RayTraceVS.DXEngine（C++ DirectX12）
   - RayTraceVS.Interop（C++/CLI相互運用）
+  - RayTraceVS.Package（MSIXパッケージング）
 - ✅ ディレクトリ構造とファイル配置
+- ✅ MSIXインストーラー対応
 
 #### 2. DirectX12 基盤（dx12-foundation）
 - ✅ DXContextクラス（DirectX12初期化）

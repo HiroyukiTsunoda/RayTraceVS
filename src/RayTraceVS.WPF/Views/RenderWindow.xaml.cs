@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Interop;
@@ -52,6 +53,16 @@ namespace RayTraceVS.WPF.Views
         private bool _isRenderingInProgress = false;
         private SceneParams? _pendingSceneParams = null;
         private readonly object _renderLock = new object();
+        
+        // レンダリング時間計測用
+        private readonly Stopwatch _renderStopwatch = new Stopwatch();
+        private bool _isFirstRender = true;  // 最初のレンダリングフラグ
+        
+        /// <summary>
+        /// レンダリング完了時に発行されるイベント
+        /// 引数はレンダリングにかかった時間（ミリ秒）
+        /// </summary>
+        public event Action<double>? RenderCompleted;
         
         // レンダリング解像度（コンストラクタで設定）
         private readonly int RenderWidth;
@@ -167,6 +178,9 @@ namespace RayTraceVS.WPF.Views
                     Close();
                     return;
                 }
+                
+                // ダミーレンダリング：シェーダーコンパイルなどの初期化を完了させる
+                PerformWarmupRender();
                 
                 // WritableBitmapを作成
                 renderBitmap = new WriteableBitmap(
@@ -324,6 +338,7 @@ namespace RayTraceVS.WPF.Views
             while (true)
             {
                 byte[]? finalPixelData = null;
+                double renderTimeMs = 0;
                 
                 try
                 {
@@ -357,7 +372,11 @@ namespace RayTraceVS.WPF.Views
                                 return GetCachedSkyBuffer();
                             }
                             
+                            // レンダリング処理の時間のみを計測
+                            _renderStopwatch.Restart();
                             renderService.Render();
+                            _renderStopwatch.Stop();
+                            renderTimeMs += _renderStopwatch.Elapsed.TotalMilliseconds;
                         }
                         
                         // 最後にピクセルデータを取得
@@ -368,6 +387,17 @@ namespace RayTraceVS.WPF.Views
                     if (finalPixelData != null && isRendering)
                     {
                         UpdateDisplay(finalPixelData);
+                        
+                        // 最初のフレームは初期化コストが含まれるためスキップ
+                        if (_isFirstRender)
+                        {
+                            _isFirstRender = false;
+                        }
+                        else
+                        {
+                            // レンダリング完了イベントを発行
+                            RenderCompleted?.Invoke(renderTimeMs);
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -477,6 +507,77 @@ namespace RayTraceVS.WPF.Views
             finally
             {
                 renderBitmap.Unlock();
+            }
+        }
+
+        /// <summary>
+        /// ウォームアップ用のダミーレンダリングを実行
+        /// シェーダーコンパイルやパイプライン初期化を事前に完了させる
+        /// </summary>
+        private void PerformWarmupRender()
+        {
+            if (renderService == null)
+                return;
+            
+            try
+            {
+                // 空のシーンでダミーレンダリング（1つの球体を配置してシェーダーを強制的にコンパイル）
+                var dummySphere = new SphereData
+                {
+                    Position = new Vector3(0, 0, 0),
+                    Radius = 1.0f,
+                    Color = new Vector4(0, 0, 0, 1),  // 真っ黒
+                    Metallic = 0,
+                    Roughness = 1,
+                    Transmission = 0,
+                    IOR = 1.0f,
+                    Specular = 0,
+                    Emission = new Vector3(0, 0, 0),
+                    Absorption = new Vector3(0, 0, 0)
+                };
+                
+                var dummyCamera = new CameraData
+                {
+                    Position = new Vector3(0, 0, -10),
+                    LookAt = new Vector3(0, 0, 0),
+                    Up = new Vector3(0, 1, 0),
+                    FieldOfView = 60.0f,
+                    AspectRatio = (float)RenderWidth / RenderHeight,
+                    Near = 0.1f,
+                    Far = 1000.0f,
+                    ApertureSize = 0,
+                    FocusDistance = 10.0f
+                };
+                
+                var dummyLight = new LightData
+                {
+                    Position = new Vector3(0, 10, 0),
+                    Color = new Vector4(0, 0, 0, 1),  // 真っ暗
+                    Intensity = 0,
+                    Type = LightType.Point,
+                    Radius = 0,
+                    SoftShadowSamples = 1
+                };
+                
+                // ダミーシーンでレンダリング実行（シェーダーコンパイルを発生させる）
+                renderService.UpdateScene(
+                    new[] { dummySphere },
+                    Array.Empty<PlaneData>(),
+                    Array.Empty<BoxData>(),
+                    dummyCamera,
+                    new[] { dummyLight },
+                    Array.Empty<MeshInstanceData>(),
+                    Array.Empty<MeshCacheData>(),
+                    1, 1, 1,  // samplesPerPixel, maxBounces, traceRecursionDepth
+                    1.0f, 0, 1.0f, 1.0f, 1.0f, false, 1.0f, 0, 1.0f);  // 最小設定
+                
+                renderService.Render();
+                
+                Debug.WriteLine("Warmup render completed - shaders compiled");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Warmup render failed: {ex.Message}");
             }
         }
 
