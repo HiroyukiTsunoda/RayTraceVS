@@ -3800,7 +3800,7 @@ namespace RayTraceVS::DXEngine
             }
         }
         
-        // SIGMA omitted - shadow denoising disabled
+        // SIGMA shadow denoising disabled - shadow is baked into diffuse
         denoiser->SetSigmaEnabled(false);
         
         // CRITICAL: Copy raw specular data BEFORE NRD processes it

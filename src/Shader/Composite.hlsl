@@ -412,25 +412,40 @@ void CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
         // This avoids temporal filtering artifacts on reflections/refractions
         inputColor = RawSpecularBackup.SampleLevel(PointSampler, uv, 0).rgb;
     }
-    else if (UseDenoisedShadow != 0)
-    {
-        // Diffuse surface with denoiser ON: use NRD output
-        float3 diffuseDemod = DenoisedDiffuse.SampleLevel(LinearSampler, uv, 0).rgb;
-        float3 specular = DenoisedSpecular.SampleLevel(LinearSampler, uv, 0).rgb;
-        
-        // Remodulate diffuse: multiply back albedo
-        float3 diffuse = diffuseDemod * albedo;
-        inputColor = diffuse + specular;
-    }
     else
     {
-        // Diffuse surface with denoiser OFF: use raw buffers
-        float3 diffuseDemod = GBuffer_DiffuseIn.SampleLevel(LinearSampler, uv, 0).rgb;
-        float3 specular = RawSpecularBackup.SampleLevel(LinearSampler, uv, 0).rgb;
+        // Diffuse surface: Distance-based NRD bypass
+        // 
+        // Near surfaces (viewZ < threshold): Use NRD denoised (clean shadows)
+        // Far surfaces (viewZ >= threshold): Use raw buffers (clean checkerboard)
+        // This avoids checkerboard artifacts from NRD temporal filtering at distance
         
-        // Remodulate diffuse: multiply back albedo
-        float3 diffuse = diffuseDemod * albedo;
-        inputColor = diffuse + specular;
+        float viewZ = GBuffer_ViewZ.SampleLevel(PointSampler, uv, 0);
+        float bypassThreshold = 8.0;  // Distance threshold for NRD bypass
+        float blendRange = 2.0;       // Smooth transition range
+        
+        float3 diffuseDemodRaw = GBuffer_DiffuseIn.SampleLevel(PointSampler, uv, 0).rgb;
+        float3 specularRaw = RawSpecularBackup.SampleLevel(PointSampler, uv, 0).rgb;
+        float3 rawDiffuse = diffuseDemodRaw * albedo;
+        float3 rawColor = rawDiffuse + specularRaw;
+        
+        if (UseDenoisedShadow != 0 && viewZ < bypassThreshold + blendRange)
+        {
+            // Use NRD denoised for near surfaces
+            float3 diffuseDemodNRD = DenoisedDiffuse.SampleLevel(LinearSampler, uv, 0).rgb;
+            float3 specularNRD = DenoisedSpecular.SampleLevel(LinearSampler, uv, 0).rgb;
+            float3 nrdDiffuse = diffuseDemodNRD * albedo;
+            float3 nrdColor = nrdDiffuse + specularNRD;
+            
+            // Blend between NRD and raw based on distance
+            float blendFactor = saturate((viewZ - bypassThreshold) / blendRange);
+            inputColor = lerp(nrdColor, rawColor, blendFactor);
+        }
+        else
+        {
+            // Far surfaces or denoiser OFF: use raw
+            inputColor = rawColor;
+        }
     }
     
     // Apply exposure

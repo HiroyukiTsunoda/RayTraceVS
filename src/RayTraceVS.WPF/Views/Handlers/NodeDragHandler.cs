@@ -87,8 +87,11 @@ namespace RayTraceVS.WPF.Views.Handlers
                 // 接続線更新のスロットリング（約60fps）
                 if (ShouldUpdateConnections())
                 {
+                    // レイアウト更新を先に行う（UIが更新されないとソケット位置が正しく取得できない）
+                    OnRequestLayoutUpdate?.Invoke();
                     _onNodeMoved?.Invoke(_state.DraggedNode);
                     _lastConnectionUpdate = DateTime.Now;
+                    return;
                 }
             }
             
@@ -112,6 +115,7 @@ namespace RayTraceVS.WPF.Views.Handlers
             // 接続線更新のスロットリング判定
             bool shouldUpdate = ShouldUpdateConnections();
             
+            // まずすべてのノードの位置を更新
             foreach (var kvp in _state.MultiDragOffsets)
             {
                 var node = kvp.Key;
@@ -121,16 +125,19 @@ namespace RayTraceVS.WPF.Views.Handlers
                     currentPosition.Y - offset.Y
                 );
                 node.Position = newPosition;
-                
-                // スロットリング適用
-                if (shouldUpdate)
-                {
-                    _onNodeMoved?.Invoke(node);
-                }
             }
             
+            // スロットリング適用
             if (shouldUpdate)
             {
+                // レイアウト更新を先に行う（UIが更新されないとソケット位置が正しく取得できない）
+                OnRequestLayoutUpdate?.Invoke();
+                
+                // ソケット位置と接続線を更新
+                foreach (var kvp in _state.MultiDragOffsets)
+                {
+                    _onNodeMoved?.Invoke(kvp.Key);
+                }
                 _lastConnectionUpdate = DateTime.Now;
             }
         }
