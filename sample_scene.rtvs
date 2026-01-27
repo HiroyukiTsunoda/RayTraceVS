@@ -1534,12 +1534,6 @@
       "InputSocketName": "Light2"
     },
     {
-      "OutputNodeId": "f9f127ed-a2d0-4b4c-8f48-a3ca8f3e72c5",
-      "OutputSocketName": "Light",
-      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
-      "InputSocketName": "Light3"
-    },
-    {
       "OutputNodeId": "61dd6547-4fc4-4a4b-bf19-5d6b95b8a60d",
       "OutputSocketName": "Material",
       "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-111111111111",
@@ -1634,12 +1628,18 @@
       "OutputSocketName": "Vector",
       "InputNodeId": "e95067f7-f296-46db-9088-6adaf7893999",
       "InputSocketName": "Absorption"
+    },
+    {
+      "OutputNodeId": "f9f127ed-a2d0-4b4c-8f48-a3ca8f3e72c5",
+      "OutputSocketName": "Light",
+      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
+      "InputSocketName": "Light3"
     }
   ],
   "Viewport": {
-    "PanX": -354.2256890708471,
-    "PanY": -576.4529136231996,
-    "Zoom": 0.7000000000000005,
+    "PanX": -1028.2736160919892,
+    "PanY": -858.0185789083941,
+    "Zoom": 0.9400000000000005,
     "IsLeftPanelVisible": true,
     "IsRightPanelVisible": true,
     "ExpanderStates": {

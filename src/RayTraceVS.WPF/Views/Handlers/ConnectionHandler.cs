@@ -406,15 +406,27 @@ namespace RayTraceVS.WPF.Views.Handlers
 
             if (isCompatible)
             {
-                // 互換性あり：緑色
-                _state.PreviewLine.Stroke = BrushCache.Get(0x2E, 0xCC, 0x71);
+                // 互換性あり：出力ソケットの色（実際の接続線と同じ色）、実線
+                // ドラッグ中のソケットが出力の場合はその色、入力の場合はターゲット（出力）の色
+                Brush connectionColor;
+                if (!_state.DraggedSocket.IsInput)
+                {
+                    connectionColor = _state.DraggedSocket.SocketColor ?? BrushCache.Get(0x00, 0x7A, 0xCC);
+                }
+                else
+                {
+                    connectionColor = targetSocket.SocketColor ?? BrushCache.Get(0x00, 0x7A, 0xCC);
+                }
+                _state.PreviewLine.Stroke = connectionColor;
                 _state.PreviewLine.Opacity = 1.0;
+                _state.PreviewLine.StrokeDashArray = null;
             }
             else
             {
-                // 互換性なし：赤色
+                // 互換性なし：赤色、点線
                 _state.PreviewLine.Stroke = BrushCache.Get(Colors.Red);
                 _state.PreviewLine.Opacity = 0.5;
+                _state.PreviewLine.StrokeDashArray = new DoubleCollection { 5, 3 };
             }
         }
 
@@ -460,6 +472,7 @@ namespace RayTraceVS.WPF.Views.Handlers
             var socketColor = _state.DraggedSocket.SocketColor as SolidColorBrush;
             _state.PreviewLine.Stroke = socketColor ?? BrushCache.Get(0x00, 0x7A, 0xCC);
             _state.PreviewLine.Opacity = 1.0;
+            _state.PreviewLine.StrokeDashArray = new DoubleCollection { 5, 3 };
         }
 
         /// <summary>

@@ -342,12 +342,12 @@ HitInfo TraceRay(Ray ray)
                 int iz = (int)floor(uv.y / checkerSize);
                 float checker = (float)(((ix + iz) & 1) == 0);
                 
-                // Distance-based contrast reduction to reduce aliasing (pseudo-MIP filtering)
+                // P2-1: Distance-based contrast reduction with exponential fade
+                // Exponential fade provides more natural falloff than linear
                 float hitDist = t;
-                float fadeStart = 10.0;   // Distance where fading begins
-                float fadeEnd = 100.0;    // Distance where contrast is minimum
-                float distFactor = saturate((hitDist - fadeStart) / (fadeEnd - fadeStart));
-                float contrast = lerp(1.0, 0.2, distFactor);
+                float fadeDistance = 50.0;  // P3-1: Matches CHECKER_FADE_DISTANCE in Common.hlsli
+                float fadeExp = exp(-hitDist / fadeDistance);
+                float contrast = lerp(0.2, 1.0, fadeExp);
                 
                 // Apply contrast: lerp between gray (0.5) and checker pattern
                 float checkerValue = lerp(0.5, checker, contrast);

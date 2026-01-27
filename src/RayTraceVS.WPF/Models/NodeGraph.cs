@@ -27,6 +27,13 @@ namespace RayTraceVS.WPF.Models
         
         // DirtyTracker（非再帰的伝播、重複防止）
         private readonly DirtyTracker _dirtyTracker;
+        
+        // 隣接リスト: ノードID → 下流ノードのSet（GetDownstreamNodesの高速化用）
+        private readonly Dictionary<Guid, HashSet<Node>> _outgoingEdges = new();
+        
+        // トポロジカルソート: 評価順序のキャッシュ
+        private List<Node>? _topologicalOrder;
+        private bool _topologyDirty = true;
 
         /// <summary>
         /// シーンが変更されたときに発火するイベント
@@ -64,6 +71,12 @@ namespace RayTraceVS.WPF.Models
                     // ノードのプロパティ変更を監視
                     node.PropertyChanged += OnNodePropertyChanged;
                     
+                    // ノードのDirty変更を監視（downstream伝播用）
+                    node.DirtyChanged += OnNodeDirtyChanged;
+                    
+                    // トポロジカル順序を無効化
+                    InvalidateTopology();
+                    
                     NotifySceneChanged();
                 }
                 else
@@ -92,6 +105,9 @@ namespace RayTraceVS.WPF.Models
                     // ノードのプロパティ変更監視を解除
                     node.PropertyChanged -= OnNodePropertyChanged;
                     
+                    // ノードのDirty変更監視を解除
+                    node.DirtyChanged -= OnNodeDirtyChanged;
+                    
                     // ノードに接続されている接続を削除
                     var connectionsToRemove = connections.Values
                         .Where(c => c.InputSocket?.ParentNode?.Id == node.Id || 
@@ -100,6 +116,21 @@ namespace RayTraceVS.WPF.Models
 
                     foreach (var connection in connectionsToRemove)
                     {
+                        // 隣接リストから削除
+                        var sourceNode = connection.OutputSocket?.ParentNode;
+                        var targetNode = connection.InputSocket?.ParentNode;
+                        if (sourceNode != null && targetNode != null)
+                        {
+                            if (_outgoingEdges.TryGetValue(sourceNode.Id, out var targets))
+                            {
+                                targets.Remove(targetNode);
+                                if (targets.Count == 0)
+                                {
+                                    _outgoingEdges.Remove(sourceNode.Id);
+                                }
+                            }
+                        }
+                        
                         try
                         {
                             connection.Dispose(); // IDisposable対応
@@ -110,8 +141,15 @@ namespace RayTraceVS.WPF.Models
                         }
                         connections.Remove(connection.Id);
                     }
+                    
+                    // このノードが出力元として持っていた隣接リストエントリも削除
+                    _outgoingEdges.Remove(node.Id);
 
                     nodes.Remove(node.Id);
+                    
+                    // トポロジカル順序を無効化
+                    InvalidateTopology();
+                    
                     NotifySceneChanged();
                 }
                 else
@@ -143,29 +181,32 @@ namespace RayTraceVS.WPF.Models
         }
 
         /// <summary>
-        /// 指定ノードの直接の下流ノードを取得する
+        /// ノードのDirty状態が変更されたときのハンドラ。
+        /// MarkDirty()が直接呼ばれた場合に、downstreamへ伝播させる。
+        /// </summary>
+        private void OnNodeDirtyChanged(object? sender, EventArgs e)
+        {
+            if (sender is Node node)
+            {
+                // downstreamのみ伝播（自身は既にDirty）
+                foreach (var downstream in GetDownstreamNodes(node))
+                {
+                    _dirtyTracker.MarkDirty(downstream);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 指定ノードの直接の下流ノードを取得する（O(out-degree)）
         /// </summary>
         public IEnumerable<Node> GetDownstreamNodes(Node node)
         {
-            // このノードの出力ソケットに接続されている入力ソケットのノードを探す
-            var downstreamNodes = new HashSet<Node>();
-            
-            foreach (var outputSocket in node.OutputSockets)
+            // 隣接リストから直接取得（O(out-degree)）
+            if (_outgoingEdges.TryGetValue(node.Id, out var downstream))
             {
-                var outgoingConnections = connections.Values
-                    .Where(c => c.OutputSocket?.Id == outputSocket.Id)
-                    .ToList();
-                
-                foreach (var conn in outgoingConnections)
-                {
-                    if (conn.InputSocket?.ParentNode != null)
-                    {
-                        downstreamNodes.Add(conn.InputSocket.ParentNode);
-                    }
-                }
+                return downstream;
             }
-            
-            return downstreamNodes;
+            return Enumerable.Empty<Node>();
         }
 
         /// <summary>
@@ -208,11 +249,27 @@ namespace RayTraceVS.WPF.Models
 
                     connections[connection.Id] = connection;
                     
+                    // 隣接リストを更新（出力側ノード → 入力側ノード）
+                    var sourceNode = connection.OutputSocket.ParentNode;
+                    var targetNode = connection.InputSocket.ParentNode;
+                    if (sourceNode != null && targetNode != null)
+                    {
+                        if (!_outgoingEdges.TryGetValue(sourceNode.Id, out var targets))
+                        {
+                            targets = new HashSet<Node>();
+                            _outgoingEdges[sourceNode.Id] = targets;
+                        }
+                        targets.Add(targetNode);
+                    }
+                    
                     // 接続が追加されたら、入力側のノードをDirtyにする
                     if (connection.InputSocket?.ParentNode != null)
                     {
                         _dirtyTracker.MarkDirty(connection.InputSocket.ParentNode);
                     }
+                    
+                    // トポロジカル順序を無効化
+                    InvalidateTopology();
                     
                     NotifySceneChanged();
                 }
@@ -245,6 +302,22 @@ namespace RayTraceVS.WPF.Models
                         _dirtyTracker.MarkDirty(connection.InputSocket.ParentNode);
                     }
                     
+                    // 隣接リストから削除
+                    var sourceNode = connection.OutputSocket?.ParentNode;
+                    var targetNode = connection.InputSocket?.ParentNode;
+                    if (sourceNode != null && targetNode != null)
+                    {
+                        if (_outgoingEdges.TryGetValue(sourceNode.Id, out var targets))
+                        {
+                            targets.Remove(targetNode);
+                            // 空になったらエントリごと削除
+                            if (targets.Count == 0)
+                            {
+                                _outgoingEdges.Remove(sourceNode.Id);
+                            }
+                        }
+                    }
+                    
                     try
                     {
                         connection.Dispose(); // IDisposable対応
@@ -255,6 +328,10 @@ namespace RayTraceVS.WPF.Models
                     }
                     
                     connections.Remove(connection.Id);
+                    
+                    // トポロジカル順序を無効化
+                    InvalidateTopology();
+                    
                     NotifySceneChanged();
                 }
                 else
@@ -270,6 +347,163 @@ namespace RayTraceVS.WPF.Models
         }
 
         /// <summary>
+        /// トポロジカル順序を無効化する
+        /// </summary>
+        private void InvalidateTopology()
+        {
+            _topologyDirty = true;
+        }
+
+        /// <summary>
+        /// トポロジカル順序が有効であることを保証する（必要に応じて再計算）
+        /// </summary>
+        private void EnsureTopologicalOrder()
+        {
+            if (!_topologyDirty && _topologicalOrder != null)
+            {
+                return;
+            }
+            
+            _topologicalOrder = ComputeTopologicalOrder();
+            _topologyDirty = false;
+        }
+
+        /// <summary>
+        /// トポロジカルソートを計算する（Kahnのアルゴリズム）
+        /// 循環が検出された場合はnullを返さず、処理可能なノードのみを返す
+        /// </summary>
+        private List<Node> ComputeTopologicalOrder()
+        {
+            var result = new List<Node>();
+            
+            // 入次数（依存元の数）を計算
+            var inDegree = new Dictionary<Guid, int>();
+            foreach (var node in nodes.Values)
+            {
+                inDegree[node.Id] = 0;
+            }
+            
+            foreach (var edges in _outgoingEdges.Values)
+            {
+                foreach (var targetNode in edges)
+                {
+                    if (inDegree.ContainsKey(targetNode.Id))
+                    {
+                        inDegree[targetNode.Id]++;
+                    }
+                }
+            }
+            
+            // 入次数が0のノードをキューに追加
+            var queue = new Queue<Node>();
+            foreach (var node in nodes.Values)
+            {
+                if (inDegree[node.Id] == 0)
+                {
+                    queue.Enqueue(node);
+                }
+            }
+            
+            // BFSでトポロジカル順序を生成
+            while (queue.Count > 0)
+            {
+                var current = queue.Dequeue();
+                result.Add(current);
+                
+                // このノードの下流ノードの入次数を減らす
+                if (_outgoingEdges.TryGetValue(current.Id, out var downstream))
+                {
+                    foreach (var targetNode in downstream)
+                    {
+                        if (inDegree.ContainsKey(targetNode.Id))
+                        {
+                            inDegree[targetNode.Id]--;
+                            if (inDegree[targetNode.Id] == 0)
+                            {
+                                queue.Enqueue(targetNode);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // 循環検出: 処理されなかったノードがある場合
+            if (result.Count < nodes.Count)
+            {
+                var cycleNodes = nodes.Values.Where(n => !result.Contains(n)).ToList();
+                Debug.WriteLine($"NodeGraph: 循環参照が検出されました。影響ノード数: {cycleNodes.Count}");
+                foreach (var cycleNode in cycleNodes)
+                {
+                    Debug.WriteLine($"  - {cycleNode.Title} ({cycleNode.Id})");
+                }
+                
+                // 循環に含まれるノードも追加（評価時にnullを返す）
+                result.AddRange(cycleNodes);
+            }
+            
+            return result;
+        }
+
+        /// <summary>
+        /// グラフに循環参照があるかどうかを確認する
+        /// </summary>
+        public bool HasCycle()
+        {
+            EnsureTopologicalOrder();
+            
+            // ComputeTopologicalOrderで全ノードが処理されなかった場合、循環がある
+            var inDegree = new Dictionary<Guid, int>();
+            foreach (var node in nodes.Values)
+            {
+                inDegree[node.Id] = 0;
+            }
+            
+            foreach (var edges in _outgoingEdges.Values)
+            {
+                foreach (var targetNode in edges)
+                {
+                    if (inDegree.ContainsKey(targetNode.Id))
+                    {
+                        inDegree[targetNode.Id]++;
+                    }
+                }
+            }
+            
+            var queue = new Queue<Node>();
+            foreach (var node in nodes.Values)
+            {
+                if (inDegree[node.Id] == 0)
+                {
+                    queue.Enqueue(node);
+                }
+            }
+            
+            int processedCount = 0;
+            while (queue.Count > 0)
+            {
+                var current = queue.Dequeue();
+                processedCount++;
+                
+                if (_outgoingEdges.TryGetValue(current.Id, out var downstream))
+                {
+                    foreach (var targetNode in downstream)
+                    {
+                        if (inDegree.ContainsKey(targetNode.Id))
+                        {
+                            inDegree[targetNode.Id]--;
+                            if (inDegree[targetNode.Id] == 0)
+                            {
+                                queue.Enqueue(targetNode);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            return processedCount < nodes.Count;
+        }
+
+        /// <summary>
         /// すべてのノードをDirtyにする（完全再評価が必要な場合）
         /// </summary>
         public void MarkAllNodesDirty()
@@ -278,11 +512,14 @@ namespace RayTraceVS.WPF.Models
         }
 
         /// <summary>
-        /// グラフを評価する（増分評価対応）
+        /// グラフを評価する（増分評価対応、トポロジカル順序で評価）
         /// Dirtyなノードのみ再評価し、それ以外はキャッシュを使用
         /// </summary>
         public Dictionary<Guid, object?> EvaluateGraph()
         {
+            // トポロジカル順序を確保（必要に応じて再計算）
+            EnsureTopologicalOrder();
+            
             // 評価用オブジェクトを再利用（毎回newしない）
             _evaluationResults ??= new Dictionary<Guid, object?>();
             _evaluationResults.Clear();
@@ -290,9 +527,19 @@ namespace RayTraceVS.WPF.Models
             _evaluatingNodes ??= new HashSet<Guid>();
             _evaluatingNodes.Clear();
 
-            foreach (var node in nodes.Values)
+            // トポロジカル順序に従って評価（依存関係が保証される）
+            if (_topologicalOrder != null)
             {
-                EvaluateNode(node, _evaluationResults, _evaluatingNodes);
+                foreach (var node in _topologicalOrder)
+                {
+                    // ノードがまだグラフに存在するか確認
+                    if (!nodes.ContainsKey(node.Id))
+                    {
+                        continue;
+                    }
+                    
+                    EvaluateNode(node, _evaluationResults, _evaluatingNodes);
+                }
             }
 
             // 評価後にDirtyTrackerをクリア（次回のMarkDirtyが正しく機能するように）

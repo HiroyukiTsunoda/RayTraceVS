@@ -632,7 +632,9 @@ void RayGen()
                     
                     float3 reflectThroughput = fresnel.xxx;
                     float transmittance = saturate(transmission);
-                    float tintStrength = (state.depth == 0) ? 1.0 : 0.7;
+                    // P3-3: Use consistent tint strength regardless of ray depth
+                    // This provides more predictable glass coloring at all bounce levels
+                    float tintStrength = 0.85;  // Balanced value between full tint (1.0) and minimal (0.7)
                     float3 refractThroughput = (1.0 - fresnel) * transmittance
                         * lerp(float3(1, 1, 1), baseColor, tintStrength);
                     reflectThroughput = clamp(reflectThroughput, 0.0, 1.0);
@@ -881,8 +883,11 @@ void RayGen()
     float3 diffuseForNRD;
     float3 specularForNRD;
     
-    // Classify material: glass or metal is specular-dominant
-    bool isSpecularDominant = anyHit && (primaryTransmission > 0.5 || primaryMetallic > 0.5);
+    // P2-2: Smooth specular dominance using smoothstep instead of binary threshold
+    // This provides gradual transition between specular and diffuse surfaces
+    float specularDominance = max(primaryTransmission, primaryMetallic);
+    float nrdBlendFactor = 1.0 - smoothstep(0.3, 0.7, specularDominance);
+    bool isSpecularDominant = anyHit && (specularDominance > 0.5);
     
     if (!anyHit)
     {
@@ -890,26 +895,28 @@ void RayGen()
         diffuseForNRD = finalColor;
         specularForNRD = float3(0, 0, 0);
     }
-    else if (isSpecularDominant)
+    else if (specularDominance > 0.7)
     {
-        // Glass/Metal: ALL light goes to specular (reflections + refractions)
+        // Highly specular (glass/metal > 0.7): ALL light goes to specular
         // No demodulation - these materials have no meaningful diffuse component
         diffuseForNRD = float3(0, 0, 0);
         specularForNRD = finalColor;
     }
+    else if (specularDominance > 0.3)
+    {
+        // P2-2: Transition zone (0.3-0.7): blend between specular and diffuse treatment
+        float3 diffuseModulated = accumulatedDiffuse * invSampleCount;
+        float3 directSpecular = accumulatedSpecular * invSampleCount;
+        float3 secondaryBounces = max(finalColor - diffuseModulated - directSpecular, 0.0);
+        float3 safeAlbedo = max(outAlbedo, float3(0.04, 0.04, 0.04));
+        
+        // Blend between full specular and demodulated diffuse
+        diffuseForNRD = (diffuseModulated / safeAlbedo) * nrdBlendFactor;
+        specularForNRD = lerp(finalColor, directSpecular + secondaryBounces, nrdBlendFactor);
+    }
     else
     {
-        // Opaque diffuse surface: demodulate diffuse, keep specular separate
-        // 
-        // accumulatedDiffuse = sum of payload.diffuseRadiance (primary hits only)
-        //   - Contains: ambient + directDiffuse + emission (MODULATED with albedo)
-        // accumulatedSpecular = sum of payload.specularRadiance (primary hits only)
-        //   - Contains: directSpecular highlights
-        // accumulatedColor = total light including secondary bounces (reflections from other objects)
-        //
-        // Secondary bounces (reflections seen on the floor from metal sphere, etc.)
-        // should be included in specular, not demodulated.
-        
+        // Opaque diffuse surface (< 0.3): demodulate diffuse, keep specular separate
         float3 diffuseModulated = accumulatedDiffuse * invSampleCount;
         float3 directSpecular = accumulatedSpecular * invSampleCount;
         
@@ -949,15 +956,16 @@ void RayGen()
     
     // Encode material type in albedo.alpha for Composite shader:
     //   0.0 = sky/miss (use raw diffuse directly, no remodulation)
-    //   0.5 = specular-dominant (glass/metal) - bypass NRD, use raw buffers
-    //   1.0 = diffuse surface - use NRD denoised, remodulate with albedo
+    //   0.5 = specular-dominant (glass/metal) - bypass NRD completely to avoid ghosting
+    //   0.75-1.0 = semi-specular to diffuse - use NRD with P2-2 smoothstep blending
+    // Note: Glass/metal MUST use discrete 0.5 to ensure complete NRD bypass
     float materialAlpha;
     if (!anyHit)
         materialAlpha = 0.0;
-    else if (isSpecularDominant)
-        materialAlpha = 0.5;
+    else if (specularDominance > 0.5)
+        materialAlpha = 0.5;  // Glass/metal: discrete value for complete NRD bypass
     else
-        materialAlpha = 1.0;
+        materialAlpha = lerp(0.75, 1.0, nrdBlendFactor);  // Semi-specular to diffuse: P2-2 smooth transition
     
     GBuffer_Albedo[launchIndex] = float4(outAlbedo, materialAlpha);
     
