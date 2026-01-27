@@ -34,7 +34,14 @@ namespace RayTraceVS.WPF.Views
         bool EnableDenoiser,
         float Gamma,
         int PhotonDebugMode,
-        float PhotonDebugScale);
+        float PhotonDebugScale,
+        // P1 optimization settings
+        float LightAttenuationConstant,
+        float LightAttenuationLinear,
+        float LightAttenuationQuadratic,
+        int MaxShadowLights,
+        float NRDBypassDistance,
+        float NRDBypassBlendRange);
 
     public partial class RenderWindow : Window
     {
@@ -122,7 +129,9 @@ namespace RayTraceVS.WPF.Views
                 evaluated.Exposure, evaluated.ToneMapOperator,
                 evaluated.DenoiserStabilization, evaluated.ShadowStrength, evaluated.ShadowAbsorptionScale,
                 evaluated.EnableDenoiser, evaluated.Gamma,
-                photonDebugMode, photonDebugScale);
+                photonDebugMode, photonDebugScale,
+                evaluated.LightAttenuationConstant, evaluated.LightAttenuationLinear, evaluated.LightAttenuationQuadratic,
+                evaluated.MaxShadowLights, evaluated.NRDBypassDistance, evaluated.NRDBypassBlendRange);
 
             lock (_renderLock)
             {
@@ -309,7 +318,9 @@ namespace RayTraceVS.WPF.Views
                 evaluated.Exposure, evaluated.ToneMapOperator,
                 evaluated.DenoiserStabilization, evaluated.ShadowStrength, evaluated.ShadowAbsorptionScale,
                 evaluated.EnableDenoiser, evaluated.Gamma,
-                photonDebugMode, photonDebugScale);
+                photonDebugMode, photonDebugScale,
+                evaluated.LightAttenuationConstant, evaluated.LightAttenuationLinear, evaluated.LightAttenuationQuadratic,
+                evaluated.MaxShadowLights, evaluated.NRDBypassDistance, evaluated.NRDBypassBlendRange);
 
             lock (_renderLock)
             {
@@ -360,7 +371,9 @@ namespace RayTraceVS.WPF.Views
                                 sceneParams.Exposure, sceneParams.ToneMapOperator,
                                 sceneParams.DenoiserStabilization, sceneParams.ShadowStrength, sceneParams.ShadowAbsorptionScale,
                                 sceneParams.EnableDenoiser, sceneParams.Gamma,
-                                sceneParams.PhotonDebugMode, sceneParams.PhotonDebugScale);
+                                sceneParams.PhotonDebugMode, sceneParams.PhotonDebugScale,
+                                sceneParams.LightAttenuationConstant, sceneParams.LightAttenuationLinear, sceneParams.LightAttenuationQuadratic,
+                                sceneParams.MaxShadowLights, sceneParams.NRDBypassDistance, sceneParams.NRDBypassBlendRange);
                             
                             // 空シーンはGPUを使わずスカイ色で即時更新
                             bool emptyScene = (sceneParams.Spheres.Length == 0 &&
@@ -659,7 +672,9 @@ namespace RayTraceVS.WPF.Views
                 evaluated.Exposure, evaluated.ToneMapOperator,
                 evaluated.DenoiserStabilization, evaluated.ShadowStrength, evaluated.ShadowAbsorptionScale,
                 evaluated.EnableDenoiser, evaluated.Gamma,
-                photonDebugMode, photonDebugScale);
+                photonDebugMode, photonDebugScale,
+                evaluated.LightAttenuationConstant, evaluated.LightAttenuationLinear, evaluated.LightAttenuationQuadratic,
+                evaluated.MaxShadowLights, evaluated.NRDBypassDistance, evaluated.NRDBypassBlendRange);
 
             lock (_renderLock)
             {

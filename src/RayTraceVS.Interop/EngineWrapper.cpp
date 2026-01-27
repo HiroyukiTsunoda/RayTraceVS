@@ -156,7 +156,14 @@ namespace RayTraceVS::Interop
         bool enableDenoiser,
         float gamma,
         int photonDebugMode,
-        float photonDebugScale)
+        float photonDebugScale,
+        // P1 optimization settings
+        float lightAttenuationConstant,
+        float lightAttenuationLinear,
+        float lightAttenuationQuadratic,
+        int maxShadowLights,
+        float nrdBypassDistance,
+        float nrdBypassBlendRange)
     {
         if (!isInitialized || !nativeScene)
             return;
@@ -168,8 +175,9 @@ namespace RayTraceVS::Interop
         auto nativeCamera = Marshalling::ToNativeCamera(camera);
         Bridge::SetCamera(nativeScene, nativeCamera);
 
-        // Set render settings
-        Bridge::SetRenderSettings(nativeScene, samplesPerPixel, maxBounces, traceRecursionDepth, exposure, toneMapOperator, denoiserStabilization, shadowStrength, shadowAbsorptionScale, enableDenoiser, gamma, photonDebugMode, photonDebugScale);
+        // Set render settings (including P1 optimization parameters)
+        Bridge::SetRenderSettings(nativeScene, samplesPerPixel, maxBounces, traceRecursionDepth, exposure, toneMapOperator, denoiserStabilization, shadowStrength, shadowAbsorptionScale, enableDenoiser, gamma, photonDebugMode, photonDebugScale,
+            lightAttenuationConstant, lightAttenuationLinear, lightAttenuationQuadratic, maxShadowLights, nrdBypassDistance, nrdBypassBlendRange);
 
         // Add spheres
         if (spheres != nullptr)

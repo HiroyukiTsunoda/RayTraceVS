@@ -44,7 +44,14 @@ namespace RayTraceVS.WPF.Services
             bool enableDenoiser = true,
             float gamma = 1.0f,
             int photonDebugMode = 0,
-            float photonDebugScale = 1.0f)
+            float photonDebugScale = 1.0f,
+            // P1 optimization settings
+            float lightAttenuationConstant = 1.0f,
+            float lightAttenuationLinear = 0.0f,
+            float lightAttenuationQuadratic = 0.01f,
+            int maxShadowLights = 2,
+            float nrdBypassDistance = 8.0f,
+            float nrdBypassBlendRange = 2.0f)
         {
             if (!isInitialized || engineWrapper == null)
                 return;
@@ -54,7 +61,8 @@ namespace RayTraceVS.WPF.Services
                 engineWrapper.UpdateScene(spheres, planes, boxes, camera, lights, 
                     meshInstances ?? Array.Empty<MeshInstanceData>(), 
                     meshCaches ?? Array.Empty<MeshCacheData>(),
-                    samplesPerPixel, maxBounces, traceRecursionDepth, exposure, toneMapOperator, denoiserStabilization, shadowStrength, shadowAbsorptionScale, enableDenoiser, gamma, photonDebugMode, photonDebugScale);
+                    samplesPerPixel, maxBounces, traceRecursionDepth, exposure, toneMapOperator, denoiserStabilization, shadowStrength, shadowAbsorptionScale, enableDenoiser, gamma, photonDebugMode, photonDebugScale,
+                    lightAttenuationConstant, lightAttenuationLinear, lightAttenuationQuadratic, maxShadowLights, nrdBypassDistance, nrdBypassBlendRange);
             }
             catch (Exception ex)
             {

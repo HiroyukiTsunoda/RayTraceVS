@@ -132,7 +132,8 @@ namespace RayTraceVS::Interop::Bridge
     DXENGINE_API void DestroyScene(RayTraceVS::DXEngine::Scene* scene);
     DXENGINE_API void ClearScene(RayTraceVS::DXEngine::Scene* scene);
     DXENGINE_API void SetCamera(RayTraceVS::DXEngine::Scene* scene, const CameraDataNative& camera);
-    DXENGINE_API void SetRenderSettings(RayTraceVS::DXEngine::Scene* scene, int samplesPerPixel, int maxBounces, int traceRecursionDepth, float exposure, int toneMapOperator, float denoiserStabilization, float shadowStrength, float shadowAbsorptionScale, bool enableDenoiser, float gamma, int photonDebugMode, float photonDebugScale);
+    DXENGINE_API void SetRenderSettings(RayTraceVS::DXEngine::Scene* scene, int samplesPerPixel, int maxBounces, int traceRecursionDepth, float exposure, int toneMapOperator, float denoiserStabilization, float shadowStrength, float shadowAbsorptionScale, bool enableDenoiser, float gamma, int photonDebugMode, float photonDebugScale,
+        float lightAttenuationConstant, float lightAttenuationLinear, float lightAttenuationQuadratic, int maxShadowLights, float nrdBypassDistance, float nrdBypassBlendRange);
     DXENGINE_API void AddSphere(RayTraceVS::DXEngine::Scene* scene, const SphereDataNative& sphere);
     DXENGINE_API void AddPlane(RayTraceVS::DXEngine::Scene* scene, const PlaneDataNative& plane);
     DXENGINE_API void AddBox(RayTraceVS::DXEngine::Scene* scene, const BoxDataNative& box);
