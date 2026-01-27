@@ -377,30 +377,61 @@ void CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
     float viewZ = GBuffer_ViewZ.SampleLevel(LinearSampler, uv, 0);
     
     // ========================================
-    // Sky/Miss pixels: viewZ == 0 means no hit, use raw input directly
-    // NRD cannot properly denoise sky pixels, so bypass denoising
+    // NRD REBLUR Compositing
     // ========================================
-    // Sky bypass disabled - handled by main path below
-    // (GBuffer_DiffuseIn now contains the complete finalColor from RayGen for all pixels)
+    // Material type encoded in albedo.alpha:
+    //   0.0 = sky/miss - use raw diffuse directly
+    //   0.5 = specular-dominant (glass/metal) - BYPASS NRD, use raw buffers
+    //   1.0 = diffuse surface - use NRD denoised, remodulate with albedo
+    //
+    // Specular-dominant materials bypass NRD because:
+    //   - Reflections/refractions have incorrect motion vectors
+    //   - Temporal filtering causes ghosting and blur on these surfaces
+    // ========================================
     
-    // Correct SIGMA workflow:
-    // GBuffer_DiffuseIn = diffuse radiance (ambient + directDiffuse + reflections + emission)
-    // RawSpecularBackup = specular radiance (directSpecular)
-    // Combine both for complete lighting
+    // Read albedo (use PointSampler to avoid blending alpha at edges)
+    float4 albedoData = AlbedoTexture.SampleLevel(PointSampler, uv, 0);
+    float3 albedo = albedoData.rgb;
+    float materialAlpha = albedoData.a;
     
-    float3 inputColor = GBuffer_DiffuseIn.SampleLevel(LinearSampler, uv, 0).rgb;
-    float3 inputSpecular = RawSpecularBackup.SampleLevel(LinearSampler, uv, 0).rgb;
-    inputColor += inputSpecular;  // Add specular component for point light highlights
+    // Material classification from alpha
+    bool isSky = materialAlpha < 0.25;                    // 0.0
+    bool isSpecularDominant = materialAlpha > 0.25 && materialAlpha < 0.75;  // 0.5
+    bool isDiffuseSurface = materialAlpha > 0.75;         // 1.0
     
-    // For hit pixels, apply SIGMA shadow
-    // Metal/Glass set shadowVisibility=1.0 in their G-Buffer output, so SIGMA won't darken them
-    // Sky pixels have albedo.a == 0, so we skip shadow application for them
-    float4 albedoData = AlbedoTexture.SampleLevel(LinearSampler, uv, 0);
-    bool isHitPixel = albedoData.a > 0.5;  // Alpha = 1.0 for hits, 0.0 for misses
+    float3 inputColor;
     
-    // Shadow is now baked into diffuseRadiance in ClosestHit (same as denoiser-disabled path)
-    // No need to apply shadow here - this avoids white artifacts at object edges
-    // UseDenoisedShadow flag is ignored since shadow is already applied
+    if (isSky)
+    {
+        // Sky/miss: use raw diffuse directly (contains sky color)
+        inputColor = GBuffer_DiffuseIn.SampleLevel(PointSampler, uv, 0).rgb;
+    }
+    else if (isSpecularDominant)
+    {
+        // Glass/Metal: BYPASS NRD completely, use raw specular
+        // This avoids temporal filtering artifacts on reflections/refractions
+        inputColor = RawSpecularBackup.SampleLevel(PointSampler, uv, 0).rgb;
+    }
+    else if (UseDenoisedShadow != 0)
+    {
+        // Diffuse surface with denoiser ON: use NRD output
+        float3 diffuseDemod = DenoisedDiffuse.SampleLevel(LinearSampler, uv, 0).rgb;
+        float3 specular = DenoisedSpecular.SampleLevel(LinearSampler, uv, 0).rgb;
+        
+        // Remodulate diffuse: multiply back albedo
+        float3 diffuse = diffuseDemod * albedo;
+        inputColor = diffuse + specular;
+    }
+    else
+    {
+        // Diffuse surface with denoiser OFF: use raw buffers
+        float3 diffuseDemod = GBuffer_DiffuseIn.SampleLevel(LinearSampler, uv, 0).rgb;
+        float3 specular = RawSpecularBackup.SampleLevel(LinearSampler, uv, 0).rgb;
+        
+        // Remodulate diffuse: multiply back albedo
+        float3 diffuse = diffuseDemod * albedo;
+        inputColor = diffuse + specular;
+    }
     
     // Apply exposure
     inputColor *= ExposureValue;
