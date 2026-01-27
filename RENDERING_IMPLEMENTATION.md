@@ -73,12 +73,15 @@ State Object (RTPSO)
 
 ```
 TLAS (Top-Level AS) - シーン全体
-└── Instance (単一、単位変換)
-    └── BLAS (Bottom-Level AS) - ジオメトリ
-        └── AABBs (各オブジェクトのバウンディングボックス)
-            ├── Sphere AABB (center ± radius)
-            ├── Plane AABB (±1000の巨大AABB)
-            └── Box AABB (center ± size)
+├── Instance (プロシージャルジオメトリ)
+│   └── BLAS (Bottom-Level AS) - AABBジオメトリ
+│       └── AABBs (各オブジェクトのバウンディングボックス)
+│           ├── Sphere AABB (center ± radius)
+│           ├── Plane AABB (±1000の巨大AABB)
+│           └── Box AABB (OBB: center ± rotated size)
+└── Instance (三角形メッシュ、複数)
+    └── BLAS (Bottom-Level AS) - 三角形ジオメトリ
+        └── FBXメッシュの頂点/インデックスバッファ
 ```
 
 **ビルドフラグ**:

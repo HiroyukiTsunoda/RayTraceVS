@@ -178,14 +178,16 @@ msbuild RayTraceVS.sln /p:Configuration=Release /p:Platform=x64
 
 ### インストーラー作成（MSIXパッケージ）
 
-RayTraceVSはMSIXパッケージとして配布できます。詳細は **[INSTALLER_GUIDE.md](INSTALLER_GUIDE.md)** を参照してください。
+RayTraceVSはMSIXパッケージングに対応しています:
 
-**簡易手順**:
-1. Visual Studioで `RayTraceVS.Package` プロジェクトを右クリック
-2. 「発行」→「アプリパッケージの作成...」を選択
-3. サイドローディング方式を選択
-4. 署名用証明書を選択（開発用は自己署名可）
-5. パッケージを作成
+1. `RayTraceVS.Package` プロジェクトを使用
+2. Visual Studioで「発行」→「アプリパッケージの作成」
+3. 詳細は **[INSTALLER_GUIDE.md](INSTALLER_GUIDE.md)** を参照
+
+**MSIXパッケージの利点:**
+- `.rtvs` ファイルの自動関連付け
+- クリーンなインストール/アンインストール
+- Windows 10/11への最適化
 
 ## 開発のヒント
 
@@ -218,5 +220,7 @@ C#コードの変更は、ホットリロード機能で即座に反映できま
 ## その他のリソース
 
 - [README.md](README.md) - プロジェクト概要
+- [USAGE.md](USAGE.md) - 使い方ガイド
+- [INSTALLER_GUIDE.md](INSTALLER_GUIDE.md) - MSIXインストーラー作成ガイド
 - [DirectX 12ドキュメント](https://docs.microsoft.com/en-us/windows/win32/direct3d12/direct3d-12-graphics)
 - [DXRドキュメント](https://microsoft.github.io/DirectX-Specs/d3d/Raytracing.html)
