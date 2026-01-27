@@ -353,6 +353,12 @@ namespace RayTraceVS::DXEngine
 
     bool DXRPipeline::Initialize()
     {
+        // Enable log file in Debug builds so initialization failures (NRD, shaders, etc.)
+        // are visible in C:\git\RayTraceVS\debug.log.
+#if defined(_DEBUG)
+        SetLogEnabled(1);
+#endif
+
         // Clear log file
         ClearLogFile();
         
@@ -2750,20 +2756,34 @@ namespace RayTraceVS::DXEngine
                 return;
             }
         }
-        
-        // Initialize denoiser if enabled and not yet initialized
-        if (denoiserEnabled && !denoiser)
+
+        // Update scene data (also refreshes denoiserEnabled from UI/scene settings)
+        UpdateSceneData(scene, width, height);
+
+        // Initialize / re-initialize denoiser if enabled.
+        // NOTE: Previously we only attempted init when denoiser == nullptr.
+        // If initialization failed once, denoiser stayed allocated but not "ready",
+        // and we would never retry even if the user re-enabled it.
+        if (denoiserEnabled)
         {
-            LOG_INFO("RenderWithDXR: initializing denoiser");
-            if (!InitializeDenoiser(width, height))
+            const bool needInit =
+                (!denoiser) ||
+                (!denoiser->IsReady()) ||
+                (denoiser->GetWidth() != width) ||
+                (denoiser->GetHeight() != height);
+
+            if (needInit)
             {
-                LOG_WARN("RenderWithDXR: InitializeDenoiser failed, continuing without denoising");
-                denoiserEnabled = false;
+                LOG_INFO("RenderWithDXR: initializing denoiser");
+                if (!InitializeDenoiser(width, height))
+                {
+                    LOG_WARN("RenderWithDXR: InitializeDenoiser failed, continuing without denoising");
+                    denoiserEnabled = false;
+                    // Allow retry next frame (or after settings change)
+                    denoiser.reset();
+                }
             }
         }
-        
-        // Update scene data
-        UpdateSceneData(scene, width, height);
         
         // Check if mesh instances exist - if so, always rebuild TLAS to reflect transform changes
         bool hasMeshInstances = !scene->GetMeshInstances().empty();
@@ -2856,6 +2876,16 @@ namespace RayTraceVS::DXEngine
         if (debugSkipPostFX)
         {
             LOG_DEBUG("RenderWithDXR: debugSkipPostFX enabled");
+            return;
+        }
+
+        // RayGen debug modes (PhotonDebugMode 9/10) should show the *RayGen output*.
+        // Composite debug mapping also uses 9/10, so if we run NRD+Composite here,
+        // the RayGen debug image gets overwritten and the user only sees Composite's debug.
+        // Also skipping post FX here helps avoid heavy frame-time / instability while debugging.
+        const int photonDebugMode = scene ? scene->GetPhotonDebugMode() : 0;
+        if (photonDebugMode == 9 || photonDebugMode == 10)
+        {
             return;
         }
         
@@ -4165,9 +4195,10 @@ namespace RayTraceVS::DXEngine
                 debugMode = 13; // Composite: show PreDenoiseColor full-screen
             else if (mappedConstantData->PhotonDebugMode == 8)
                 debugMode = 14; // Composite: show far-field selection mask (rawT>0.5)
-            else if (mappedConstantData->PhotonDebugMode == 9)
+            // PhotonDebugMode 9/10 are reserved for RayGen refraction debug (Composite is skipped).
+            else if (mappedConstantData->PhotonDebugMode == 11)
                 debugMode = 15; // Composite: show ViewZ-in-range mask (zStart..zEnd)
-            else if (mappedConstantData->PhotonDebugMode == 10)
+            else if (mappedConstantData->PhotonDebugMode == 12)
                 debugMode = 16; // Composite: show ViewZ linear scale (debug)
         }
         

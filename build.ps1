@@ -4,7 +4,9 @@
 param(
     [switch]$Clean,
     [switch]$Run,
-    [switch]$Rebuild
+    [switch]$Rebuild,
+    # Skip MSIX/Package projects (DesktopBridge) and build only the WPF app + native dependencies.
+    [switch]$NoPackage
 )
 
 $ErrorActionPreference = "Stop"
@@ -27,19 +29,27 @@ if (-not (Test-Path $msbuild)) {
 Write-Host "Using MSBuild: $msbuild" -ForegroundColor Cyan
 
 $solution = "RayTraceVS.sln"
+$wpfProject = "src\RayTraceVS.WPF\RayTraceVS.WPF.csproj"
 $config = "Debug"
 $platform = "x64"
+
+# Select build entry point
+$buildTargetPath = if ($NoPackage) { $wpfProject } else { $solution }
 
 # Clean if requested
 if ($Clean -or $Rebuild) {
     Write-Host "`nCleaning solution..." -ForegroundColor Yellow
-    & $msbuild $solution /t:Clean /p:Configuration=$config /p:Platform=$platform /v:quiet /nologo
+    & $msbuild $buildTargetPath /t:Clean /p:Configuration=$config /p:Platform=$platform /v:quiet /nologo
 }
 
 # Build
 $target = if ($Rebuild) { "Rebuild" } else { "Build" }
-Write-Host "`nBuilding solution ($target)..." -ForegroundColor Green
-& $msbuild $solution /t:$target /p:Configuration=$config /p:Platform=$platform /v:minimal /nologo
+if ($NoPackage) {
+    Write-Host "`nBuilding WPF project ($target)..." -ForegroundColor Green
+} else {
+    Write-Host "`nBuilding solution ($target)..." -ForegroundColor Green
+}
+& $msbuild $buildTargetPath /t:$target /p:Configuration=$config /p:Platform=$platform /v:minimal /nologo
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Build failed with exit code $LASTEXITCODE"
