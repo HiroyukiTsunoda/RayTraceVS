@@ -106,7 +106,7 @@
       "Id": "a1b2c3d4-e5f6-7890-abcd-555555555555",
       "Type": "SceneNode",
       "Title": "Scene",
-      "PositionX": 2677.027029390966,
+      "PositionX": 2679.3127436766804,
       "PositionY": 1581.2878323033349,
       "Properties": {
         "ObjectSocketNames": [
@@ -176,8 +176,8 @@
       "Id": "14aac4c6-22d9-485f-9dd7-56c0ff789dab",
       "Type": "FloatNode",
       "Title": "Float",
-      "PositionX": 1742.1260864618328,
-      "PositionY": 683.6536979100796,
+      "PositionX": 1670.6367247597052,
+      "PositionY": 582.3771021653987,
       "Properties": {
         "Value": 0.8
       }
@@ -186,8 +186,8 @@
       "Id": "67341e98-e5c7-4a90-bc8d-b5d68087067b",
       "Type": "Vector3Node",
       "Title": "Vector3",
-      "PositionX": 1884.3822898329297,
-      "PositionY": 981.2871325605354,
+      "PositionX": 1659.7014387691004,
+      "PositionY": 1033.2020261775565,
       "Properties": {
         "X": 0.0,
         "Y": 1.0,
@@ -223,7 +223,7 @@
       "Type": "Vector3Node",
       "Title": "Vector3",
       "PositionX": 1200.1787000265094,
-      "PositionY": 212.58485579274247,
+      "PositionY": 211.73379196295522,
       "Properties": {
         "X": 1.0,
         "Y": 1.0,
@@ -501,8 +501,8 @@
       "Id": "59bc74c6-6e1d-4505-a999-aca4327a50bd",
       "Type": "Vector3Node",
       "Title": "Vector3",
-      "PositionX": 1752.9097186786942,
-      "PositionY": 1693.3813082069223,
+      "PositionX": 1751.7668615358368,
+      "PositionY": 1699.095593921208,
       "Properties": {
         "X": 1.0,
         "Y": 1.0,
@@ -566,8 +566,8 @@
       "Id": "61dd6547-4fc4-4a4b-bf19-5d6b95b8a60d",
       "Type": "UniversalPBRNode",
       "Title": "Universal PBR",
-      "PositionX": 1684.2308115240037,
-      "PositionY": 495.343253035805,
+      "PositionX": 1672.3159179069826,
+      "PositionY": 437.4709126102731,
       "Properties": {
         "BaseColor": {
           "X": 0.8,
@@ -588,8 +588,8 @@
       "Id": "1421c25d-c665-46e5-a66c-95e3cf7871ad",
       "Type": "MaterialBSDFNode",
       "Title": "BSDF",
-      "PositionX": 1750.7731174126618,
-      "PositionY": 1507.2325821370378,
+      "PositionX": 1753.0588316983758,
+      "PositionY": 1508.3754392798949,
       "Properties": {
         "BaseColor": {
           "X": 0.8,
@@ -760,8 +760,8 @@
       "Id": "1617550e-1ef3-4181-827f-4a2fa22edc0d",
       "Type": "MaterialBSDFNode",
       "Title": "BSDF",
-      "PositionX": 1722.4588591280826,
-      "PositionY": 1172.8745418415733,
+      "PositionX": 1725.8874305566535,
+      "PositionY": 1164.8745418415733,
       "Properties": {
         "BaseColor": {
           "X": 0.8,
@@ -813,8 +813,8 @@
       "Id": "e95067f7-f296-46db-9088-6adaf7893999",
       "Type": "MaterialBSDFNode",
       "Title": "BSDF",
-      "PositionX": 1802.5576911926794,
-      "PositionY": 2117.31311685057,
+      "PositionX": 1807.1291197641083,
+      "PositionY": 2088.7416882791413,
       "Properties": {
         "BaseColor": {
           "X": 0.8,
@@ -843,8 +843,8 @@
       "Id": "252760db-13ab-40f1-a848-c4003b7f1745",
       "Type": "TransformNode",
       "Title": "Transform",
-      "PositionX": 1810.0985700757874,
-      "PositionY": 1870.8480712578653,
+      "PositionX": 1800.95571293293,
+      "PositionY": 1918.8480712578653,
       "Properties": {
         "PositionX": 0.0,
         "PositionY": 0.0,
@@ -900,9 +900,9 @@
       "PositionX": 1586.5026731831144,
       "PositionY": 2027.8483933593966,
       "Properties": {
-        "R": 1.0,
-        "G": 1.0,
-        "B": 1.0,
+        "R": 0.95,
+        "G": 0.95,
+        "B": 0.95,
         "A": 1.0
       }
     },
@@ -987,8 +987,8 @@
       "PositionX": 1466.2010118153332,
       "PositionY": 1701.8321198921715,
       "Properties": {
-        "X": 0.6,
-        "Y": 0.6,
+        "X": 0.8,
+        "Y": 0.8,
         "Z": 0.0
       }
     },
@@ -1000,8 +1000,8 @@
       "PositionY": 1276.5486539668802,
       "Properties": {
         "X": 0.0,
-        "Y": 0.6,
-        "Z": 0.6
+        "Y": 0.8,
+        "Z": 0.8
       }
     },
     {
@@ -1045,9 +1045,118 @@
       "PositionX": 1591.4923502239599,
       "PositionY": 2233.5863235871157,
       "Properties": {
-        "X": 0.05,
-        "Y": 0.05,
-        "Z": 0.05
+        "X": 0.03,
+        "Y": 0.03,
+        "Z": 0.03
+      }
+    },
+    {
+      "Id": "f2d6097e-7ca3-4742-8dbc-6893ddc0f09f",
+      "Type": "UniversalPBRNode",
+      "Title": "Universal PBR",
+      "PositionX": 1851.604242936747,
+      "PositionY": 911.0973530535872,
+      "Properties": {
+        "BaseColor": {
+          "X": 0.8,
+          "Y": 0.8,
+          "Z": 0.8,
+          "W": 1.0
+        },
+        "Metallic": 0.0,
+        "Roughness": 0.5,
+        "Emissive": {
+          "X": 0.0,
+          "Y": 0.0,
+          "Z": 0.0
+        }
+      }
+    },
+    {
+      "Id": "0190f4fb-3073-47fb-bde6-6a0ca6a8b123",
+      "Type": "ColorNode",
+      "Title": "Color",
+      "PositionX": 1606.2638174048327,
+      "PositionY": 861.7994807131657,
+      "Properties": {
+        "R": 1.0,
+        "G": 1.0,
+        "B": 1.0,
+        "A": 1.0
+      }
+    },
+    {
+      "Id": "2e3b3247-4a1e-4515-a63e-9b57d95d494e",
+      "Type": "FloatNode",
+      "Title": "Float",
+      "PositionX": 1405.4127535750451,
+      "PositionY": 964.7782041174211,
+      "Properties": {
+        "Value": 0.0
+      }
+    },
+    {
+      "Id": "81b0ca2f-1da6-4776-ad2e-2b917c22bec5",
+      "Type": "FloatNode",
+      "Title": "Float",
+      "PositionX": 1418.1787110218538,
+      "PositionY": 1059.246289223804,
+      "Properties": {
+        "Value": 0.0
+      }
+    },
+    {
+      "Id": "b4f458bd-d46b-48db-8067-dc3edc8d4921",
+      "Type": "TransformNode",
+      "Title": "Transform",
+      "PositionX": 1925.285094000577,
+      "PositionY": 748.054799862102,
+      "Properties": {
+        "PositionX": 0.0,
+        "PositionY": 0.0,
+        "PositionZ": 0.0,
+        "RotationX": 0.0,
+        "RotationY": 0.0,
+        "RotationZ": 0.0,
+        "ScaleX": 1.0,
+        "ScaleY": 1.0,
+        "ScaleZ": 1.0
+      }
+    },
+    {
+      "Id": "425d320f-4653-4f24-9d56-9ba0c6f8b70a",
+      "Type": "Vector3Node",
+      "Title": "Vector3",
+      "PositionX": 1693.9233918729174,
+      "PositionY": 711.1611828408253,
+      "Properties": {
+        "X": 1.0,
+        "Y": 1.0,
+        "Z": 1.0
+      }
+    },
+    {
+      "Id": "e385559e-c184-4eee-a7ff-4ecd7060b843",
+      "Type": "Vector3Node",
+      "Title": "Vector3",
+      "PositionX": 1508.3914769793005,
+      "PositionY": 709.459055181251,
+      "Properties": {
+        "X": 0.0,
+        "Y": 0.0,
+        "Z": 0.0
+      }
+    },
+    {
+      "Id": "81f1dd1d-9e3a-4e7b-9bad-650aefc662fa",
+      "Type": "Vector3Node",
+      "Title": "Vector3",
+      "PositionX": 1341.5829663410025,
+      "PositionY": 703.5016083727403,
+      "Properties": {
+        "X": 0.0,
+        "Y": 0.0,
+        "Z": 0.0
       }
     }
   ],
@@ -1471,12 +1580,66 @@
       "OutputSocketName": "Object",
       "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
       "InputSocketName": "Object5"
+    },
+    {
+      "OutputNodeId": "f2d6097e-7ca3-4742-8dbc-6893ddc0f09f",
+      "OutputSocketName": "Material",
+      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-222222222222",
+      "InputSocketName": "Material"
+    },
+    {
+      "OutputNodeId": "0190f4fb-3073-47fb-bde6-6a0ca6a8b123",
+      "OutputSocketName": "Color",
+      "InputNodeId": "f2d6097e-7ca3-4742-8dbc-6893ddc0f09f",
+      "InputSocketName": "Base Color"
+    },
+    {
+      "OutputNodeId": "2e3b3247-4a1e-4515-a63e-9b57d95d494e",
+      "OutputSocketName": "Value",
+      "InputNodeId": "f2d6097e-7ca3-4742-8dbc-6893ddc0f09f",
+      "InputSocketName": "Metallic"
+    },
+    {
+      "OutputNodeId": "81b0ca2f-1da6-4776-ad2e-2b917c22bec5",
+      "OutputSocketName": "Value",
+      "InputNodeId": "f2d6097e-7ca3-4742-8dbc-6893ddc0f09f",
+      "InputSocketName": "Roughness"
+    },
+    {
+      "OutputNodeId": "b4f458bd-d46b-48db-8067-dc3edc8d4921",
+      "OutputSocketName": "Transform",
+      "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-222222222222",
+      "InputSocketName": "Transform"
+    },
+    {
+      "OutputNodeId": "425d320f-4653-4f24-9d56-9ba0c6f8b70a",
+      "OutputSocketName": "Vector",
+      "InputNodeId": "b4f458bd-d46b-48db-8067-dc3edc8d4921",
+      "InputSocketName": "Scale"
+    },
+    {
+      "OutputNodeId": "e385559e-c184-4eee-a7ff-4ecd7060b843",
+      "OutputSocketName": "Vector",
+      "InputNodeId": "b4f458bd-d46b-48db-8067-dc3edc8d4921",
+      "InputSocketName": "Rotation"
+    },
+    {
+      "OutputNodeId": "81f1dd1d-9e3a-4e7b-9bad-650aefc662fa",
+      "OutputSocketName": "Vector",
+      "InputNodeId": "b4f458bd-d46b-48db-8067-dc3edc8d4921",
+      "InputSocketName": "Position"
+    },
+    {
+      "OutputNodeId": "978bf0ea-5183-4cb3-b526-afa9c6d445cd",
+      "OutputSocketName": "Vector",
+      "InputNodeId": "e95067f7-f296-46db-9088-6adaf7893999",
+      "InputSocketName": "Absorption"
     }
   ],
   "Viewport": {
-    "PanX": -1083.2879883605433,
-    "PanY": -911.8612679679316,
-    "Zoom": 0.9400000000000005,
+    "PanX": -354.2256890708471,
+    "PanY": -576.4529136231996,
+    "Zoom": 0.7000000000000005,
     "IsLeftPanelVisible": true,
     "IsRightPanelVisible": true,
     "ExpanderStates": {

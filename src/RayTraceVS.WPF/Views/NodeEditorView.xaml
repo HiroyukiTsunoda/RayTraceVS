@@ -234,16 +234,9 @@
                                              RenderMode="StartEnd"
                                              Panel.ZIndex="2"/>
             
-            <!-- 選択ノードの接続線用レイヤー（ノードより上） -->
-            <!-- DrawingVisualで一括描画することでパフォーマンス向上 -->
-            <controls:ConnectionLineRenderer x:Name="SelectedConnectionRenderer"
-                                             Connections="{Binding SelectedNodeConnections}"
-                                             RenderMode="Full"
-                                             Panel.ZIndex="3"/>
-            
-            <!-- 選択ノード用キャンバス（接続線より上に描画） -->
+            <!-- 選択ノード用キャンバス -->
             <Canvas x:Name="SelectedNodeLayer"
-                    Panel.ZIndex="4">
+                    Panel.ZIndex="3">
                 <ItemsControl ItemsSource="{Binding SelectedNodes}">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
@@ -418,6 +411,13 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
             </Canvas>
+            
+            <!-- 選択ノードの接続線用レイヤー（ノードより上に描画） -->
+            <!-- DrawingVisualで一括描画することでパフォーマンス向上 -->
+            <controls:ConnectionLineRenderer x:Name="SelectedConnectionRenderer"
+                                             Connections="{Binding SelectedNodeConnections}"
+                                             RenderMode="Full"
+                                             Panel.ZIndex="4"/>
             
             <!-- プレビュー線・選択矩形用レイヤー（最上層） -->
             <Canvas x:Name="PreviewLayer"

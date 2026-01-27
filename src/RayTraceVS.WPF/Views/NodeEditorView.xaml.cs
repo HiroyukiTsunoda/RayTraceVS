@@ -141,7 +141,9 @@ namespace RayTraceVS.WPF.Views
         /// </summary>
         private void OnNodeMoved(Node node)
         {
-            UpdateSocketPositionsFromNodePosition(node);
+            // 実際のUI要素から位置を取得して更新
+            // （固定値計算ではUIとずれる可能性があるため）
+            UpdateAllSocketPositionsForNode(node);
             UpdateNodeConnections(node);
         }
         
@@ -168,6 +170,16 @@ namespace RayTraceVS.WPF.Views
 
             // ItemsControlのフィルタリングビューを更新
             viewModel.RefreshConnectionViews();
+            
+            // 選択されたノードがSelectedNodeLayerに移動するため、
+            // レイアウト完了後にソケット位置を更新する必要がある
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                foreach (var node in selectedNodes)
+                {
+                    UpdateAllSocketPositionsForNode(node);
+                }
+            }), DispatcherPriority.Loaded);
         }
 
         /// <summary>
@@ -480,6 +492,12 @@ namespace RayTraceVS.WPF.Views
                 
                 // 新しいノードを単一選択（ハンドラーに委譲）
                 _selectionHandler.SelectNode(node, viewModel);
+                
+                // ノードがSelectedNodeLayerに移動するため、レイアウトを強制更新
+                NodeCanvas.UpdateLayout();
+                
+                // ソケット位置を更新（レイアウト更新後でないと正しい位置が取得できない）
+                UpdateAllSocketPositionsForNode(node);
                 
                 // ノードドラッグ開始（ハンドラーに委譲）
                 _nodeDragHandler.StartDrag(node, mousePos, new[] { node });
@@ -1529,6 +1547,12 @@ namespace RayTraceVS.WPF.Views
             // 新しいノードを単一選択（ハンドラーに委譲）
             _selectionHandler.SelectNode(node, viewModel);
             
+            // ノードがSelectedNodeLayerに移動するため、レイアウトを強制更新
+            NodeCanvas.UpdateLayout();
+            
+            // ソケット位置を更新（レイアウト更新後でないと正しい位置が取得できない）
+            UpdateAllSocketPositionsForNode(node);
+            
             // ノードドラッグ開始（ハンドラーに委譲）
             _nodeDragHandler.StartDrag(node, mousePos, new[] { node });
             
@@ -2094,21 +2118,28 @@ namespace RayTraceVS.WPF.Views
         // ノードのコンテナ要素を見つける
         private Border? FindNodeContainer(Node node)
         {
-            // NodeLayer内のItemsControlを見つける
-            var itemsControl = FindVisualChild<ItemsControl>(NodeLayer);
-            if (itemsControl == null) return null;
+            // NodeLayerとSelectedNodeLayerの両方を検索
+            // （選択されたノードはSelectedNodeLayerに移動するため）
+            var layers = new[] { NodeLayer, SelectedNodeLayer };
             
-            // ItemsControlのパネル（Canvas）を取得
-            var panel = FindVisualChild<Canvas>(itemsControl);
-            if (panel == null) return null;
-            
-            // パネル内のContentPresenterを探す
-            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(panel); i++)
+            foreach (var layer in layers)
             {
-                var container = VisualTreeHelper.GetChild(panel, i) as ContentPresenter;
-                if (container?.Content == node)
+                // レイヤー内のItemsControlを見つける
+                var itemsControl = FindVisualChild<ItemsControl>(layer);
+                if (itemsControl == null) continue;
+                
+                // ItemsControlのパネル（Canvas）を取得
+                var panel = FindVisualChild<Canvas>(itemsControl);
+                if (panel == null) continue;
+                
+                // パネル内のContentPresenterを探す
+                for (int i = 0; i < VisualTreeHelper.GetChildrenCount(panel); i++)
                 {
-                    return FindVisualChild<Border>(container);
+                    var container = VisualTreeHelper.GetChild(panel, i) as ContentPresenter;
+                    if (container?.Content == node)
+                    {
+                        return FindVisualChild<Border>(container);
+                    }
                 }
             }
             return null;

@@ -407,6 +407,7 @@ void RayGen()
                                     }
                                 }
 
+                                // Apply shadow to radiance (shadow baked into lighting)
                                 float shadowAmount = 1.0 - shadow.visibility;
                                 shadowAmount *= Scene.ShadowStrength;
                                 shadowAmount = saturate(shadowAmount);
@@ -454,6 +455,7 @@ void RayGen()
 
                         if (NdotL > 0.0)
                         {
+                            // Apply shadow to radiance (shadow baked into lighting)
                             float shadowAmount = 1.0 - shadow.visibility;
                             shadowAmount *= Scene.ShadowStrength;
                             shadowAmount = saturate(shadowAmount);
@@ -882,15 +884,29 @@ void RayGen()
     else
     {
         // Opaque diffuse surface: demodulate diffuse, keep specular separate
-        float3 diffuseIllum = max(accumulatedColor - accumulatedSpecular, 0.0) * invSampleCount;
+        // 
+        // accumulatedDiffuse = sum of payload.diffuseRadiance (primary hits only)
+        //   - Contains: ambient + directDiffuse + emission (MODULATED with albedo)
+        // accumulatedSpecular = sum of payload.specularRadiance (primary hits only)
+        //   - Contains: directSpecular highlights
+        // accumulatedColor = total light including secondary bounces (reflections from other objects)
+        //
+        // Secondary bounces (reflections seen on the floor from metal sphere, etc.)
+        // should be included in specular, not demodulated.
+        
+        float3 diffuseModulated = accumulatedDiffuse * invSampleCount;
+        float3 directSpecular = accumulatedSpecular * invSampleCount;
+        
+        // Secondary bounces = total - (diffuse + direct specular)
+        float3 secondaryBounces = max(finalColor - diffuseModulated - directSpecular, 0.0);
         
         // DEMODULATE: divide by albedo for NRD
         // Use minimum threshold to avoid division by zero on dark surfaces
         float3 safeAlbedo = max(outAlbedo, float3(0.04, 0.04, 0.04));
-        diffuseForNRD = diffuseIllum / safeAlbedo;
+        diffuseForNRD = diffuseModulated / safeAlbedo;
         
-        // Specular: direct specular highlights (not demodulated)
-        specularForNRD = accumulatedSpecular * invSampleCount;
+        // Specular: direct specular + secondary bounces (reflections from other objects)
+        specularForNRD = directSpecular + secondaryBounces;
     }
     
     GBuffer_DiffuseRadianceHitDist[launchIndex] = float4(diffuseForNRD, accumulatedHitDist * invSampleCount);
