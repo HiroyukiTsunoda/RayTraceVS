@@ -21,5 +21,13 @@ namespace RayTraceVS.WPF.Models.Data
         public float ShadowAbsorptionScale;
         public bool EnableDenoiser;
         public float Gamma;
+        
+        // P1 optimization settings
+        public float LightAttenuationConstant;
+        public float LightAttenuationLinear;
+        public float LightAttenuationQuadratic;
+        public int MaxShadowLights;
+        public float NRDBypassDistance;
+        public float NRDBypassBlendRange;
     }
 }

@@ -171,6 +171,106 @@ namespace RayTraceVS.WPF.Models.Nodes
             }
         }
 
+        // ============================================
+        // P1 Optimization Settings
+        // ============================================
+        
+        /// <summary>
+        /// ライト減衰の定数項 (通常 1.0)
+        /// </summary>
+        private float _lightAttenuationConstant = 1.0f;
+        public float LightAttenuationConstant
+        {
+            get => _lightAttenuationConstant;
+            set
+            {
+                if (SetProperty(ref _lightAttenuationConstant, value))
+                {
+                    MarkDirty();
+                }
+            }
+        }
+
+        /// <summary>
+        /// ライト減衰の線形項 (距離に比例, 0.0 = 無効)
+        /// </summary>
+        private float _lightAttenuationLinear = 0.0f;
+        public float LightAttenuationLinear
+        {
+            get => _lightAttenuationLinear;
+            set
+            {
+                if (SetProperty(ref _lightAttenuationLinear, value))
+                {
+                    MarkDirty();
+                }
+            }
+        }
+
+        /// <summary>
+        /// ライト減衰の2次項 (距離の2乗に比例, 物理的には 1.0, 視覚調整用 0.01)
+        /// </summary>
+        private float _lightAttenuationQuadratic = 0.01f;
+        public float LightAttenuationQuadratic
+        {
+            get => _lightAttenuationQuadratic;
+            set
+            {
+                if (SetProperty(ref _lightAttenuationQuadratic, value))
+                {
+                    MarkDirty();
+                }
+            }
+        }
+
+        /// <summary>
+        /// シャドウ計算する最大ライト数 (パフォーマンス最適化, デフォルト 2)
+        /// </summary>
+        private int _maxShadowLights = 2;
+        public int MaxShadowLights
+        {
+            get => _maxShadowLights;
+            set
+            {
+                if (SetProperty(ref _maxShadowLights, value))
+                {
+                    MarkDirty();
+                }
+            }
+        }
+
+        /// <summary>
+        /// NRDバイパスの距離閾値 (この距離より遠いとNRDをバイパス, デフォルト 8.0)
+        /// </summary>
+        private float _nrdBypassDistance = 8.0f;
+        public float NRDBypassDistance
+        {
+            get => _nrdBypassDistance;
+            set
+            {
+                if (SetProperty(ref _nrdBypassDistance, value))
+                {
+                    MarkDirty();
+                }
+            }
+        }
+
+        /// <summary>
+        /// NRDバイパスのブレンド範囲 (スムーズな遷移用, デフォルト 2.0)
+        /// </summary>
+        private float _nrdBypassBlendRange = 2.0f;
+        public float NRDBypassBlendRange
+        {
+            get => _nrdBypassBlendRange;
+            set
+            {
+                if (SetProperty(ref _nrdBypassBlendRange, value))
+                {
+                    MarkDirty();
+                }
+            }
+        }
+
         public SceneNode() : base("Scene", NodeCategory.Scene)
         {
             // カメラソケット（固定）
@@ -404,7 +504,14 @@ namespace RayTraceVS.WPF.Models.Nodes
                 ShadowStrength = ShadowStrength,
                 ShadowAbsorptionScale = ShadowAbsorptionScale,
                 EnableDenoiser = EnableDenoiser,
-                Gamma = Gamma
+                Gamma = Gamma,
+                // P1 optimization settings
+                LightAttenuationConstant = LightAttenuationConstant,
+                LightAttenuationLinear = LightAttenuationLinear,
+                LightAttenuationQuadratic = LightAttenuationQuadratic,
+                MaxShadowLights = MaxShadowLights,
+                NRDBypassDistance = NRDBypassDistance,
+                NRDBypassBlendRange = NRDBypassBlendRange
             };
         }
     }

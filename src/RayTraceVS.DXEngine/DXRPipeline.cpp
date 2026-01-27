@@ -780,6 +780,16 @@ namespace RayTraceVS::DXEngine
         static UINT s_frameCounter = 0;
         mappedConstantData->FrameIndex = s_frameCounter++;  // Increment each render call
         mappedConstantData->ShadowPadding = 0;
+        
+        // Light attenuation parameters (P1-1: Physical-based)
+        mappedConstantData->LightAttenuationConstant = scene->GetLightAttenuationConstant();
+        mappedConstantData->LightAttenuationLinear = scene->GetLightAttenuationLinear();
+        mappedConstantData->LightAttenuationQuadratic = scene->GetLightAttenuationQuadratic();
+        mappedConstantData->MaxShadowLights = scene->GetMaxShadowLights();
+        
+        // NRD bypass settings (P1-2: configurable from scene) - store for CompositeOutput
+        nrdBypassDistanceThreshold = scene->GetNRDBypassDistanceThreshold();
+        nrdBypassBlendRange = scene->GetNRDBypassBlendRange();
 
         // View/Projection matrices for motion vectors (column-major for HLSL)
         XMMATRIX viewMatrix = camera.GetViewMatrix();
@@ -2788,9 +2798,81 @@ namespace RayTraceVS::DXEngine
         // Check if mesh instances exist - if so, always rebuild TLAS to reflect transform changes
         bool hasMeshInstances = !scene->GetMeshInstances().empty();
         
+        // Check if any primitive objects exist - they might have moved
+        // For simplicity, always rebuild if there are any objects (position may have changed)
+        bool hasPrimitives = !scene->GetObjects().empty();
+        
+        // Calculate scene content checksum to detect position/transform changes
+        // This is a simple FNV-1a style hash of object positions
+        uint64_t currentChecksum = 0x811c9dc5ULL; // FNV offset basis
+        const uint64_t fnvPrime = 0x01000193ULL;
+        
+        // Hash primitive object positions
+        const auto& objects = scene->GetObjects();
+        for (const auto& obj : objects)
+        {
+            auto sphere = std::dynamic_pointer_cast<Sphere>(obj);
+            auto plane = std::dynamic_pointer_cast<Plane>(obj);
+            auto box = std::dynamic_pointer_cast<Box>(obj);
+            
+            if (sphere)
+            {
+                auto center = sphere->GetCenter();
+                currentChecksum ^= *reinterpret_cast<uint32_t*>(&center.x);
+                currentChecksum *= fnvPrime;
+                currentChecksum ^= *reinterpret_cast<uint32_t*>(&center.y);
+                currentChecksum *= fnvPrime;
+                currentChecksum ^= *reinterpret_cast<uint32_t*>(&center.z);
+                currentChecksum *= fnvPrime;
+                float radius = sphere->GetRadius();
+                currentChecksum ^= *reinterpret_cast<uint32_t*>(&radius);
+                currentChecksum *= fnvPrime;
+            }
+            else if (plane)
+            {
+                auto pos = plane->GetPosition();
+                currentChecksum ^= *reinterpret_cast<uint32_t*>(&pos.x);
+                currentChecksum *= fnvPrime;
+                currentChecksum ^= *reinterpret_cast<uint32_t*>(&pos.y);
+                currentChecksum *= fnvPrime;
+                currentChecksum ^= *reinterpret_cast<uint32_t*>(&pos.z);
+                currentChecksum *= fnvPrime;
+            }
+            else if (box)
+            {
+                auto center = box->GetCenter();
+                currentChecksum ^= *reinterpret_cast<uint32_t*>(&center.x);
+                currentChecksum *= fnvPrime;
+                currentChecksum ^= *reinterpret_cast<uint32_t*>(&center.y);
+                currentChecksum *= fnvPrime;
+                currentChecksum ^= *reinterpret_cast<uint32_t*>(&center.z);
+                currentChecksum *= fnvPrime;
+            }
+        }
+        
+        // Hash mesh instance transforms
+        const auto& meshInstances = scene->GetMeshInstances();
+        for (const auto& inst : meshInstances)
+        {
+            currentChecksum ^= *reinterpret_cast<const uint32_t*>(&inst.transform.position.x);
+            currentChecksum *= fnvPrime;
+            currentChecksum ^= *reinterpret_cast<const uint32_t*>(&inst.transform.position.y);
+            currentChecksum *= fnvPrime;
+            currentChecksum ^= *reinterpret_cast<const uint32_t*>(&inst.transform.position.z);
+            currentChecksum *= fnvPrime;
+        }
+        
+        // Detect scene content change
+        bool sceneContentChanged = (currentChecksum != lastSceneChecksum);
+        if (sceneContentChanged)
+        {
+            LOG_DEBUG("RenderWithDXR: scene content changed (checksum mismatch), resetting NRD history");
+        }
+        lastSceneChecksum = currentChecksum;
+        
         // Rebuild acceleration structures if needed
-        // Always rebuild if mesh instances exist (transform may have changed)
-        if (needsAccelerationStructureRebuild || scene != lastScene || hasMeshInstances)
+        // Always rebuild if any objects exist (transform/position may have changed)
+        if (needsAccelerationStructureRebuild || scene != lastScene || hasMeshInstances || hasPrimitives)
         {
             LOG_DEBUG("RenderWithDXR: building acceleration structures");
             if (!BuildAccelerationStructures(scene))
@@ -2799,6 +2881,14 @@ namespace RayTraceVS::DXEngine
                 RenderWithComputeShader(renderTarget, scene);
                 return;
             }
+        }
+        
+        // Reset NRD history when scene changes to avoid ghosting artifacts
+        // This ensures the denoiser doesn't accumulate data from old object positions
+        if (needsAccelerationStructureRebuild || scene != lastScene || sceneContentChanged)
+        {
+            isFirstFrame = true;
+            LOG_DEBUG("RenderWithDXR: resetting NRD history");
         }
         
         // ============================================
@@ -3958,7 +4048,7 @@ namespace RayTraceVS::DXEngine
         CD3DX12_ROOT_PARAMETER1 rootParams[3];
         rootParams[0].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_ALL);
         rootParams[1].InitAsDescriptorTable(1, &uavRange, D3D12_SHADER_VISIBILITY_ALL);
-        rootParams[2].InitAsConstants(11, 0); // b0: OutputSize (2), ExposureValue, ToneMapOperator, DebugMode, DebugTileScale, UseDenoisedShadow, ShadowStrength, Gamma, PhotonMapSize, MaxPhotons
+        rootParams[2].InitAsConstants(13, 0); // b0: OutputSize (2), ExposureValue, ToneMapOperator, DebugMode, DebugTileScale, UseDenoisedShadow, ShadowStrength, Gamma, PhotonMapSize, MaxPhotons, NRDBypassDistance, NRDBypassBlendRange
         
         CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSigDesc;
         rootSigDesc.Init_1_1(_countof(rootParams), rootParams, 2, staticSamplers,
@@ -4177,6 +4267,9 @@ namespace RayTraceVS::DXEngine
             float gammaValue;
             UINT photonMapSize;
             UINT maxPhotons;
+            // NRD bypass settings (P1-2)
+            float nrdBypassDistanceThreshold;  // Distance threshold for NRD bypass (default 8.0)
+            float nrdBypassBlendRange;         // Blend range for NRD bypass (default 2.0)
         // DebugMode: 0 = Off (normal rendering)
         };
         
@@ -4202,7 +4295,10 @@ namespace RayTraceVS::DXEngine
                 debugMode = 16; // Composite: show ViewZ linear scale (debug)
         }
         
-        CompositeConstants constants = { width, height, exposure, (float)toneMapOperator, debugMode, 0.15f, forceUseDenoisedShadow, shadowStrength, gamma, mappedConstantData ? mappedConstantData->PhotonMapSize : 0u, maxPhotons };
+        // NRD bypass settings (P1-2: use values cached from scene)
+        // These values are updated in Render() from scene->GetNRDBypass*() calls
+        
+        CompositeConstants constants = { width, height, exposure, (float)toneMapOperator, debugMode, 0.15f, forceUseDenoisedShadow, shadowStrength, gamma, mappedConstantData ? mappedConstantData->PhotonMapSize : 0u, maxPhotons, nrdBypassDistanceThreshold, nrdBypassBlendRange };
         
         commandList->SetComputeRoot32BitConstants(2, sizeof(constants) / 4, &constants, 0);
         

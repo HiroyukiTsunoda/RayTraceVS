@@ -64,7 +64,9 @@ namespace RayTraceVS::DXEngine
         Camera& GetCamera() { return camera; }
         const Camera& GetCamera() const { return camera; }
 
-        void SetRenderSettings(int samples, int bounces, int traceRecursion, float exp = 1.0f, int tone = 2, float stab = 1.0f, float shadow = 1.0f, float shadowAbsorb = 4.0f, bool denoiser = true, float gam = 2.2f, int photonDebug = 0, float photonDebugScaleVal = 1.0f)
+        void SetRenderSettings(int samples, int bounces, int traceRecursion, float exp = 1.0f, int tone = 2, float stab = 1.0f, float shadow = 1.0f, float shadowAbsorb = 4.0f, bool denoiser = true, float gam = 2.2f, int photonDebug = 0, float photonDebugScaleVal = 1.0f,
+                               float lightAttenConst = 1.0f, float lightAttenLinear = 0.0f, float lightAttenQuad = 0.01f, int maxShadowLights = 2,
+                               float nrdBypassDist = 8.0f, float nrdBypassRange = 2.0f)
         {
             samplesPerPixel = samples;
             maxBounces = bounces;
@@ -78,6 +80,13 @@ namespace RayTraceVS::DXEngine
             gamma = gam;
             photonDebugMode = photonDebug;
             photonDebugScale = photonDebugScaleVal;
+            // P1 optimization settings
+            lightAttenuationConstant = lightAttenConst;
+            lightAttenuationLinear = lightAttenLinear;
+            lightAttenuationQuadratic = lightAttenQuad;
+            this->maxShadowLights = maxShadowLights;
+            nrdBypassDistanceThreshold = nrdBypassDist;
+            nrdBypassBlendRange = nrdBypassRange;
         }
         int GetSamplesPerPixel() const { return samplesPerPixel; }
         int GetMaxBounces() const { return maxBounces; }
@@ -91,6 +100,14 @@ namespace RayTraceVS::DXEngine
         float GetGamma() const { return gamma; }
         int GetPhotonDebugMode() const { return photonDebugMode; }
         float GetPhotonDebugScale() const { return photonDebugScale; }
+        
+        // P1 optimization getters
+        float GetLightAttenuationConstant() const { return lightAttenuationConstant; }
+        float GetLightAttenuationLinear() const { return lightAttenuationLinear; }
+        float GetLightAttenuationQuadratic() const { return lightAttenuationQuadratic; }
+        int GetMaxShadowLights() const { return maxShadowLights; }
+        float GetNRDBypassDistanceThreshold() const { return nrdBypassDistanceThreshold; }
+        float GetNRDBypassBlendRange() const { return nrdBypassBlendRange; }
 
         void AddObject(std::shared_ptr<RayTracingObject> obj);
         void AddLight(const Light& light);
@@ -129,5 +146,13 @@ namespace RayTraceVS::DXEngine
         float gamma = 1.0f;
         int photonDebugMode = 0;
         float photonDebugScale = 1.0f;
+        
+        // P1 optimization settings
+        float lightAttenuationConstant = 1.0f;
+        float lightAttenuationLinear = 0.0f;
+        float lightAttenuationQuadratic = 0.01f;
+        int maxShadowLights = 2;
+        float nrdBypassDistanceThreshold = 8.0f;
+        float nrdBypassBlendRange = 2.0f;
     };
 }

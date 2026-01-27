@@ -55,6 +55,9 @@ cbuffer CompositeConstants : register(b0)
     float GammaValue;       // Gamma correction value (2.2 = standard sRGB, 1.0 = linear)
     uint PhotonMapSize;     // Current photon count (for overlay)
     uint MaxPhotons;        // Max photon capacity (for overlay)
+    // NRD bypass settings (P1-2: configurable)
+    float NRDBypassDistanceThreshold;  // Distance threshold for NRD bypass (default 8.0)
+    float NRDBypassBlendRange;         // Blend range for smooth transition (default 2.0)
 };
 
 // ============================================
@@ -421,8 +424,9 @@ void CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
         // This avoids checkerboard artifacts from NRD temporal filtering at distance
         
         float viewZ = GBuffer_ViewZ.SampleLevel(PointSampler, uv, 0);
-        float bypassThreshold = 8.0;  // Distance threshold for NRD bypass
-        float blendRange = 2.0;       // Smooth transition range
+        // P1-2: Use configurable thresholds from constant buffer
+        float bypassThreshold = NRDBypassDistanceThreshold;
+        float blendRange = NRDBypassBlendRange;
         
         float3 diffuseDemodRaw = GBuffer_DiffuseIn.SampleLevel(PointSampler, uv, 0).rgb;
         float3 specularRaw = RawSpecularBackup.SampleLevel(PointSampler, uv, 0).rgb;

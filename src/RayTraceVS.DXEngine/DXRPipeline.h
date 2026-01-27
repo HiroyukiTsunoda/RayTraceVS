@@ -61,6 +61,11 @@ namespace RayTraceVS::DXEngine
         float ShadowAbsorptionScale; // Beer absorption scale for colored transparent shadows
         UINT FrameIndex;            // Frame counter for temporal noise variation
         UINT ShadowPadding;         // Padding for 16-byte alignment
+        // Light attenuation parameters (physical-based)
+        float LightAttenuationConstant;   // Constant term (usually 1.0)
+        float LightAttenuationLinear;     // Linear term (distance proportional)
+        float LightAttenuationQuadratic;  // Quadratic term (physical: 1.0, artistic: 0.01)
+        UINT MaxShadowLights;             // Maximum lights for shadow calculation (optimization)
         // Mesh instance count
         UINT NumMeshInstances;      // Number of FBX mesh instances
         UINT MeshPadding[3];        // Padding for 16-byte alignment
@@ -522,6 +527,9 @@ namespace RayTraceVS::DXEngine
         UINT lastPlaneCount = 0;
         UINT lastBoxCount = 0;
         UINT lastMeshInstanceCount = 0;
+        
+        // Scene content checksum for detecting position/transform changes
+        uint64_t lastSceneChecksum = 0;
 
         // ============================================
         // Shader Cache System
@@ -535,6 +543,10 @@ namespace RayTraceVS::DXEngine
         
         std::unique_ptr<NRDDenoiser> denoiser;
         bool denoiserEnabled = true;  // NRD denoiser enabled - G-Buffer output is ready
+        
+        // NRD bypass settings (P1-2: configurable from scene)
+        float nrdBypassDistanceThreshold = 8.0f;
+        float nrdBypassBlendRange = 2.0f;
         
         // Frame tracking for motion vectors
         UINT frameIndex = 0;

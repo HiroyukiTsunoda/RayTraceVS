@@ -14,29 +14,7 @@ float4 SampleBlueNoise(uint2 pixel, uint frame, uint sampleIndex)
     return BlueNoiseTex.Load(int3(p, 0));
 }
 
-float3 PerturbReflection(float3 reflectDir, float3 normal, float roughness, inout RNG rng)
-{
-    if (roughness < 0.01)
-        return reflectDir;
-    
-    float r1 = rng_next(rng);
-    float r2 = rng_next(rng);
-    
-    float3 tangent = abs(normal.x) > 0.9 ? float3(0, 1, 0) : float3(1, 0, 0);
-    tangent = normalize(cross(normal, tangent));
-    float3 bitangent = cross(normal, tangent);
-    
-    float angle = r1 * 6.28318;
-    float radius = roughness * roughness * r2;
-    
-    float3 offset = (cos(angle) * tangent + sin(angle) * bitangent) * radius;
-    float3 perturbed = normalize(reflectDir + offset);
-    
-    if (dot(perturbed, normal) < 0.0)
-        perturbed = reflect(perturbed, normal);
-    
-    return perturbed;
-}
+// PerturbReflection is now in Common.hlsli (P1-3: code deduplication)
 
 // Generate random offset for anti-aliasing
 float2 RandomInPixel(uint2 pixel, uint sampleIndex)
@@ -328,7 +306,8 @@ void RayGen()
                             {
                                 lightDir = normalize(light.position - hitPosition);
                                 float lightDist = length(light.position - hitPosition);
-                                attenuation = 1.0 / (1.0 + lightDist * lightDist * 0.01);
+                                // P1-1: Physical-based attenuation
+                                attenuation = ComputeAttenuationFromScene(lightDist);
                             }
 
                             float ndotl = max(0.0, dot(N, lightDir));
@@ -371,6 +350,11 @@ void RayGen()
 
                     if (Scene.NumLights > 0)
                     {
+                        // P0-1 Optimization: Select dominant lights for shadow calculation
+                        // Only trace shadow rays for the most influential lights
+                        LightInfo topLights[2];
+                        uint topCount = SelectDominantLights(hitPosition, N, topLights);
+                        
                         for (uint li = 0; li < Scene.NumLights; li++)
                         {
                             LightData light = Lights[li];
@@ -390,13 +374,44 @@ void RayGen()
                             {
                                 L = normalize(light.position - hitPosition);
                                 float lightDist = length(light.position - hitPosition);
-                                attenuation = 1.0 / (1.0 + lightDist * lightDist * 0.01);
+                                // P1-1: Physical-based attenuation
+                                attenuation = ComputeAttenuationFromScene(lightDist);
                             }
 
                             float NdotL = max(dot(N, L), 0.0);
                             if (NdotL > 0.0)
                             {
-                                SoftShadowResult shadow = CalculateSoftShadow(hitPosition, N, light, seed);
+                                // P0-1 Optimization: Only calculate shadows for dominant lights
+                                SoftShadowResult shadow;
+                                bool isTopLight = IsInTopLights(li, topLights, topCount);
+                                
+                                if (isTopLight)
+                                {
+                                    // Dominant light: calculate shadow with importance-based sample count
+                                    if (light.radius > 0.001)
+                                    {
+                                        // Soft shadow with adaptive samples
+                                        uint samples = ComputeShadowSamples(light, topLights, li);
+                                        // Temporarily override softShadowSamples for this calculation
+                                        LightData adjustedLight = light;
+                                        adjustedLight.softShadowSamples = (float)samples;
+                                        shadow = CalculateSoftShadow(hitPosition, N, adjustedLight, seed);
+                                    }
+                                    else
+                                    {
+                                        // Hard shadow (single ray)
+                                        shadow = CalculateSoftShadow(hitPosition, N, light, seed);
+                                    }
+                                }
+                                else
+                                {
+                                    // Non-dominant light: skip shadow calculation (direct light only)
+                                    shadow.visibility = 1.0;
+                                    shadow.penumbra = 0.0;
+                                    shadow.occluderDistance = NRD_FP16_MAX;
+                                    shadow.shadowColor = float3(1, 1, 1);
+                                }
+                                
                                 if (payload.depth == 0)
                                 {
                                     float weight = NdotL * attenuation * light.intensity;
@@ -438,7 +453,8 @@ void RayGen()
                     {
                         float3 L = normalize(Scene.LightPosition - hitPosition);
                         float lightDist = length(Scene.LightPosition - hitPosition);
-                        float attenuation = 1.0 / (1.0 + lightDist * lightDist * 0.01);
+                        // P1-1: Physical-based attenuation
+                        float attenuation = ComputeAttenuationFromScene(lightDist);
                         float NdotL = max(dot(N, L), 0.0);
 
                         LightData fallbackLight;

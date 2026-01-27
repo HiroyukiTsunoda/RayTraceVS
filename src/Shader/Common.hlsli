@@ -267,6 +267,14 @@ struct SceneConstantBuffer
     float ShadowAbsorptionScale; // Beer absorption scale for colored transparent shadows
     uint FrameIndex;            // Frame counter for temporal noise variation
     uint ShadowPadding;         // Padding for 16-byte alignment
+    // Light attenuation parameters (physical-based)
+    float LightAttenuationConstant;   // Constant term (usually 1.0)
+    float LightAttenuationLinear;     // Linear term (distance proportional)
+    float LightAttenuationQuadratic;  // Quadratic term (physical: 1.0, artistic: 0.01)
+    uint MaxShadowLights;             // Maximum lights for shadow calculation (optimization)
+    // Mesh instance count
+    uint NumMeshInstances;            // Number of FBX mesh instances
+    uint3 MeshPadding;                // Padding for 16-byte alignment
     // Matrices for motion vectors
     float4x4 ViewProjection;
     float4x4 PrevViewProjection;
@@ -539,6 +547,27 @@ float Luminance(float3 color)
     return dot(color, float3(0.2126, 0.7152, 0.0722));
 }
 
+// ============================================
+// Physical-based Light Attenuation
+// ============================================
+// Compute attenuation using configurable constant/linear/quadratic terms
+// Physical: constTerm=1, linearTerm=0, quadTerm=1 (inverse square law)
+// Artistic: constTerm=1, linearTerm=0, quadTerm=0.01 (softer falloff)
+// Note: 'linear' is a reserved HLSL interpolation modifier, so we use 'linearTerm'
+float ComputeAttenuation(float dist, float constTerm, float linearTerm, float quadTerm)
+{
+    return 1.0 / max(constTerm + linearTerm * dist + quadTerm * dist * dist, 0.0001);
+}
+
+// Convenience function using scene parameters
+float ComputeAttenuationFromScene(float dist)
+{
+    return ComputeAttenuation(dist, 
+        Scene.LightAttenuationConstant,
+        Scene.LightAttenuationLinear,
+        Scene.LightAttenuationQuadratic);
+}
+
 // スペキュラー反射
 float3 CalculateSpecular(float3 normal, float3 lightDir, float3 viewDir, float3 lightColor, float shininess)
 {
@@ -730,6 +759,39 @@ float rng_next(inout RNG r)
     return (r.state >> 8) * (1.0 / 16777216.0);
 }
 
+// ============================================
+// Reflection Perturbation (shared utility)
+// ============================================
+// Perturb reflection direction based on roughness (GGX-like approximation)
+// This function is used by both RayGen and ClosestHit shaders
+float3 PerturbReflection(float3 reflectDir, float3 normal, float roughness, inout RNG rng)
+{
+    if (roughness < 0.01)
+        return reflectDir;
+    
+    // Generate random values
+    float r1 = rng_next(rng);
+    float r2 = rng_next(rng);
+    
+    // Build tangent frame
+    float3 tangent = abs(normal.x) > 0.9 ? float3(0, 1, 0) : float3(1, 0, 0);
+    tangent = normalize(cross(normal, tangent));
+    float3 bitangent = cross(normal, tangent);
+    
+    // Random offset scaled by roughness^2 (perceptually linear response)
+    float angle = r1 * 6.28318;
+    float radius = roughness * roughness * r2;
+    
+    float3 offset = (cos(angle) * tangent + sin(angle) * bitangent) * radius;
+    float3 perturbed = normalize(reflectDir + offset);
+    
+    // Ensure the perturbed direction is in the hemisphere
+    if (dot(perturbed, normal) < 0.0)
+        perturbed = reflect(perturbed, normal);
+    
+    return perturbed;
+}
+
 // Generate random float [0, 1) from seed (PCG-based)
 float RandomFloat(inout uint seed)
 {
@@ -854,6 +916,118 @@ float3 GatherPhotons(float3 position, float3 normal, float radius)
     }
     
     return causticColor * Scene.CausticIntensity;
+}
+
+// ============================================
+// Light Contribution Estimation (for shadow optimization)
+// ============================================
+
+// Light info structure for dominant light selection
+struct LightInfo
+{
+    uint index;
+    float contribution;
+};
+
+// Estimate light contribution without tracing shadow rays (fast)
+// Used to select dominant lights for shadow calculation
+float EstimateLightContribution(float3 hitPos, float3 normal, LightData light)
+{
+    if (light.type == LIGHT_TYPE_AMBIENT)
+        return light.intensity * Luminance(light.color.rgb) * 0.5; // Lower weight for ambient
+    
+    float3 L;
+    float attenuation = 1.0;
+    
+    if (light.type == LIGHT_TYPE_DIRECTIONAL)
+    {
+        L = normalize(-light.position);
+    }
+    else // LIGHT_TYPE_POINT
+    {
+        float3 toLight = light.position - hitPos;
+        float dist = length(toLight);
+        L = toLight / max(dist, 0.001);
+        attenuation = ComputeAttenuationFromScene(dist);
+    }
+    
+    float NdotL = max(dot(normal, L), 0.0);
+    return NdotL * attenuation * light.intensity * Luminance(light.color.rgb);
+}
+
+// Select top N dominant lights based on estimated contribution
+// Returns number of lights selected (up to maxLights)
+uint SelectDominantLights(float3 hitPos, float3 normal, out LightInfo topLights[2])
+{
+    // Initialize
+    topLights[0].index = 0;
+    topLights[0].contribution = -1.0;
+    topLights[1].index = 0;
+    topLights[1].contribution = -1.0;
+    
+    uint maxShadowLights = min(Scene.MaxShadowLights, 2u);
+    if (maxShadowLights == 0) maxShadowLights = 2; // Default fallback
+    
+    uint selectedCount = 0;
+    
+    [loop]
+    for (uint li = 0; li < Scene.NumLights && li < 8; li++)
+    {
+        LightData light = Lights[li];
+        if (light.type == LIGHT_TYPE_AMBIENT)
+            continue;
+        
+        float contribution = EstimateLightContribution(hitPos, normal, light);
+        
+        // Insert into sorted list (top 2)
+        if (contribution > topLights[0].contribution)
+        {
+            topLights[1] = topLights[0];
+            topLights[0].index = li;
+            topLights[0].contribution = contribution;
+            selectedCount = min(selectedCount + 1, maxShadowLights);
+        }
+        else if (contribution > topLights[1].contribution && maxShadowLights > 1)
+        {
+            topLights[1].index = li;
+            topLights[1].contribution = contribution;
+            selectedCount = min(selectedCount + 1, maxShadowLights);
+        }
+    }
+    
+    return selectedCount;
+}
+
+// Check if light index is in the top lights list
+bool IsInTopLights(uint lightIndex, LightInfo topLights[2], uint topCount)
+{
+    for (uint i = 0; i < topCount; i++)
+    {
+        if (topLights[i].index == lightIndex && topLights[i].contribution > 0.0)
+            return true;
+    }
+    return false;
+}
+
+// Compute shadow sample count based on light importance
+// Higher contribution lights get more samples
+uint ComputeShadowSamples(LightData light, LightInfo topLights[2], uint lightIndex)
+{
+    uint baseSamples = clamp((uint)light.softShadowSamples, 1, 16);
+    
+    // If this is the primary light, use full samples
+    if (topLights[0].index == lightIndex)
+        return baseSamples;
+    
+    // Secondary lights get reduced samples (importance sampling)
+    if (topLights[1].index == lightIndex)
+    {
+        float ratio = topLights[1].contribution / max(topLights[0].contribution, 0.001);
+        uint reducedSamples = max(1u, (uint)(baseSamples * ratio));
+        return min(reducedSamples, baseSamples / 2 + 1);
+    }
+    
+    return 1; // Fallback to single sample
 }
 
 // ============================================

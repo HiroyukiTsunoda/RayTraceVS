@@ -39,7 +39,14 @@ namespace RayTraceVS::Interop
             bool enableDenoiser,
             float gamma,
             int photonDebugMode,
-            float photonDebugScale);
+            float photonDebugScale,
+            // P1 optimization settings
+            float lightAttenuationConstant,
+            float lightAttenuationLinear,
+            float lightAttenuationQuadratic,
+            int maxShadowLights,
+            float nrdBypassDistance,
+            float nrdBypassBlendRange);
 
         // Rendering
         void Render();

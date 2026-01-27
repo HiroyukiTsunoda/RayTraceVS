@@ -1,34 +1,7 @@
 // ClosestHit shader - Sphere, Plane, Box
 #include "Common.hlsli"
 
-// Perturb reflection direction based on roughness (GGX-like approximation)
-float3 PerturbReflection(float3 reflectDir, float3 normal, float roughness, inout RNG rng)
-{
-    if (roughness < 0.01)
-        return reflectDir;
-    
-    // Generate random values
-    float r1 = rng_next(rng);
-    float r2 = rng_next(rng);
-    
-    // Build tangent frame
-    float3 tangent = abs(normal.x) > 0.9 ? float3(0, 1, 0) : float3(1, 0, 0);
-    tangent = normalize(cross(normal, tangent));
-    float3 bitangent = cross(normal, tangent);
-    
-    // Random offset scaled by roughness^2 (perceptually linear response)
-    float angle = r1 * 6.28318;
-    float radius = roughness * roughness * r2;
-    
-    float3 offset = (cos(angle) * tangent + sin(angle) * bitangent) * radius;
-    float3 perturbed = normalize(reflectDir + offset);
-    
-    // Ensure the perturbed direction is in the hemisphere
-    if (dot(perturbed, normal) < 0.0)
-        perturbed = reflect(perturbed, normal);
-    
-    return perturbed;
-}
+// PerturbReflection is now in Common.hlsli (P1-3: code deduplication)
 
 [shader("closesthit")]
 void ClosestHit(inout RadiancePayload payload, in ProceduralAttributes attribs)
