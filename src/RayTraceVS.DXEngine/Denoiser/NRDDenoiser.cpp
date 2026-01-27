@@ -25,10 +25,10 @@ namespace RayTraceVS::DXEngine
 
         char buf[256];
         sprintf_s(buf, "NRDDenoiser::Initialize - NRD_ENABLED=%d, width=%u, height=%u", NRD_ENABLED, width, height);
-        LOG_DEBUG(buf);
+        LOG_INFO(buf);
 
 #if NRD_ENABLED
-        LOG_DEBUG("NRDDenoiser::Initialize - NRD path active, creating instance...");
+        LOG_INFO("NRDDenoiser::Initialize - NRD path active, creating instance...");
         
         // Full NRD initialization - requires NRD library to be built
         // See README for instructions on building NRD with CMake
@@ -52,35 +52,53 @@ namespace RayTraceVS::DXEngine
         if (result != nrd::Result::SUCCESS)
         {
             sprintf_s(buf, "NRD: Failed to create instance, result=%d", (int)result);
-            LOG_DEBUG(buf);
+            LOG_ERROR(buf);
             return false;
         }
         sprintf_s(buf, "NRD: Instance created successfully with %d denoisers (REBLUR + %s)", 
             instanceDesc.denoisersNum, m_sigmaEnabled ? "SIGMA" : "none");
-        LOG_DEBUG(buf);
+        LOG_INFO(buf);
 #else
-        LOG_DEBUG("NRDDenoiser::Initialize - NRD_ENABLED=0, stub mode");
+        LOG_WARN("NRDDenoiser::Initialize - NRD_ENABLED=0, stub mode");
 #endif
 
         // Create resources (always needed for G-Buffer output)
         if (!CreateDescriptorHeaps())
+        {
+            LOG_ERROR("NRD: CreateDescriptorHeaps failed");
             return false;
+        }
 
         if (!CreateGBufferResources())
+        {
+            LOG_ERROR("NRD: CreateGBufferResources failed");
             return false;
+        }
 
         if (!CreateOutputResources())
+        {
+            LOG_ERROR("NRD: CreateOutputResources failed");
             return false;
+        }
 
 #if NRD_ENABLED
         if (!CreateNRDResources())
+        {
+            LOG_ERROR("NRD: CreateNRDResources failed");
             return false;
+        }
 
         if (!CreateConstantBuffer())
+        {
+            LOG_ERROR("NRD: CreateConstantBuffer failed");
             return false;
+        }
 
         if (!CreateSamplers())
+        {
+            LOG_ERROR("NRD: CreateSamplers failed");
             return false;
+        }
 #endif
 
         m_initialized = true;

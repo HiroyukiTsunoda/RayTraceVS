@@ -124,7 +124,7 @@
           "Light4"
         ],
         "SamplesPerPixel": 16,
-        "MaxBounces": 6,
+        "MaxBounces": 10,
         "TraceRecursionDepth": 2,
         "Exposure": 1.0,
         "ToneMapOperator": 2,
@@ -804,7 +804,7 @@
       "Type": "FloatNode",
       "Title": "Float",
       "PositionX": 1288.3623668079942,
-      "PositionY": 1285.2151198387392,
+      "PositionY": 1284.364056008952,
       "Properties": {
         "Value": 1.1
       }
@@ -813,8 +813,8 @@
       "Id": "e95067f7-f296-46db-9088-6adaf7893999",
       "Type": "MaterialBSDFNode",
       "Title": "BSDF",
-      "PositionX": 1803.4087550224667,
-      "PositionY": 2125.8237551484426,
+      "PositionX": 1802.5576911926794,
+      "PositionY": 2117.31311685057,
       "Properties": {
         "BaseColor": {
           "X": 0.8,
@@ -933,7 +933,7 @@
       "PositionX": 1159.117165261875,
       "PositionY": 2241.3056358053204,
       "Properties": {
-        "Value": 0.95
+        "Value": 1.0
       }
     },
     {
@@ -1471,17 +1471,11 @@
       "OutputSocketName": "Object",
       "InputNodeId": "a1b2c3d4-e5f6-7890-abcd-555555555555",
       "InputSocketName": "Object5"
-    },
-    {
-      "OutputNodeId": "978bf0ea-5183-4cb3-b526-afa9c6d445cd",
-      "OutputSocketName": "Vector",
-      "InputNodeId": "e95067f7-f296-46db-9088-6adaf7893999",
-      "InputSocketName": "Absorption"
     }
   ],
   "Viewport": {
-    "PanX": -1017.9908672985089,
-    "PanY": -1000.6249392183312,
+    "PanX": -1083.2879883605433,
+    "PanY": -911.8612679679316,
     "Zoom": 0.9400000000000005,
     "IsLeftPanelVisible": true,
     "IsRightPanelVisible": true,

@@ -604,9 +604,15 @@ namespace RayTraceVS.WPF.Views
             // 3-4 = material debug (see HLSL)
             // 5 = Composite: show raw fallback blend factor (rawT)
             // 6 = Composite: show ViewZ visualization
+            // 7 = Composite: show PreDenoiseColor full-screen
+            // 8 = Composite: show far-field selection mask (rawT>0.5)
+            // 9 = RayGen: refraction ray direction (first refraction)
+            // 10 = RayGen: refraction diagnostics (overflow / hit)
+            // 11 = Composite: show ViewZ-in-range mask (zStart..zEnd)
+            // 12 = Composite: show ViewZ linear scale (debug)
             if (e.Key == System.Windows.Input.Key.F1)
             {
-                photonDebugMode = (photonDebugMode + 1) % 11; // 0..10
+                photonDebugMode = (photonDebugMode + 1) % 13; // 0..12
                 UpdateInfo();
                 RequestRenderRefresh();
                 e.Handled = true;

@@ -37,7 +37,6 @@ Texture2D<float> GBuffer_ViewZ : register(t7);
 Texture2D<float2> GBuffer_MotionVectors : register(t8);
 Texture2D<float2> GBuffer_ShadowData : register(t9);  // Input shadow before denoising
 Texture2D<float4> RawSpecularBackup : register(t10);  // Raw specular before NRD (for mirror bypass)
-Texture2D<float4> PreDenoiseColor : register(t11);    // Copy of RayGen output before denoise (true "denoiser off" image)
 
 // Samplers
 SamplerState LinearSampler : register(s0);
@@ -80,30 +79,6 @@ float3 ACESFilm(float3 x)
     return saturate((x * (a * x + b)) / (x * (c * x + d) + e));
 }
 
-// Forward declarations (HLSL requires functions be declared before use).
-float3 LinearToSRGB(float3 color);
-float3 ApplyGamma(float3 color, float gamma);
-
-// Composite-local helper: apply exposure + tonemap + gamma to a linear RGB value.
-float3 CompositePostProcess(float3 linearColor, float exposure, float toneMapOperator, float gammaValue)
-{
-    float3 c = linearColor * exposure;
-
-    float3 tonemapped;
-    if (toneMapOperator < 0.5)
-        tonemapped = ReinhardToneMap(c);
-    else if (toneMapOperator < 1.5)
-        tonemapped = ACESFilm(c);
-    else
-        tonemapped = c;
-
-    tonemapped = saturate(tonemapped);
-
-    if (abs(gammaValue - GAMMA_SRGB_STANDARD) < GAMMA_SRGB_TOLERANCE)
-        return LinearToSRGB(tonemapped);
-    return ApplyGamma(tonemapped, gammaValue);
-}
-
 // Gamma correction (standard sRGB)
 float3 LinearToSRGB(float3 color)
 {
@@ -124,65 +99,6 @@ float3 ApplyGamma(float3 color, float gamma)
 float Luminance(float3 color)
 {
     return dot(color, float3(0.2126, 0.7152, 0.0722));
-}
-
-float FilterShadowVisibility3x3(float2 uv, float2 texelSize)
-{
-    float sum = 0.0;
-    [unroll]
-    for (int y = -1; y <= 1; y++)
-    {
-        [unroll]
-        for (int x = -1; x <= 1; x++)
-        {
-            float2 offset = float2((float)x, (float)y) * texelSize;
-            float2 shadowIn = GBuffer_ShadowData.SampleLevel(PointSampler, uv + offset, 0);
-            sum += shadowIn.y;
-        }
-    }
-    return sum * (1.0 / 9.0);
-}
-
-float3 FilterLighting3x3(float2 uv, float2 texelSize)
-{
-    float3 sum = 0.0;
-    [unroll]
-    for (int y = -1; y <= 1; y++)
-    {
-        [unroll]
-        for (int x = -1; x <= 1; x++)
-        {
-            float2 offset = float2((float)x, (float)y) * texelSize;
-            float3 diff = DenoisedDiffuse.SampleLevel(LinearSampler, uv + offset, 0).rgb;
-            float3 spec = DenoisedSpecular.SampleLevel(LinearSampler, uv + offset, 0).rgb;
-            sum += diff + spec;
-        }
-    }
-    return sum * (1.0 / 9.0);
-}
-
-float3 FilterLighting3x3Raw(float2 uv, float2 texelSize)
-{
-    float3 sum = 0.0;
-    [unroll]
-    for (int y = -1; y <= 1; y++)
-    {
-        [unroll]
-        for (int x = -1; x <= 1; x++)
-        {
-            float2 offset = float2((float)x, (float)y) * texelSize;
-            float3 diff = GBuffer_DiffuseIn.SampleLevel(LinearSampler, uv + offset, 0).rgb;
-            float3 spec = RawSpecularBackup.SampleLevel(LinearSampler, uv + offset, 0).rgb;
-            sum += diff + spec;
-        }
-    }
-    return sum * (1.0 / 9.0);
-}
-
-float ShadowFilterMask(float rawVis)
-{
-    // 1.0 in shadow, 0.0 in lit area
-    return smoothstep(0.0, 0.25, 1.0 - rawVis);
 }
 
 // Simple heatmap for debug visualization
@@ -256,10 +172,10 @@ void CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
     // Bounds check
     if (pixelCoord.x >= OutputSize.x || pixelCoord.y >= OutputSize.y)
         return;
-
+    
     // Calculate UV for texture sampling
     float2 uv = (float2(pixelCoord) + 0.5) / float2(OutputSize);
-
+    
     float3 finalColor;
     
     // ========================================
@@ -459,48 +375,6 @@ void CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
     float4 normalRoughnessPacked = GBuffer_NormalRoughness.SampleLevel(LinearSampler, uv, 0);
     float roughness = normalRoughnessPacked.w * normalRoughnessPacked.w;  // sqrt encoding -> linear
     float viewZ = GBuffer_ViewZ.SampleLevel(LinearSampler, uv, 0);
-
-    // DebugMode 12: visualize ViewZ (log scale)
-    if (DebugMode == 12)
-    {
-        float vz = GBuffer_ViewZ.SampleLevel(PointSampler, uv, 0);
-        float mapped = log2(1.0 + vz) / log2(1.0 + 150.0);
-        OutputTexture[pixelCoord] = float4(LinearToSRGB(saturate(mapped).xxx), 1.0);
-        return;
-    }
-
-    // DebugMode 15/16: ViewZ debugging (FULL-SCREEN).
-    // NOTE: These must run regardless of hit/miss, so they live here (before hitMask branches).
-    if (DebugMode == 15 || DebugMode == 16)
-    {
-        float vz = abs(GBuffer_ViewZ.SampleLevel(PointSampler, uv, 0));
-
-        // Use the user-measured reference range for debugging.
-        const float zStartDbg = 12.0;
-        const float zEndDbg = 500.0;
-
-        if (DebugMode == 15)
-        {
-            float m = (vz >= zStartDbg && vz <= zEndDbg) ? 1.0 : 0.0;
-            OutputTexture[pixelCoord] = float4(0.0, m, 0.0, 1.0);
-            return;
-        }
-
-        // DebugMode 16: linear-scale ViewZ (clamped to 0..zEndDbg).
-        float mapped = saturate(vz / zEndDbg);
-        OutputTexture[pixelCoord] = float4(LinearToSRGB(mapped.xxx), 1.0);
-        return;
-    }
-
-    // DebugMode 13: show the captured pre-denoise color (true "denoiser off" image) full-screen.
-    if (DebugMode == 13)
-    {
-        // IMPORTANT: Use PointSampler to avoid blending across the hit/miss horizon.
-        float3 pre = PreDenoiseColor.SampleLevel(PointSampler, uv, 0).rgb;
-        float3 outColor = CompositePostProcess(pre, ExposureValue, ToneMapOperator, GammaValue);
-        OutputTexture[pixelCoord] = float4(outColor, 1.0);
-        return;
-    }
     
     // ========================================
     // Sky/Miss pixels: viewZ == 0 means no hit, use raw input directly
@@ -509,122 +383,24 @@ void CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
     // Sky bypass disabled - handled by main path below
     // (GBuffer_DiffuseIn now contains the complete finalColor from RayGen for all pixels)
     
-    // Primary lighting inputs:
-    // Use REBLUR outputs when denoiser is enabled, otherwise fall back to raw buffers.
-    // Albedo/alpha is a G-Buffer attribute, not a filtered texture.
-    // Using LinearSampler here blends hit/miss alpha across the horizon and creates bright fringes.
-    // Always sample it with PointSampler.
-    float4 albedoSample = AlbedoTexture.SampleLevel(PointSampler, uv, 0);
-    float3 albedo = albedoSample.rgb;
-    // Alpha encoding from RayGen:
-    //   0.0 = miss/sky
-    //   1.0 = hit, diffuse is DEMODULATED and needs re-modulation by albedo
-    //   0.5 = hit, diffuse is residual and must NOT be re-modulated (metal/glass)
-    float hitMask = (albedoSample.a > 0.25) ? 1.0 : 0.0;
-    float remodulateMask = (albedoSample.a > 0.75) ? 1.0 : 0.0;
-    // Specular-dominant surfaces (metal/glass) can't provide correct motion vectors for the refracted/reflected
-    // signal (MV is based on the primary hit). NRD temporal filtering will therefore smear/distort the image
-    // seen through refraction. For these pixels, bypass NRD specular and use the raw pre-NRD buffer.
-    bool bypassSpecularDenoise = (hitMask > 0.5) && (remodulateMask < 0.5);
-
-    // True pre-denoise final color (RayGen output copy). Use PointSampler to avoid horizon blending.
-    float3 preDenoise = PreDenoiseColor.SampleLevel(PointSampler, uv, 0).rgb;
+    // Correct SIGMA workflow:
+    // GBuffer_DiffuseIn = diffuse radiance (ambient + directDiffuse + reflections + emission)
+    // RawSpecularBackup = specular radiance (directSpecular)
+    // Combine both for complete lighting
     
-    // Diffuse buffers are stored DEMODULATED (diffuse / albedo) for hit pixels.
-    // Re-modulate here to preserve high-frequency textures (checkerboard, etc.).
-    // IMPORTANT: Use PointSampler for 1:1 full-res buffers to avoid horizon fringes.
-    float3 rawDiffuseDemod = GBuffer_DiffuseIn.SampleLevel(PointSampler, uv, 0).rgb;
-    float3 rawSpecular = RawSpecularBackup.SampleLevel(PointSampler, uv, 0).rgb;
-    float3 rawDiffuse = rawDiffuseDemod * lerp(1.0.xxx, albedo, hitMask * remodulateMask);
-    float3 rawLighting = rawDiffuse + rawSpecular;
-
-    float3 denoisedDiffuseDemod = DenoisedDiffuse.SampleLevel(LinearSampler, uv, 0).rgb;
-    float3 denoisedSpecular = DenoisedSpecular.SampleLevel(LinearSampler, uv, 0).rgb;
-    if (bypassSpecularDenoise)
-    {
-        denoisedSpecular = rawSpecular;
-    }
-    float3 denoisedDiffuse = denoisedDiffuseDemod * lerp(1.0.xxx, albedo, hitMask * remodulateMask);
-    float3 denoisedLighting = denoisedDiffuse + denoisedSpecular;
-
-    // Sky/miss pixels: NEVER use NRD outputs.
-    // NRD temporal filtering can leak geometry history into sky and create a bright/white horizon seam.
-    // For miss pixels (albedo alpha == 0), always use raw lighting.
-    float3 inputColor;
-    if (hitMask < 0.5)
-    {
-        // Miss/sky: prefer the exact RayGen output to avoid any reconstruction mismatch near the horizon.
-        inputColor = preDenoise;
-    }
-    else
-    {
-        // At the hit/miss boundary (horizon), NRD can still produce bright fringing on the HIT side
-        // due to history clamping and neighborhood sampling across discontinuities. Detect if any
-        // immediate neighbor is a miss pixel and, if so, prefer raw for this pixel too.
-        bool boundaryToSky = false;
-        float2 texel = 1.0 / float2(OutputSize);
-        [unroll]
-        for (int oy = -3; oy <= 3; oy++)
-        {
-            [unroll]
-            for (int ox = -3; ox <= 3; ox++)
-            {
-                float a = AlbedoTexture.SampleLevel(PointSampler, uv + float2(ox, oy) * texel, 0).a;
-                if (a < 0.25)
-                {
-                    boundaryToSky = true;
-                }
-            }
-        }
-
-        if (boundaryToSky)
-        {
-            // Horizon seam fix: force exact RayGen output on the HIT side near sky/miss neighbors.
-            // This matches the denoiser-off image and eliminates the 1px white fringe on the ground.
-            inputColor = preDenoise;
-        }
-        else
-        {
-            inputColor = (UseDenoisedShadow != 0) ? denoisedLighting : rawLighting;
-        }
-    }
-
-    // ------------------------------------------------------------------
-    // Far-field fallback to RAW (pre-denoise) for aliasing (VIEWZ-based).
-    // You already measured that typical ground ViewZ spans roughly ~12..500 in this scene.
-    // Use that same metric here so the "switch range" doesn't drift.
-    // ------------------------------------------------------------------
-    if (hitMask > 0.5 && (UseDenoisedShadow != 0))
-    {
-        float vz = abs(GBuffer_ViewZ.SampleLevel(PointSampler, uv, 0));
-
-        // Tune these in VIEWZ units (same units as GBuffer_ViewZ).
-        float zStart = 12.0;
-        float zEnd = 500.0;
-
-        // Use the SAME condition as DebugMode 15 (Mode 9): ViewZ in [12..500] is the desired override band.
-        // This avoids any mismatch caused by curve shaping / thresholds.
-        float rawT = (vz >= zStart && vz <= zEnd) ? 1.0 : 0.0;
-
-        // DebugMode 11: visualize raw fallback blend factor (0=denoised, 1=raw)
-        if (DebugMode == 11)
-        {
-            OutputTexture[pixelCoord] = float4(LinearToSRGB(rawT.xxx), 1.0);
-            return;
-        }
-
-        // DebugMode 14: visualize which pixels would switch to PreDenoiseColor.
-        if (DebugMode == 14)
-        {
-            float m = rawT;
-            OutputTexture[pixelCoord] = float4(0.0, m, 0.0, 1.0);
-            return;
-        }
-
-        // Hard cut to RAW in the far field (user-requested behavior).
-        if (rawT > 0.5)
-            inputColor = PreDenoiseColor.SampleLevel(PointSampler, uv, 0).rgb;
-    }
+    float3 inputColor = GBuffer_DiffuseIn.SampleLevel(LinearSampler, uv, 0).rgb;
+    float3 inputSpecular = RawSpecularBackup.SampleLevel(LinearSampler, uv, 0).rgb;
+    inputColor += inputSpecular;  // Add specular component for point light highlights
+    
+    // For hit pixels, apply SIGMA shadow
+    // Metal/Glass set shadowVisibility=1.0 in their G-Buffer output, so SIGMA won't darken them
+    // Sky pixels have albedo.a == 0, so we skip shadow application for them
+    float4 albedoData = AlbedoTexture.SampleLevel(LinearSampler, uv, 0);
+    bool isHitPixel = albedoData.a > 0.5;  // Alpha = 1.0 for hits, 0.0 for misses
+    
+    // Shadow is now baked into diffuseRadiance in ClosestHit (same as denoiser-disabled path)
+    // No need to apply shadow here - this avoids white artifacts at object edges
+    // UseDenoisedShadow flag is ignored since shadow is already applied
     
     // Apply exposure
     inputColor *= ExposureValue;

@@ -105,48 +105,20 @@ void ClosestHit(inout RadiancePayload payload, in ProceduralAttributes attribs)
         // Use hitPosition.xz directly for horizontal floor
         float2 uv = hitPosition.xz;
         
-        // Anti-aliased checker:
-        // With NRD on, stochastic noise is reduced and raw aliasing on high-frequency patterns becomes visible.
-        // Approximate pixel footprint in world units at this depth and smooth the checker edges accordingly.
+        // Distance-based checker filtering (mip-like) to reduce aliasing
         float viewZ = dot(hitPosition - Scene.CameraPosition, Scene.CameraForward);
         viewZ = max(viewZ, 0.0);
-
-        // Approximate pixel footprint (world units per pixel) at depth viewZ:
-        // screenHeightWorld = 2 * viewZ * tan(fov/2)
-        float pixelWorld = (2.0 * viewZ * Scene.TanHalfFov) / max((float)Scene.ScreenHeight, 1.0);
-        // Tune: stronger AA to match "denoiser off" apparent blur
-        float aaWidth = max(pixelWorld * 3.0, 1e-4);
-
-        // Checker cell size = 1 world unit (as before), but with edge AA in UV space.
-        // Use floor-based parity (stable for negatives) and blend to 0.5 near grid lines.
+        float fogStart = 30.0;
+        float fogEnd = 80.0;
+        float dist = saturate((viewZ - fogStart) / max(fogEnd - fogStart, 0.001));
+        float contrast = lerp(1.0, 0.3, dist);
+        
+        // Use bitwise AND for correct handling of negative coordinates
+        // fmod doesn't work correctly with negative numbers
         int ix = (int)floor(uv.x);
         int iy = (int)floor(uv.y);
         int checker = (ix + iy) & 1;
-        float checkerBase = (float)checker; // 0 or 1
-
-        // Fractional position within the current cell in [0,1)
-        float fx = uv.x - floor(uv.x);
-        float fy = uv.y - floor(uv.y);
-        // Distance to nearest grid line (0 at edge, 0.5 at center)
-        float edgeDist = min(min(fx, 1.0 - fx), min(fy, 1.0 - fy));
-        // Edge AA weight: 0 at edge -> 1 away from edge
-        float aa = saturate(edgeDist / aaWidth);
-        float checkerAA = lerp(0.5, checkerBase, aa);
-        
-        // Extra distance-based "mip" for extreme far distances:
-        // If the pixel footprint becomes comparable to or larger than the cell size (1),
-        // fade to the average (0.5) to avoid moiré/aliasing.
-        float footprint = pixelWorld; // cell size is 1 world unit
-        float mip = saturate((footprint - 0.35) / 1.5);
-        checkerAA = lerp(checkerAA, 0.5, mip);
-
-        // Fade contrast in the far distance (mip-like)
-        float fogStart = 30.0;
-        float fogEnd = 120.0;
-        float dist = saturate((viewZ - fogStart) / max(fogEnd - fogStart, 0.001));
-        float contrast = lerp(1.0, 0.35, dist);
-        float checkerValue = lerp(0.5, checkerAA, contrast);
-
+        float checkerValue = lerp(0.5, (float)checker, contrast);
         color.rgb = lerp(float3(0.1, 0.1, 0.1), float3(0.9, 0.9, 0.9), checkerValue);
     }
     else // OBJECT_TYPE_BOX

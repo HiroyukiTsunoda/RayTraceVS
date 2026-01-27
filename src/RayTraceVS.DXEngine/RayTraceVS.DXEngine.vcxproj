@@ -46,14 +46,16 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
     <!-- Output directly to WPF output directory -->
-    <OutDir>$(SolutionDir)src\RayTraceVS.WPF\bin\$(Platform)\$(Configuration)\net8.0-windows\</OutDir>
-    <IntDir>$(SolutionDir)obj\$(ProjectName)\$(Configuration)\</IntDir>
+    <!-- Avoid $(SolutionDir) dependency so MSBuild works outside .sln context -->
+    <OutDir>$(ProjectDir)..\RayTraceVS.WPF\bin\$(Platform)\$(Configuration)\net8.0-windows\</OutDir>
+    <IntDir>$(ProjectDir)..\..\obj\$(ProjectName)\$(Configuration)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
     <!-- Output directly to WPF output directory -->
-    <OutDir>$(SolutionDir)src\RayTraceVS.WPF\bin\$(Platform)\$(Configuration)\net8.0-windows\</OutDir>
-    <IntDir>$(SolutionDir)obj\$(ProjectName)\$(Configuration)\</IntDir>
+    <!-- Avoid $(SolutionDir) dependency so MSBuild works outside .sln context -->
+    <OutDir>$(ProjectDir)..\RayTraceVS.WPF\bin\$(Platform)\$(Configuration)\net8.0-windows\</OutDir>
+    <IntDir>$(ProjectDir)..\..\obj\$(ProjectName)\$(Configuration)\</IntDir>
   </PropertyGroup>
   <!-- NRD SDK Path -->
   <PropertyGroup>
@@ -157,8 +159,9 @@
   </ItemGroup>
   <!-- Shader paths: Source = src\Shader\, Cache = src\Shader\Cache\ -->
   <PropertyGroup>
-    <ShaderSourceDir>$(SolutionDir)src\Shader\</ShaderSourceDir>
-    <ShaderCacheDir>$(SolutionDir)src\Shader\Cache\</ShaderCacheDir>
+    <!-- Avoid $(SolutionDir) dependency so shader compilation works outside .sln context -->
+    <ShaderSourceDir>$(ProjectDir)..\Shader\</ShaderSourceDir>
+    <ShaderCacheDir>$(ProjectDir)..\Shader\Cache\</ShaderCacheDir>
   </PropertyGroup>
   <ItemGroup>
     <!-- DXR Shaders (lib_6_3) - compiled with DXC -->
