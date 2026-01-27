@@ -52,12 +52,30 @@ struct PhotonHashCell
 #define RAYKIND_THICKNESS 2
 #define RAYKIND_PHOTON 3
 
-#define SKY_BOOST_GLASS 1.2
-#define SKY_BOOST_METAL 1.1
+// ============================================
+// P3-1: Documented Constants (future: move to SceneConstantBuffer)
+// ============================================
+
+// Sky boost multipliers for specular materials
+// Higher values make reflections/refractions of sky brighter
+#define SKY_BOOST_GLASS 1.2    // Boost for glass refraction paths
+#define SKY_BOOST_METAL 1.1    // Boost for metal reflection paths
 
 // Shadow absorption thickness proxy (any-hit can't TraceRay)
+// This approximates the thickness of transparent objects for Beer-Lambert absorption
+// TODO: Move to Scene.ShadowAbsorptionThickness for runtime configuration
 #define SHADOW_ABSORPTION_THICKNESS 1.0
-// ShadowAbsorptionScale is now in SceneConstantBuffer (Scene.ShadowAbsorptionScale)
+
+// ShadowAbsorptionScale is in SceneConstantBuffer (Scene.ShadowAbsorptionScale)
+
+// Checker pattern fade distance (used in ClosestHit.hlsl, RayTraceCompute.hlsl)
+// TODO: Move to Scene.CheckerFadeDistance for runtime configuration
+#define CHECKER_FADE_DISTANCE 50.0
+
+// Maximum photons to gather before early termination (P2-3 optimization)
+// TODO: Move to Scene.MaxGatherPhotons for runtime configuration
+#define MAX_GATHER_PHOTONS_THRESHOLD 32
+
 // Debug: visualize shadow visibility on surfaces
 #define DEBUG_SHADOW_VIS 0
 
@@ -608,17 +626,36 @@ float GGX_D(float NdotH, float roughness)
     return a2 / (PI * denom * denom + 0.0001);
 }
 
-// Smith Geometry Function (Schlick-GGX) for direct lighting
+// Smith Geometry Function (Schlick-GGX)
+// Base function used by both direct and IBL versions
 float Smith_G1(float NdotV, float k)
 {
     return NdotV / (NdotV * (1.0 - k) + k);
 }
 
-float Smith_G(float NdotV, float NdotL, float roughness)
+// P3-2: Smith_G for direct lighting
+// Uses k = (roughness + 1)^2 / 8 remapping for point/directional lights
+float Smith_G_Direct(float NdotV, float NdotL, float roughness)
 {
     float r = roughness + 1.0;
     float k = (r * r) / 8.0;  // Remapping for direct lighting
     return Smith_G1(NdotV, k) * Smith_G1(NdotL, k);
+}
+
+// P3-2: Smith_G for Image-Based Lighting (IBL)
+// Uses k = roughness^2 / 2 for environment map sampling
+// This provides better results for pre-filtered environment maps
+float Smith_G_IBL(float NdotV, float NdotL, float roughness)
+{
+    float a = roughness * roughness;
+    float k = a / 2.0;  // IBL style remapping
+    return Smith_G1(NdotV, k) * Smith_G1(NdotL, k);
+}
+
+// Backward-compatible Smith_G function (calls Direct version)
+float Smith_G(float NdotV, float NdotL, float roughness)
+{
+    return Smith_G_Direct(NdotV, NdotL, roughness);
 }
 
 // Fresnel-Schlick approximation (float3 version for PBR)
@@ -846,6 +883,7 @@ uint HashPhotonCell(int3 cell)
 }
 
 // Gather photons within radius using spatial hash table
+// P2-3: Optimized with early termination and corner cell culling
 float3 GatherPhotons(float3 position, float3 normal, float radius)
 {
     float3 causticColor = float3(0, 0, 0);
@@ -859,23 +897,32 @@ float3 GatherPhotons(float3 position, float3 normal, float radius)
     float cellSize = max(radius * 2.0, 1e-4);
     int3 baseCell = int3(floor(position / cellSize));
     
+    // P2-3: Early termination counter - stop after finding enough photons
+    uint gatheredPhotons = 0;
+    const uint MAX_GATHER_PHOTONS = MAX_GATHER_PHOTONS_THRESHOLD;  // From P3-1 documented constants
+    
     // Search current cell and neighbors
     [loop]
-    for (int z = -1; z <= 1; z++)
+    for (int z = -1; z <= 1 && gatheredPhotons < MAX_GATHER_PHOTONS; z++)
     {
         [loop]
-        for (int y = -1; y <= 1; y++)
+        for (int y = -1; y <= 1 && gatheredPhotons < MAX_GATHER_PHOTONS; y++)
         {
             [loop]
-            for (int x = -1; x <= 1; x++)
+            for (int x = -1; x <= 1 && gatheredPhotons < MAX_GATHER_PHOTONS; x++)
             {
+                // P2-3: Skip corner cells (distance > sqrt(3) cell diagonals)
+                // Corner cells are unlikely to contribute significantly
+                int cellDistSq = x*x + y*y + z*z;
+                if (cellDistSq > 2) continue;  // Skip 8 corner cells, keep 19 cells
+                
                 int3 cell = baseCell + int3(x, y, z);
                 uint cellHash = HashPhotonCell(cell);
                 PhotonHashCell cellData = PhotonHashTable[cellHash];
                 uint cellCount = min(cellData.count, MAX_PHOTONS_PER_CELL);
                 
                 [loop]
-                for (uint i = 0; i < cellCount; i++)
+                for (uint i = 0; i < cellCount && gatheredPhotons < MAX_GATHER_PHOTONS; i++)
                 {
                     uint photonIndex = cellData.photonIndices[i];
                     if (photonIndex >= photonCount)
@@ -901,6 +948,7 @@ float3 GatherPhotons(float3 position, float3 normal, float radius)
                             float weight = exp(-distSq / (2.0 * radiusSq * 0.5)) * dotN;
                             causticColor += p.color * p.power * weight;
                             totalWeight += weight;
+                            gatheredPhotons++;  // P2-3: Increment counter for early termination
                         }
                     }
                 }

@@ -78,13 +78,13 @@ void ClosestHit(inout RadiancePayload payload, in ProceduralAttributes attribs)
         // Use hitPosition.xz directly for horizontal floor
         float2 uv = hitPosition.xz;
         
-        // Distance-based checker filtering (mip-like) to reduce aliasing
+        // P2-1: Distance-based checker filtering with exponential fade
+        // Exponential fade provides more natural falloff than linear
         float viewZ = dot(hitPosition - Scene.CameraPosition, Scene.CameraForward);
         viewZ = max(viewZ, 0.0);
-        float fogStart = 30.0;
-        float fogEnd = 80.0;
-        float dist = saturate((viewZ - fogStart) / max(fogEnd - fogStart, 0.001));
-        float contrast = lerp(1.0, 0.3, dist);
+        float fadeDistance = CHECKER_FADE_DISTANCE;  // P3-1: From Common.hlsli documented constants
+        float fadeExp = exp(-viewZ / fadeDistance);
+        float contrast = lerp(0.3, 1.0, fadeExp);
         
         // Use bitwise AND for correct handling of negative coordinates
         // fmod doesn't work correctly with negative numbers

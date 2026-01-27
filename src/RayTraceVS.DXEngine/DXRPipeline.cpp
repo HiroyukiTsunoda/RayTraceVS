@@ -4098,10 +4098,12 @@ namespace RayTraceVS::DXEngine
             return;
 
         LOG_DEBUG("CompositeOutput: begin");
-        // Always recreate pipeline to pick up shader changes during development
-        // TODO: Remove this forced recreation in release builds
+
+#if defined(_DEBUG)
+        // Debug builds: recreate pipeline every frame to pick up shader changes
         compositePipelineState.Reset();
         compositeRootSignature.Reset();
+#endif
         
         if (!compositePipelineState)
         {

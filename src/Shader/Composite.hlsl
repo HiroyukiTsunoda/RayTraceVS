@@ -397,10 +397,12 @@ void CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
     float3 albedo = albedoData.rgb;
     float materialAlpha = albedoData.a;
     
-    // Material classification from alpha
-    bool isSky = materialAlpha < 0.25;                    // 0.0
-    bool isSpecularDominant = materialAlpha > 0.25 && materialAlpha < 0.75;  // 0.5
-    bool isDiffuseSurface = materialAlpha > 0.75;         // 1.0
+    // Material classification from alpha (discrete for glass/metal to avoid NRD ghosting)
+    // materialAlpha: 0.0=sky, 0.5=specular (glass/metal), 1.0=diffuse
+    bool isSky = materialAlpha < 0.25;
+    bool isSpecularDominant = materialAlpha >= 0.25 && materialAlpha < 0.75;
+    // P2-2: Use smoothstep only for diffuse-to-semi-specular transition (not for glass)
+    float specularWeight = smoothstep(0.7, 0.9, materialAlpha);  // Only affects semi-specular surfaces
     
     float3 inputColor;
     
@@ -411,28 +413,24 @@ void CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
     }
     else if (isSpecularDominant)
     {
-        // Glass/Metal: BYPASS NRD completely, use raw specular
-        // This avoids temporal filtering artifacts on reflections/refractions
+        // Glass/Metal: BYPASS NRD completely to avoid ghosting artifacts
+        // These materials have incorrect motion vectors for reflections/refractions
         inputColor = RawSpecularBackup.SampleLevel(PointSampler, uv, 0).rgb;
     }
     else
     {
-        // Diffuse surface: Distance-based NRD bypass
-        // 
-        // Near surfaces (viewZ < threshold): Use NRD denoised (clean shadows)
-        // Far surfaces (viewZ >= threshold): Use raw buffers (clean checkerboard)
-        // This avoids checkerboard artifacts from NRD temporal filtering at distance
+        // Diffuse/semi-specular surface: Distance-based NRD bypass
+        float3 specularRaw = RawSpecularBackup.SampleLevel(PointSampler, uv, 0).rgb;
         
         float viewZ = GBuffer_ViewZ.SampleLevel(PointSampler, uv, 0);
-        // P1-2: Use configurable thresholds from constant buffer
         float bypassThreshold = NRDBypassDistanceThreshold;
         float blendRange = NRDBypassBlendRange;
         
         float3 diffuseDemodRaw = GBuffer_DiffuseIn.SampleLevel(PointSampler, uv, 0).rgb;
-        float3 specularRaw = RawSpecularBackup.SampleLevel(PointSampler, uv, 0).rgb;
         float3 rawDiffuse = diffuseDemodRaw * albedo;
         float3 rawColor = rawDiffuse + specularRaw;
         
+        float3 diffuseColor;
         if (UseDenoisedShadow != 0 && viewZ < bypassThreshold + blendRange)
         {
             // Use NRD denoised for near surfaces
@@ -442,14 +440,17 @@ void CSMain(uint3 dispatchThreadId : SV_DispatchThreadID)
             float3 nrdColor = nrdDiffuse + specularNRD;
             
             // Blend between NRD and raw based on distance
-            float blendFactor = saturate((viewZ - bypassThreshold) / blendRange);
-            inputColor = lerp(nrdColor, rawColor, blendFactor);
+            float distBlendFactor = saturate((viewZ - bypassThreshold) / blendRange);
+            diffuseColor = lerp(nrdColor, rawColor, distBlendFactor);
         }
         else
         {
             // Far surfaces or denoiser OFF: use raw
-            inputColor = rawColor;
+            diffuseColor = rawColor;
         }
+        
+        // P2-2: Blend only for semi-specular surfaces (metallic/rough metals)
+        inputColor = lerp(specularRaw, diffuseColor, specularWeight);
     }
     
     // Apply exposure

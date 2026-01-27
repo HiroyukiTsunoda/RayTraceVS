@@ -104,5 +104,18 @@ namespace RayTraceVS.WPF.Utils
         /// Dirtyなノードの数を取得する。
         /// </summary>
         public int DirtyCount => _dirtyNodes.Count;
+
+        /// <summary>
+        /// DirtyノードのIDセットを取得する（増分評価用）。
+        /// </summary>
+        public IReadOnlyCollection<Guid> GetDirtyNodeIds()
+        {
+            return _dirtyNodes;
+        }
+
+        /// <summary>
+        /// Dirtyノードが存在するかどうかを確認する。
+        /// </summary>
+        public bool HasDirtyNodes => _dirtyNodes.Count > 0;
     }
 }
