@@ -14,7 +14,7 @@
   - RayTraceVS.Interop（C++/CLI相互運用）
   - RayTraceVS.Package（MSIXパッケージング）
 - ✅ ディレクトリ構造とファイル配置
-- ✅ MSIXインストーラー対応
+- ✅ MSIXインストーラー対応（.rtvs ファイル関連付け）
 
 #### 2. DirectX12 基盤（dx12-foundation）
 - ✅ DXContextクラス（DirectX12初期化）
