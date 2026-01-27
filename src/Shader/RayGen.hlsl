@@ -110,6 +110,8 @@ void RayGen()
     float primaryRoughness = 1.0;
     float3 primaryPosition = float3(0, 0, 0);
     float3 primaryAlbedo = float3(0, 0, 0);
+    float primaryMetallic = 0.0;
+    float primaryTransmission = 0.0;
     bool anyHit = false;
     
     // SIGMA expects RAW single-sample shadow data, NOT averaged!
@@ -558,6 +560,8 @@ void RayGen()
                     primaryRoughness = roughness;
                     primaryPosition = hitPosition;
                     primaryAlbedo = payload.albedo;
+                    primaryMetallic = metallic;
+                    primaryTransmission = transmission;
                     primaryShadowVisibility = payload.shadowVisibility;
                     primaryShadowPenumbra = payload.shadowPenumbra;
                     primaryShadowDistance = payload.shadowDistance;
@@ -839,20 +843,58 @@ void RayGen()
     float3 finalColor = accumulatedColor * invSampleCount;
     RenderTarget[launchIndex] = float4(finalColor, 1.0);
     
-    // Output NRD G-Buffer data for SIGMA workflow
-    // diffuseRadiance = lighting WITHOUT shadow (albedo handling depends on material shader)
-    // Shadow will be applied from SIGMA denoiser in Composite.hlsl
-    // Step B (minimal): keep Composite inputs consistent
-    // diffuse + specular should reconstruct accumulatedColor
-    float3 diffuseForNRD = (accumulatedColor - accumulatedSpecular) * invSampleCount;
-    float3 specularForNRD = accumulatedSpecular * invSampleCount;
-    GBuffer_DiffuseRadianceHitDist[launchIndex] = float4(diffuseForNRD, accumulatedHitDist * invSampleCount);
-    GBuffer_SpecularRadianceHitDist[launchIndex] = float4(specularForNRD, accumulatedHitDist * invSampleCount);
-    
     // For primary normal/roughness/albedo, use hit data if available, else defaults
     float3 worldNormal = anyHit ? primaryNormal : float3(0, 1, 0);
     float outRoughness = anyHit ? primaryRoughness : 1.0;
     float3 outAlbedo = anyHit ? primaryAlbedo : float3(1.0, 1.0, 1.0);
+    
+    // Output NRD G-Buffer data for REBLUR workflow
+    // ========================================
+    // NRD REBLUR expects:
+    //   - Diffuse: DEMODULATED radiance (diffuse / albedo) for opaque surfaces
+    //   - Specular: radiance as-is (reflections, refractions)
+    //
+    // Material classification:
+    //   - Glass/Metal (specular-dominant): ALL light goes to specular (no demodulation)
+    //   - Opaque diffuse: diffuse is demodulated, specular is direct highlights
+    //   - Sky/miss: sky color in diffuse
+    // ========================================
+    
+    float3 diffuseForNRD;
+    float3 specularForNRD;
+    
+    // Classify material: glass or metal is specular-dominant
+    bool isSpecularDominant = anyHit && (primaryTransmission > 0.5 || primaryMetallic > 0.5);
+    
+    if (!anyHit)
+    {
+        // Sky/miss: put sky color in diffuse, specular = 0
+        diffuseForNRD = finalColor;
+        specularForNRD = float3(0, 0, 0);
+    }
+    else if (isSpecularDominant)
+    {
+        // Glass/Metal: ALL light goes to specular (reflections + refractions)
+        // No demodulation - these materials have no meaningful diffuse component
+        diffuseForNRD = float3(0, 0, 0);
+        specularForNRD = finalColor;
+    }
+    else
+    {
+        // Opaque diffuse surface: demodulate diffuse, keep specular separate
+        float3 diffuseIllum = max(accumulatedColor - accumulatedSpecular, 0.0) * invSampleCount;
+        
+        // DEMODULATE: divide by albedo for NRD
+        // Use minimum threshold to avoid division by zero on dark surfaces
+        float3 safeAlbedo = max(outAlbedo, float3(0.04, 0.04, 0.04));
+        diffuseForNRD = diffuseIllum / safeAlbedo;
+        
+        // Specular: direct specular highlights (not demodulated)
+        specularForNRD = accumulatedSpecular * invSampleCount;
+    }
+    
+    GBuffer_DiffuseRadianceHitDist[launchIndex] = float4(diffuseForNRD, accumulatedHitDist * invSampleCount);
+    GBuffer_SpecularRadianceHitDist[launchIndex] = float4(specularForNRD, accumulatedHitDist * invSampleCount);
     
     // Build NRD inputs using centralized coordinate system conversion
     // See NRDEncoding.hlsli for the authoritative coordinate convention documentation
@@ -872,7 +914,20 @@ void RayGen()
     // Pack normal and roughness for NRD (using view space normal from NRD_BuildInputs)
     GBuffer_NormalRoughness[launchIndex] = NRD_FrontEnd_PackNormalAndRoughness(nrdInputs.viewSpaceNormal, outRoughness);
     GBuffer_ViewZ[launchIndex] = nrdInputs.viewZ;
-    GBuffer_Albedo[launchIndex] = float4(outAlbedo, nrdInputs.albedoAlpha);
+    
+    // Encode material type in albedo.alpha for Composite shader:
+    //   0.0 = sky/miss (use raw diffuse directly, no remodulation)
+    //   0.5 = specular-dominant (glass/metal) - bypass NRD, use raw buffers
+    //   1.0 = diffuse surface - use NRD denoised, remodulate with albedo
+    float materialAlpha;
+    if (!anyHit)
+        materialAlpha = 0.0;
+    else if (isSpecularDominant)
+        materialAlpha = 0.5;
+    else
+        materialAlpha = 1.0;
+    
+    GBuffer_Albedo[launchIndex] = float4(outAlbedo, materialAlpha);
     
     // SIGMA shadow inputs - Use RAW PRIMARY SAMPLE data, NOT averaged!
     // SIGMA expects noisy single-sample input for temporal reconstruction
