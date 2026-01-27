@@ -113,7 +113,7 @@ RayTraceVSのノードエディタが完全に実装され、直感的なノー�
 
 - **キーボードショートカット**: 
   - `Ctrl+Z`: Undo
-  - `Ctrl+Y` または `Ctrl+Shift+Z`: Redo
+  - `Ctrl+Shift+Z` または `Ctrl+Y`: Redo
 
 ### 9. プロパティパネル
 
