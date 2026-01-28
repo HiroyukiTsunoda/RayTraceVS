@@ -259,7 +259,15 @@ namespace RayTraceVS.WPF
                 return;
             }
 
-            // Ctrl+Shift+P: スクリーンショット保存（常に処理）
+            // Ctrl+P: スクリーンショット クイック保存（ダイアログなし）
+            if (isCtrl && !isShift && key == System.Windows.Input.Key.P)
+            {
+                SaveScreenshotQuick();
+                e.Handled = true;
+                return;
+            }
+
+            // Ctrl+Shift+P: スクリーンショット保存（ダイアログ表示）
             if (isCtrl && isShift && key == System.Windows.Input.Key.P)
             {
                 SaveScreenshot();
@@ -767,7 +775,15 @@ namespace RayTraceVS.WPF
         
         private void ScreenshotButton_Click(object sender, RoutedEventArgs e)
         {
-            SaveScreenshot();
+            // Shiftキーを押しながらクリックでダイアログ表示、通常クリックはクイック保存
+            if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+            {
+                SaveScreenshot();
+            }
+            else
+            {
+                SaveScreenshotQuick();
+            }
         }
         
         private void StartRendering()
@@ -830,6 +846,84 @@ namespace RayTraceVS.WPF
             StatusText.Text = rendering ? "レンダリング中..." : "準備完了";
         }
         
+        /// <summary>
+        /// クイック保存: ダイアログなしで直接保存（Ctrl+P）
+        /// </summary>
+        private void SaveScreenshotQuick()
+        {
+            if (renderWindow == null || !renderWindow.IsLoaded)
+            {
+                MessageBox.Show("レンダリングウィンドウが開いていません。", "情報", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            if (isSavingScreenshot)
+            {
+                return;
+            }
+
+            isSavingScreenshot = true;
+            try
+            {
+                // 保存先フォルダを決定
+                var saveDir = settingsService.LastScreenshotFolder;
+                if (string.IsNullOrWhiteSpace(saveDir) || !Directory.Exists(saveDir))
+                {
+                    saveDir = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
+                }
+                if (string.IsNullOrWhiteSpace(saveDir) || !Directory.Exists(saveDir))
+                {
+                    saveDir = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+                }
+
+                // 自動ファイル名生成
+                var fileName = $"render_{DateTime.Now:yyyyMMdd_HHmmss_fff}.png";
+                var filePath = Path.Combine(saveDir, fileName);
+
+                var bitmap = renderWindow.GetRenderBitmapCopy();
+                if (bitmap != null)
+                {
+                    var encoder = new PngBitmapEncoder();
+                    encoder.Frames.Add(BitmapFrame.Create(bitmap));
+
+                    using (var stream = File.Create(filePath))
+                    {
+                        encoder.Save(stream);
+                    }
+
+                    // ステータスバーかタイトルで通知（MessageBoxは使わない）
+                    Title = $"RayTraceVS - 保存完了: {fileName}";
+                    
+                    // 3秒後にタイトルを戻す
+                    var timer = new System.Windows.Threading.DispatcherTimer
+                    {
+                        Interval = TimeSpan.FromSeconds(3)
+                    };
+                    timer.Tick += (s, e) =>
+                    {
+                        timer.Stop();
+                        UpdateTitle();
+                    };
+                    timer.Start();
+                }
+                else
+                {
+                    MessageBox.Show("レンダリング画像を取得できませんでした。", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"保存エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                isSavingScreenshot = false;
+            }
+        }
+
+        /// <summary>
+        /// ダイアログ付き保存（Ctrl+Shift+P）
+        /// </summary>
         private void SaveScreenshot()
         {
             if (renderWindow == null || !renderWindow.IsLoaded)
@@ -856,13 +950,16 @@ namespace RayTraceVS.WPF
                     initialDir = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
                 }
 
+                // シェル拡張による遅延を軽減するオプション
                 var dialog = new SaveFileDialog
                 {
                     Filter = "PNG画像|*.png|JPEG画像|*.jpg|ビットマップ|*.bmp",
                     DefaultExt = "png",
                     FileName = $"render_{DateTime.Now:yyyyMMdd_HHmmss_fff}",
                     InitialDirectory = initialDir,
-                    RestoreDirectory = true
+                    RestoreDirectory = false,
+                    DereferenceLinks = false,
+                    AddExtension = true
                 };
 
                 if (dialog.ShowDialog() == true)
