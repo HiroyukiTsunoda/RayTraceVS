@@ -59,10 +59,11 @@
                         </ItemsPanelTemplate>
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemContainerStyle>
-                        <Style>
+                        <Style TargetType="ContentPresenter">
                             <Setter Property="Canvas.Left" Value="{Binding Position.X}"/>
                             <Setter Property="Canvas.Top" Value="{Binding Position.Y}"/>
                             <Setter Property="Panel.ZIndex" Value="{Binding CreationIndex}"/>
+                            <Setter Property="TextBlock.Foreground" Value="White"/>
                         </Style>
                     </ItemsControl.ItemContainerStyle>
                     <ItemsControl.ItemTemplate>
@@ -244,10 +245,11 @@
                         </ItemsPanelTemplate>
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemContainerStyle>
-                        <Style>
+                        <Style TargetType="ContentPresenter">
                             <Setter Property="Canvas.Left" Value="{Binding Position.X}"/>
                             <Setter Property="Canvas.Top" Value="{Binding Position.Y}"/>
                             <Setter Property="Panel.ZIndex" Value="{Binding CreationIndex}"/>
+                            <Setter Property="TextBlock.Foreground" Value="White"/>
                         </Style>
                     </ItemsControl.ItemContainerStyle>
                     <ItemsControl.ItemTemplate>

@@ -192,6 +192,11 @@ namespace RayTraceVS.WPF.Models
         public abstract object? Evaluate(Dictionary<Guid, object?> inputValues);
 
         /// <summary>
+        /// ContentPresenterによるデフォルト表示を抑制するため空文字列を返す
+        /// </summary>
+        public override string ToString() => string.Empty;
+
+        /// <summary>
         /// ソケット名で入力値を取得する（後方互換性のため維持）。
         /// </summary>
         protected T? GetInputValue<T>(string socketName, Dictionary<Guid, object?> inputValues)

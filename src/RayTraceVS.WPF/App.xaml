@@ -30,5 +30,10 @@
         <SolidColorBrush x:Key="NodeLightBrush" Color="#B0A020"/>    <!-- 黄色 -->
         <SolidColorBrush x:Key="NodeSceneBrush" Color="#40A0A0"/>    <!-- シアン（水色） -->
         <SolidColorBrush x:Key="NodeSocketBrush" Color="#FFFFFF"/>
+        
+        <!-- Global TextBlock style for dark theme -->
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#F0F0F0"/>
+        </Style>
     </Application.Resources>
 </Application>

@@ -85,18 +85,17 @@ namespace RayTraceVS.WPF.Views.Handlers
                 _state.DraggedNode.Position = newPosition;
                 
                 // 接続線更新のスロットリング（約60fps）
+                // UpdateLayoutは重いため、スロットリングされた更新の中でのみ呼び出す
                 if (ShouldUpdateConnections())
                 {
                     // レイアウト更新を先に行う（UIが更新されないとソケット位置が正しく取得できない）
                     OnRequestLayoutUpdate?.Invoke();
                     _onNodeMoved?.Invoke(_state.DraggedNode);
                     _lastConnectionUpdate = DateTime.Now;
-                    return;
                 }
             }
-            
-            // レイアウト更新を要求
-            OnRequestLayoutUpdate?.Invoke();
+            // 注意: スロットリングの外ではUpdateLayoutを呼ばない
+            // ノード位置の更新はWPFのバインディングで即座に反映される
         }
         
         /// <summary>
@@ -150,6 +149,9 @@ namespace RayTraceVS.WPF.Views.Handlers
         {
             if (!_state.IsDraggingNode)
                 return;
+            
+            // ドラッグ終了時は必ずレイアウト更新を行い、最終状態を確定
+            OnRequestLayoutUpdate?.Invoke();
             
             // ドラッグ終了時に接続線を最終更新（スロットリングで更新されていない場合のため）
             foreach (var node in _dragStartPositions.Keys)

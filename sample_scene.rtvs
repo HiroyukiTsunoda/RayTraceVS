@@ -588,8 +588,8 @@
       "Id": "1421c25d-c665-46e5-a66c-95e3cf7871ad",
       "Type": "MaterialBSDFNode",
       "Title": "BSDF",
-      "PositionX": 1753.0588316983758,
-      "PositionY": 1508.3754392798949,
+      "PositionX": 1756.4630870175247,
+      "PositionY": 1510.0775669394693,
       "Properties": {
         "BaseColor": {
           "X": 0.8,
