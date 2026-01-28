@@ -27,6 +27,18 @@
 
 namespace RayTraceVS::DXEngine
 {
+    // Helper function to convert wstring to string (ASCII only, for logging)
+    static std::string WstrToStr(const std::wstring& wstr)
+    {
+        std::string result;
+        result.reserve(wstr.size());
+        for (wchar_t wc : wstr)
+        {
+            result.push_back(static_cast<char>(wc));
+        }
+        return result;
+    }
+
     static void SetCommandListName(ID3D12GraphicsCommandList* commandList, const wchar_t* name)
     {
         if (commandList && name)
@@ -185,7 +197,7 @@ namespace RayTraceVS::DXEngine
             LOG_ERROR("Failed to get executable directory");
             return false;
         }
-        LOG_INFO(("Executable directory: " + std::string(exeDir.begin(), exeDir.end())).c_str());
+        LOG_INFO(("Executable directory: " + WstrToStr(exeDir)).c_str());
 
         // Default relative paths from executable location
         // Assumes: exe is in bin/ or project root, shaders are in src/Shader/
@@ -221,7 +233,7 @@ namespace RayTraceVS::DXEngine
 
         if (configFound)
         {
-            LOG_INFO(("Config file found: " + std::string(configPath.begin(), configPath.end())).c_str());
+            LOG_INFO(("Config file found: " + WstrToStr(configPath)).c_str());
         }
 
         // Determine final paths
@@ -329,8 +341,8 @@ namespace RayTraceVS::DXEngine
             }
         }
 
-        LOG_INFO(("Shader source path: " + std::string(shaderSourcePath.begin(), shaderSourcePath.end())).c_str());
-        LOG_INFO(("Shader cache path: " + std::string(shaderBasePath.begin(), shaderBasePath.end())).c_str());
+        LOG_INFO(("Shader source path: " + WstrToStr(shaderSourcePath)).c_str());
+        LOG_INFO(("Shader cache path: " + WstrToStr(shaderBasePath)).c_str());
         
         // Verify shader source path exists
         WIN32_FIND_DATAW findData;
@@ -339,7 +351,7 @@ namespace RayTraceVS::DXEngine
         if (hFind == INVALID_HANDLE_VALUE)
         {
             LOG_ERROR(("Shader source path verification failed - RayGen.hlsl not found at: " + 
-                      std::string(testFile.begin(), testFile.end())).c_str());
+                      WstrToStr(testFile)).c_str());
             // Don't fail - the path might still be valid for other operations
         }
         else
@@ -422,19 +434,16 @@ namespace RayTraceVS::DXEngine
         // If scene has no geometry, use compute path to render sky/background safely
         if (scene && scene->GetObjects().empty() && scene->GetMeshInstances().empty())
         {
-            LOG_DEBUG("Render: empty scene, using Compute path");
             RenderWithComputeShader(renderTarget, scene);
             return;
         }
 
         if (dxrPipelineReady)
         {
-            LOG_DEBUG("Render: using DXR path");
             RenderWithDXR(renderTarget, scene);
         }
         else
         {
-            LOG_DEBUG("Render: using Compute path (dxrPipelineReady=false)");
             RenderWithComputeShader(renderTarget, scene);
         }
     }
@@ -702,16 +711,6 @@ namespace RayTraceVS::DXEngine
         if (!scene || !mappedConstantData)
             return;
 
-        // Log struct sizes once for debugging alignment issues
-        static bool loggedOnce = false;
-        if (!loggedOnce) {
-            char buf[256];
-            sprintf_s(buf, "STRUCT SIZES: GPUSphere=%zu, GPUPlane=%zu, GPUBox=%zu", 
-                sizeof(GPUSphere), sizeof(GPUPlane), sizeof(GPUBox));
-            LOG_INFO(buf);
-            loggedOnce = true;
-        }
-
         auto device = dxContext->GetDevice();
         auto commandList = dxContext->GetCommandList();
         SetCommandListName(commandList, L"CmdList_UpdateSceneData");
@@ -957,11 +956,6 @@ namespace RayTraceVS::DXEngine
             lastSphereCount = currentSphereCount;
             lastPlaneCount = currentPlaneCount;
             lastBoxCount = currentBoxCount;
-            
-            char buf[256];
-            sprintf_s(buf, "Object count changed: Spheres=%u, Planes=%u, Boxes=%u -> rebuild AS",
-                currentSphereCount, currentPlaneCount, currentBoxCount);
-            LOG_INFO(buf);
         }
 
         // Store UI parameters for later passes
@@ -1099,10 +1093,6 @@ namespace RayTraceVS::DXEngine
         {
             needsAccelerationStructureRebuild = true;
             lastMeshInstanceCount = currentMeshInstanceCount;
-            
-            char buf[256];
-            sprintf_s(buf, "Mesh instance count changed: %u -> rebuild AS", currentMeshInstanceCount);
-            LOG_INFO(buf);
         }
         
         mappedConstantData->NumMeshInstances = currentMeshInstanceCount;
@@ -1428,8 +1418,6 @@ namespace RayTraceVS::DXEngine
 
     void DXRPipeline::RenderErrorPattern(RenderTarget* renderTarget)
     {
-        LOG_DEBUG("RenderErrorPattern called");
-        
         // Render a simple error pattern when compute shader is not available
         auto device = dxContext->GetDevice();
         auto commandList = dxContext->GetCommandList();
@@ -1878,7 +1866,7 @@ namespace RayTraceVS::DXEngine
         std::ifstream file(filename, std::ios::binary | std::ios::ate);
         if (!file.is_open())
         {
-            std::string filenameStr(filename.begin(), filename.end());
+            std::string filenameStr = WstrToStr(filename);
             LOG_ERROR(("Failed to open precompiled shader: " + filenameStr).c_str());
             return false;
         }
@@ -1924,11 +1912,11 @@ namespace RayTraceVS::DXEngine
         if (file.is_open())
         {
             file.close();
-            LOG_DEBUG(("ResolveDXRShaderSourcePath: found " + std::string(shaderName.begin(), shaderName.end())).c_str());
+            LOG_DEBUG(("ResolveDXRShaderSourcePath: found " + WstrToStr(shaderName)).c_str());
             return sourcePath;
         }
 
-        LOG_DEBUG(("ResolveDXRShaderSourcePath: " + std::string(shaderName.begin(), shaderName.end()) + " not found").c_str());
+        LOG_DEBUG(("ResolveDXRShaderSourcePath: " + WstrToStr(shaderName) + " not found").c_str());
         return L"";
     }
     
@@ -2048,11 +2036,11 @@ namespace RayTraceVS::DXEngine
         
         if (CompileDXRShaderFromSource(shaderName, shader))
         {
-            LOG_INFO(("Compiled DXR shader from source: " + std::string(shaderName.begin(), shaderName.end())).c_str());
+            LOG_INFO(("Compiled DXR shader from source: " + WstrToStr(shaderName)).c_str());
             return true;
         }
 
-        LOG_DEBUG(("Falling back to precompiled shader: " + std::string(shaderName.begin(), shaderName.end())).c_str());
+        LOG_DEBUG(("Falling back to precompiled shader: " + WstrToStr(shaderName)).c_str());
         return LoadPrecompiledShader(GetShaderPath(shaderName + L".cso"), shader);
     }
 
@@ -2060,7 +2048,7 @@ namespace RayTraceVS::DXEngine
     {
         auto device = dxContext->GetDevice();
         
-        LOG_INFO(("Loading DXR shaders from: " + std::string(shaderBasePath.begin(), shaderBasePath.end())).c_str());
+        LOG_INFO(("Loading DXR shaders from: " + WstrToStr(shaderBasePath)).c_str());
         
         ComPtr<ID3DBlob> anyHitShadowShader;
         ComPtr<ID3DBlob> anyHitSkipSelfShader;
