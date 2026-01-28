@@ -64,6 +64,11 @@ namespace RayTraceVS.WPF.Views
         private const double MaxZoom = EditorInputState.MaxZoom;
         private const double ZoomSpeed = EditorInputState.ZoomSpeed;
 
+        // UIキャッシュ（パフォーマンス最適化用）
+        // VisualTree探索を避けるため、ノード/ソケットとUI要素の対応をキャッシュ
+        private readonly Dictionary<Guid, Border> _nodeContainerCache = new();
+        private readonly Dictionary<Guid, Ellipse> _socketElementCache = new();
+
         public NodeEditorView()
         {
             InitializeComponent();
@@ -172,6 +177,10 @@ namespace RayTraceVS.WPF.Views
             viewModel.RefreshConnectionViews();
             
             // 選択されたノードがSelectedNodeLayerに移動するため、
+            // ノードコンテナのキャッシュをクリアして再探索を強制
+            InvalidateNodeContainerCache(selectedNodes);
+            
+            // 選択されたノードがSelectedNodeLayerに移動するため、
             // レイアウト完了後にソケット位置を更新する必要がある
             Dispatcher.BeginInvoke(new Action(() =>
             {
@@ -189,6 +198,9 @@ namespace RayTraceVS.WPF.Views
         {
             if (sender is Ellipse ellipse && ellipse.DataContext is NodeSocket socket)
             {
+                // ソケット要素をキャッシュに登録（VisualTree探索を回避）
+                RegisterSocketElementToCache(ellipse, socket);
+                
                 // Ellipse要素からソケットの実際の位置を取得
                 UpdateSocketPositionFromUI(ellipse, socket);
             }
@@ -243,6 +255,12 @@ namespace RayTraceVS.WPF.Views
         {
             var viewModel = GetViewModel();
             if (viewModel == null) return;
+
+            // UIキャッシュをクリア（Undo/Redoで構造が変わっている可能性があるため）
+            ClearAllUICache();
+            
+            // 接続インデックスを再構築（Undo/Redoで接続が変わっている可能性があるため）
+            viewModel.RebuildNodeConnectionIndex();
 
             // シーンノードのソケット数を調整
             EnsureSceneNodeSocketCounts();
@@ -2032,13 +2050,11 @@ namespace RayTraceVS.WPF.Views
                 }
             }
             
-            // このノードに関連する接続線を更新
-            foreach (var connection in viewModel.Connections)
+            // このノードに関連する接続線を更新（インデックスを使用してO(1)アクセス）
+            var relatedConnections = viewModel.GetConnectionsForNode(node.Id);
+            foreach (var connection in relatedConnections)
             {
-                if (connection.OutputSocket?.ParentNode == node || connection.InputSocket?.ParentNode == node)
-                {
-                    connection.UpdatePath();
-                }
+                connection.UpdatePath();
             }
             
             // ConnectionLineRendererの再描画をリクエスト
@@ -2115,8 +2131,35 @@ namespace RayTraceVS.WPF.Views
             }
         }
 
-        // ノードのコンテナ要素を見つける
+        // ノードのコンテナ要素を見つける（キャッシュ使用）
         private Border? FindNodeContainer(Node node)
+        {
+            // キャッシュをチェック
+            if (_nodeContainerCache.TryGetValue(node.Id, out var cached))
+            {
+                // キャッシュされた要素がまだ有効か確認
+                if (cached.IsLoaded && cached.DataContext == node)
+                {
+                    return cached;
+                }
+                // キャッシュが無効な場合は削除
+                _nodeContainerCache.Remove(node.Id);
+            }
+
+            // キャッシュになければVisualTree探索
+            var result = FindNodeContainerInVisualTree(node);
+            
+            // 結果をキャッシュに保存
+            if (result != null)
+            {
+                _nodeContainerCache[node.Id] = result;
+            }
+            
+            return result;
+        }
+
+        // VisualTree探索でノードコンテナを見つける（内部用）
+        private Border? FindNodeContainerInVisualTree(Node node)
         {
             // NodeLayerとSelectedNodeLayerの両方を検索
             // （選択されたノードはSelectedNodeLayerに移動するため）
@@ -2161,13 +2204,95 @@ namespace RayTraceVS.WPF.Views
             return null;
         }
 
-        // ソケットのEllipse要素を見つける
-        private Ellipse? FindSocketElement(Border nodeContainer, NodeSocket socket)
+        #region UIキャッシュ管理
+
+        /// <summary>
+        /// 指定したノードのコンテナキャッシュを無効化
+        /// （ノードがレイヤー間を移動したときに呼び出す）
+        /// </summary>
+        private void InvalidateNodeContainerCache(IEnumerable<Node> nodes)
         {
-            return FindSocketElementRecursive(nodeContainer, socket);
+            foreach (var node in nodes)
+            {
+                _nodeContainerCache.Remove(node.Id);
+                // ソケットのキャッシュも無効化（親コンテナが変わるため）
+                foreach (var socket in node.InputSockets)
+                {
+                    _socketElementCache.Remove(socket.Id);
+                }
+                foreach (var socket in node.OutputSockets)
+                {
+                    _socketElementCache.Remove(socket.Id);
+                }
+            }
         }
 
-        private Ellipse? FindSocketElementRecursive(DependencyObject parent, NodeSocket socket)
+        /// <summary>
+        /// 指定したノードのキャッシュを完全に削除
+        /// （ノードが削除されたときに呼び出す）
+        /// </summary>
+        private void RemoveNodeFromCache(Node node)
+        {
+            _nodeContainerCache.Remove(node.Id);
+            foreach (var socket in node.InputSockets)
+            {
+                _socketElementCache.Remove(socket.Id);
+            }
+            foreach (var socket in node.OutputSockets)
+            {
+                _socketElementCache.Remove(socket.Id);
+            }
+        }
+
+        /// <summary>
+        /// 全てのUIキャッシュをクリア
+        /// （Undo/Redoなど大規模な変更後に呼び出す）
+        /// </summary>
+        private void ClearAllUICache()
+        {
+            _nodeContainerCache.Clear();
+            _socketElementCache.Clear();
+        }
+
+        /// <summary>
+        /// ソケット要素をキャッシュに登録
+        /// </summary>
+        private void RegisterSocketElementToCache(Ellipse ellipse, NodeSocket socket)
+        {
+            _socketElementCache[socket.Id] = ellipse;
+        }
+
+        #endregion
+
+        // ソケットのEllipse要素を見つける（キャッシュ使用）
+        private Ellipse? FindSocketElement(Border nodeContainer, NodeSocket socket)
+        {
+            // キャッシュをチェック
+            if (_socketElementCache.TryGetValue(socket.Id, out var cached))
+            {
+                // キャッシュされた要素がまだ有効か確認
+                if (cached.IsLoaded && cached.DataContext == socket)
+                {
+                    return cached;
+                }
+                // キャッシュが無効な場合は削除
+                _socketElementCache.Remove(socket.Id);
+            }
+
+            // キャッシュになければVisualTree探索
+            var result = FindSocketElementInVisualTree(nodeContainer, socket);
+            
+            // 結果をキャッシュに保存
+            if (result != null)
+            {
+                _socketElementCache[socket.Id] = result;
+            }
+            
+            return result;
+        }
+
+        // VisualTree探索でソケット要素を見つける（内部用）
+        private Ellipse? FindSocketElementInVisualTree(DependencyObject parent, NodeSocket socket)
         {
             for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
             {
@@ -2176,7 +2301,7 @@ namespace RayTraceVS.WPF.Views
                 if (child is Ellipse ellipse && ellipse.DataContext == socket)
                     return ellipse;
 
-                var result = FindSocketElementRecursive(child, socket);
+                var result = FindSocketElementInVisualTree(child, socket);
                 if (result != null)
                     return result;
             }

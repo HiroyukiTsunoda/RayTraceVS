@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
@@ -53,6 +54,12 @@ namespace RayTraceVS.WPF.ViewModels
         /// ノード作成順序を管理するカウンター（描画順序の基準）
         /// </summary>
         private int _nodeCreationCounter = 0;
+
+        /// <summary>
+        /// ノードID→関連接続リストのインデックス（パフォーマンス最適化用）
+        /// ノード移動時に関連する接続のみを更新するために使用
+        /// </summary>
+        private readonly Dictionary<Guid, List<NodeConnection>> _nodeToConnections = new();
 
         public MainViewModel()
         {
@@ -301,6 +308,9 @@ namespace RayTraceVS.WPF.ViewModels
                 connections.Add(connection);
                 nodeGraph.AddConnection(connection);
                 
+                // ノード→接続インデックスを更新
+                AddToNodeConnectionIndex(connection);
+                
                 // 入力ソケットの接続状態を更新
                 if (connection.InputSocket != null)
                 {
@@ -331,6 +341,9 @@ namespace RayTraceVS.WPF.ViewModels
                 // 入力ソケットの接続状態を更新（削除前に取得）
                 var inputSocket = connection.InputSocket;
                 
+                // ノード→接続インデックスから削除（削除前に実行）
+                RemoveFromNodeConnectionIndex(connection);
+                
                 connections.Remove(connection);
                 nodeGraph.RemoveConnection(connection);
                 
@@ -359,6 +372,106 @@ namespace RayTraceVS.WPF.ViewModels
             }
         }
         
+        /// <summary>
+        /// 指定したノードに関連する接続リストを取得（O(1)アクセス）
+        /// </summary>
+        /// <param name="nodeId">ノードID</param>
+        /// <returns>関連する接続のリスト（存在しない場合は空のリスト）</returns>
+        public IReadOnlyList<NodeConnection> GetConnectionsForNode(Guid nodeId)
+        {
+            if (_nodeToConnections.TryGetValue(nodeId, out var connections))
+            {
+                return connections;
+            }
+            return Array.Empty<NodeConnection>();
+        }
+
+        /// <summary>
+        /// 接続をノード→接続インデックスに追加
+        /// </summary>
+        private void AddToNodeConnectionIndex(NodeConnection connection)
+        {
+            // 出力側ノードのインデックスに追加
+            var outputNodeId = connection.OutputSocket?.ParentNode?.Id;
+            if (outputNodeId.HasValue)
+            {
+                if (!_nodeToConnections.TryGetValue(outputNodeId.Value, out var outputList))
+                {
+                    outputList = new List<NodeConnection>();
+                    _nodeToConnections[outputNodeId.Value] = outputList;
+                }
+                if (!outputList.Contains(connection))
+                {
+                    outputList.Add(connection);
+                }
+            }
+
+            // 入力側ノードのインデックスに追加
+            var inputNodeId = connection.InputSocket?.ParentNode?.Id;
+            if (inputNodeId.HasValue)
+            {
+                if (!_nodeToConnections.TryGetValue(inputNodeId.Value, out var inputList))
+                {
+                    inputList = new List<NodeConnection>();
+                    _nodeToConnections[inputNodeId.Value] = inputList;
+                }
+                if (!inputList.Contains(connection))
+                {
+                    inputList.Add(connection);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 接続をノード→接続インデックスから削除
+        /// </summary>
+        private void RemoveFromNodeConnectionIndex(NodeConnection connection)
+        {
+            // 出力側ノードのインデックスから削除
+            var outputNodeId = connection.OutputSocket?.ParentNode?.Id;
+            if (outputNodeId.HasValue && _nodeToConnections.TryGetValue(outputNodeId.Value, out var outputList))
+            {
+                outputList.Remove(connection);
+                // 空になったら削除
+                if (outputList.Count == 0)
+                {
+                    _nodeToConnections.Remove(outputNodeId.Value);
+                }
+            }
+
+            // 入力側ノードのインデックスから削除
+            var inputNodeId = connection.InputSocket?.ParentNode?.Id;
+            if (inputNodeId.HasValue && _nodeToConnections.TryGetValue(inputNodeId.Value, out var inputList))
+            {
+                inputList.Remove(connection);
+                // 空になったら削除
+                if (inputList.Count == 0)
+                {
+                    _nodeToConnections.Remove(inputNodeId.Value);
+                }
+            }
+        }
+
+        /// <summary>
+        /// ノード→接続インデックスをクリア（Undo/Redo対応用）
+        /// </summary>
+        public void ClearNodeConnectionIndex()
+        {
+            _nodeToConnections.Clear();
+        }
+
+        /// <summary>
+        /// ノード→接続インデックスを再構築（Undo/Redo対応用）
+        /// </summary>
+        public void RebuildNodeConnectionIndex()
+        {
+            _nodeToConnections.Clear();
+            foreach (var connection in connections)
+            {
+                AddToNodeConnectionIndex(connection);
+            }
+        }
+
         private void CleanupSceneNodeSockets(Models.Nodes.SceneNode sceneNode)
         {
             // オブジェクトソケットをクリーンアップ（最低1つは残す）
