@@ -113,6 +113,7 @@ D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE
 | `RayGen.hlsl` | RayGeneration | プライマリレイ生成、G-Buffer出力 |
 | `Intersection.hlsl` | Intersection | プロシージャル交差判定（球/平面/OBBボックス） |
 | `ClosestHit.hlsl` | ClosestHit | 統合マテリアル処理（Diffuse/Metal/Glass/Emission対応） |
+| `ClosestHit_Triangle.hlsl` | ClosestHit | 三角形メッシュ用（FBXメッシュ対応） |
 | `ClosestHit_Diffuse.hlsl` | ClosestHit | ディフューズ専用（レガシー） |
 | `ClosestHit_Metal.hlsl` | ClosestHit | 金属専用（レガシー） |
 | `Miss.hlsl` | Miss | 空の色計算 |
@@ -130,6 +131,21 @@ D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE
 | `ShadowPayload` | 32 bytes | シャドウレイ（カラーシャドウ対応） |
 | `ThicknessPayload` | 16 bytes | 厚さ計算（屈折用） |
 | `PhotonPayload` | 160 bytes | フォトントレース |
+
+**RadiancePayload主要フィールド**:
+| フィールド | 型 | 説明 |
+|-----------|-----|------|
+| `frontFace` | uint | 表面判定（1=entering, 0=exiting）- ガラス屈折用 |
+| `hitObjectType/Index` | uint | ヒットオブジェクト情報 |
+| `packedNormal` | uint | オクタヘドロンエンコードされた法線 |
+| `absorption` | float3 | Beer-Lambert吸収係数 |
+
+**WorkItem主要フィールド**:
+| フィールド | 型 | 説明 |
+|-----------|-----|------|
+| `mediumEta` | float | 現在の媒質の屈折率（1.0=空気/外部） |
+| `pathFlags` | uint | PATH_FLAG_INSIDE等のフラグ |
+| `skipObjectType/Index` | uint | 自己交差回避用 |
 
 ---
 
@@ -348,6 +364,44 @@ struct ShadowPayload
     float3 shadowColorAccum;        // Accumulated tint from translucent objects
     float shadowTransmissionAccum;  // Accumulated transmission (visibility)
 };
+```
+
+#### 5.6 ガラス/屈折処理
+
+ガラスマテリアル（`transmission > 0.01`）のレイトレーシングには、媒質追跡機能が実装されています。
+
+| 項目 | 内容 |
+|------|------|
+| **媒質追跡** | `mediumEta`フィールドで現在の屈折率を追跡 |
+| **表面判定** | `frontFace`フィールドで表裏を判定 |
+| **内部状態** | `PATH_FLAG_INSIDE`で内部/外部をトグル |
+
+**屈折処理フロー**:
+```
+1. ClosestHitでfrontFace判定（面法線vs視線）
+2. RayGenでmediumEtaを参照
+3. 反射レイ: mediumEta維持
+4. 屈折レイ: 
+   - entering: mediumEta = ior, PATH_FLAG_INSIDE設定
+   - exiting:  mediumEta = 1.0, PATH_FLAG_INSIDE解除
+```
+
+**実装**:
+```hlsl
+// WorkItem構造体
+float mediumEta;  // 現在の媒質の屈折率（1.0=空気）
+
+// RadiancePayload構造体
+uint frontFace;   // 1=entering, 0=exiting
+
+// 屈折レイ生成時
+if (entering) {
+    child.pathFlags |= PATH_FLAG_INSIDE;
+    child.mediumEta = ior;
+} else {
+    child.pathFlags &= ~PATH_FLAG_INSIDE;
+    child.mediumEta = 1.0;
+}
 ```
 
 ---

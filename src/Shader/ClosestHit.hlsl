@@ -125,10 +125,12 @@ void ClosestHit(inout RadiancePayload payload, in ProceduralAttributes attribs)
     }
 
     // Final shading normal (ensure it faces the ray)
-    float3 N = (dot(rayDir, normal) < 0.0) ? normal : -normal;
+    bool frontFace = dot(rayDir, normal) < 0.0;
+    float3 N = frontFace ? normal : -normal;
 
     // Store hit/material data for RayGen shading (packed)
     payload.packedNormal = PackNormalOctahedron(N);
+    payload.frontFace = frontFace ? 1 : 0;
     payload.packedMaterial0 = PackHalf2(float2(roughness, metallic));
     payload.packedMaterial1 = PackHalf2(float2(specular, transmission));
     payload.packedMaterial2 = PackHalf2(float2(ior, 0.0));

@@ -188,7 +188,7 @@ struct RadiancePayload
     // Hit object id (output)
     uint hitObjectType;
     uint hitObjectIndex;
-    uint payloadPadding0;
+    uint frontFace; // 1 = front face (entering), 0 = back face (exiting)
 };
 
 struct WorkItem
@@ -208,7 +208,7 @@ struct WorkItem
     uint rayFlags; // RAYFLAG_*
     uint skipObjectType;
     uint skipObjectIndex;
-    uint padding;
+    float mediumEta; // Current medium's refractive index (1.0 = air/outside)
 };
 
 // Thickness query payload (minimal)

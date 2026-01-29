@@ -127,6 +127,7 @@ void ClosestHit_Triangle(inout RadiancePayload payload, in BuiltInTriangleInters
 
     // Store hit/material data for RayGen shading (packed)
     payload.packedNormal = PackNormalOctahedron(N);
+    payload.frontFace = frontFace ? 1 : 0;
     payload.packedMaterial0 = PackHalf2(float2(roughness, metallic));
     payload.packedMaterial1 = PackHalf2(float2(specular, transmission));
     payload.packedMaterial2 = PackHalf2(float2(ior, 0.0));
