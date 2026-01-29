@@ -600,9 +600,8 @@ void RayGen()
                 {
                     // Use frontFace from payload for inside/outside state tracking
                     bool entering = (payload.frontFace != 0);
-                    // N is always flipped to face the ray, so always use eta = 1/ior
-                    // (maintains visual consistency with original behavior)
-                    float eta = 1.0 / ior;
+                    // Optically correct eta for lens effect (image inversion)
+                    float eta = entering ? (1.0 / ior) : ior;
                     float3 reflectDir = normalize(reflect(state.direction, N));
                     float3 refractDir = refract(state.direction, N, eta);
                     bool tir = dot(refractDir, refractDir) < 1e-6;
@@ -635,11 +634,12 @@ void RayGen()
                     
                     float3 reflectThroughput = fresnel.xxx;
                     float transmittance = saturate(transmission);
-                    // P3-3: Use consistent tint strength regardless of ray depth
-                    // This provides more predictable glass coloring at all bounce levels
-                    float tintStrength = 0.85;  // Balanced value between full tint (1.0) and minimal (0.7)
-                    float3 refractThroughput = (1.0 - fresnel) * transmittance
-                        * lerp(float3(1, 1, 1), baseColor, tintStrength);
+                    // Apply color tint only when entering to avoid double-tinting
+                    float tintStrength = 0.85;
+                    float3 tintColor = entering 
+                        ? lerp(float3(1, 1, 1), baseColor, tintStrength)
+                        : float3(1, 1, 1);
+                    float3 refractThroughput = (1.0 - fresnel) * transmittance * tintColor;
                     reflectThroughput = clamp(reflectThroughput, 0.0, 1.0);
                     refractThroughput = clamp(refractThroughput, 0.0, 1.0);
                     

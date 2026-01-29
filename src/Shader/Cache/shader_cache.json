@@ -4,8 +4,8 @@
   "adapterLUID": 92084,
   "shaders": {
     "RayGen": {
-      "sourceHash": "97a47b0bb45b2a5f75b0ea6dae7740580e571d486f492bf8b7587df4f276458b",
-      "compiledAt": "2026-01-29T17:08:04",
+      "sourceHash": "3e354828bd68ba711345ea29a7183dfe7cad1b0ca977377881fc5770052f55a2",
+      "compiledAt": "2026-01-29T17:48:26",
       "dependencies": {
         "Common.hlsli": "dea1c2af506b42d02e4c9cbc38857de24d1e0faf24e191ea2f590c405852a506",
         "NRDEncoding.hlsli": "a7fffb891c008a27a95c65f6d48068e0ef25269899882a8e500d0b23cf0aa8e1"

@@ -806,7 +806,7 @@
       "PositionX": 1288.3623668079942,
       "PositionY": 1284.364056008952,
       "Properties": {
-        "Value": 1.1
+        "Value": 1.5
       }
     },
     {
@@ -921,7 +921,7 @@
       "Type": "FloatNode",
       "Title": "Float",
       "PositionX": 1372.0474745557226,
-      "PositionY": 2249.637707123831,
+      "PositionY": 2248.6620973677336,
       "Properties": {
         "Value": 1.05
       }
@@ -1637,8 +1637,8 @@
     }
   ],
   "Viewport": {
-    "PanX": -700.5706012717353,
-    "PanY": -699.1089730903013,
+    "PanX": -694.2216651015233,
+    "PanY": -724.6408879839181,
     "Zoom": 0.8200000000000005,
     "IsLeftPanelVisible": true,
     "IsRightPanelVisible": true,
