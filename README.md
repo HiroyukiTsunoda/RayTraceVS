@@ -238,6 +238,7 @@ RayTraceVS/
 |------------|------|
 | **RayGen.hlsl** | レイ生成、カメラからのプライマリレイ発射、G-Buffer出力 |
 | **ClosestHit.hlsl** | 統合マテリアル処理（Diffuse/Metal/Glass/Emission対応） |
+| **ClosestHit_Triangle.hlsl** | 三角形メッシュ用ClosestHit（FBXメッシュ対応） |
 | **ClosestHit_Diffuse.hlsl** | 拡散反射マテリアル処理（レガシー、コースティクス対応） |
 | **ClosestHit_Metal.hlsl** | 金属マテリアル処理（レガシー、反射） |
 | **AnyHit_Shadow.hlsl** | シャドウレイ判定（プロシージャル+三角形メッシュ、カラーシャドウ対応） |

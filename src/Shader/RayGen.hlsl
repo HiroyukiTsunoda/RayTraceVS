@@ -167,7 +167,7 @@ void RayGen()
         primaryState.rayFlags = 0;
         primaryState.skipObjectType = OBJECT_TYPE_INVALID;
         primaryState.skipObjectIndex = 0;
-        primaryState.padding = 0;
+        primaryState.mediumEta = 1.0; // Start in air (outside any medium)
         WorkQueue[baseIndex + queueCount++] = primaryState;
         WorkQueueCount[pixelIndex] = queueCount;
         
@@ -232,7 +232,7 @@ void RayGen()
             payload.skipObjectIndex = state.skipObjectIndex;
             payload.hitObjectType = OBJECT_TYPE_INVALID;
             payload.hitObjectIndex = 0;
-            payload.payloadPadding0 = 0;
+            payload.frontFace = 0;
             
             // レイトレーシング実行
             uint rayContribution = ((state.rayFlags & RAYFLAG_SKIP_SELF) != 0) ? 2 : 0;
@@ -598,8 +598,11 @@ void RayGen()
                 
                 if (isGlass)
                 {
-                    bool entering = dot(N, -state.direction) > 0.0;
-                    float eta = entering ? (1.0 / ior) : ior;
+                    // Use frontFace from payload for inside/outside state tracking
+                    bool entering = (payload.frontFace != 0);
+                    // N is always flipped to face the ray, so always use eta = 1/ior
+                    // (maintains visual consistency with original behavior)
+                    float eta = 1.0 / ior;
                     float3 reflectDir = normalize(reflect(state.direction, N));
                     float3 refractDir = refract(state.direction, N, eta);
                     bool tir = dot(refractDir, refractDir) < 1e-6;
@@ -697,7 +700,26 @@ void RayGen()
                         child.direction = chooseReflect ? reflectDir : refractDir;
                         child.depth = state.depth + 1;
                         child.throughput = nextThroughput * state.throughput;
-                        child.pathFlags = state.pathFlags | PATH_FLAG_SPECULAR;
+                        // Toggle PATH_FLAG_INSIDE for refraction, keep same for reflection
+                        if (chooseReflect)
+                        {
+                            child.pathFlags = state.pathFlags | PATH_FLAG_SPECULAR;
+                            child.mediumEta = state.mediumEta;
+                        }
+                        else
+                        {
+                            // Refraction: toggle inside/outside state
+                            if (entering)
+                            {
+                                child.pathFlags = (state.pathFlags | PATH_FLAG_SPECULAR) | PATH_FLAG_INSIDE;
+                                child.mediumEta = ior;
+                            }
+                            else
+                            {
+                                child.pathFlags = (state.pathFlags | PATH_FLAG_SPECULAR) & ~PATH_FLAG_INSIDE;
+                                child.mediumEta = 1.0;
+                            }
+                        }
                         child.absorption = state.absorption;
                         child.rayKind = RAYKIND_RADIANCE;
                         child.skyBoost = SKY_BOOST_GLASS;
@@ -707,7 +729,6 @@ void RayGen()
                         child.rayFlags = chooseReflect ? RAYFLAG_SKIP_SELF : 0;
                         child.skipObjectType = chooseReflect ? payload.hitObjectType : OBJECT_TYPE_INVALID;
                         child.skipObjectIndex = chooseReflect ? payload.hitObjectIndex : 0;
-                        child.padding = 0;
                         
                         float maxChildThroughput = max(child.throughput.r, max(child.throughput.g, child.throughput.b));
                         if (maxChildThroughput >= throughputThreshold || (child.pathFlags & PATH_FLAG_SPECULAR) != 0)
@@ -737,7 +758,7 @@ void RayGen()
                         reflectChild.rayFlags = RAYFLAG_SKIP_SELF;
                         reflectChild.skipObjectType = payload.hitObjectType;
                         reflectChild.skipObjectIndex = payload.hitObjectIndex;
-                        reflectChild.padding = 0;
+                        reflectChild.mediumEta = state.mediumEta; // Reflection stays in same medium
                         
                         if (queueCount < WORK_QUEUE_STRIDE)
                         {
@@ -753,7 +774,17 @@ void RayGen()
                             refractChild.direction = refractDir;
                             refractChild.depth = state.depth + 1;
                             refractChild.throughput = refractThroughput * refractionPathScale * state.throughput;
-                            refractChild.pathFlags = state.pathFlags | PATH_FLAG_SPECULAR;
+                            // Toggle PATH_FLAG_INSIDE for refraction
+                            if (entering)
+                            {
+                                refractChild.pathFlags = (state.pathFlags | PATH_FLAG_SPECULAR) | PATH_FLAG_INSIDE;
+                                refractChild.mediumEta = ior;
+                            }
+                            else
+                            {
+                                refractChild.pathFlags = (state.pathFlags | PATH_FLAG_SPECULAR) & ~PATH_FLAG_INSIDE;
+                                refractChild.mediumEta = 1.0;
+                            }
                             refractChild.absorption = state.absorption;
                             refractChild.rayKind = RAYKIND_RADIANCE;
                             refractChild.skyBoost = SKY_BOOST_GLASS;
@@ -763,7 +794,6 @@ void RayGen()
                             refractChild.rayFlags = 0;
                             refractChild.skipObjectType = OBJECT_TYPE_INVALID;
                             refractChild.skipObjectIndex = 0;
-                            refractChild.padding = 0;
                             
                             if (queueCount < WORK_QUEUE_STRIDE)
                             {
@@ -802,7 +832,7 @@ void RayGen()
                     reflectChild.rayFlags = reflectInside ? 0 : RAYFLAG_SKIP_SELF;
                     reflectChild.skipObjectType = reflectInside ? OBJECT_TYPE_INVALID : payload.hitObjectType;
                     reflectChild.skipObjectIndex = reflectInside ? 0 : payload.hitObjectIndex;
-                    reflectChild.padding = 0;
+                    reflectChild.mediumEta = state.mediumEta;
                     
                     float maxChildThroughput = max(reflectChild.throughput.r, max(reflectChild.throughput.g, reflectChild.throughput.b));
                     if (maxChildThroughput >= throughputThreshold || (reflectChild.pathFlags & PATH_FLAG_SPECULAR) != 0)

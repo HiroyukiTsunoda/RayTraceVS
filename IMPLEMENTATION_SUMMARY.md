@@ -69,19 +69,21 @@
 - ✅ DXRPipelineクラス
 - ✅ アクセラレーション構造（BLAS/TLAS、プロシージャルAABB）
 - ✅ HLSLシェーダー
-  - RayGen.hlsl - レイ生成、G-Buffer出力、DoF
+  - RayGen.hlsl - レイ生成、G-Buffer出力、DoF、ガラス屈折処理
   - ClosestHit.hlsl - 統合マテリアル処理（Diffuse/Metal/Glass/Emission）
+  - ClosestHit_Triangle.hlsl - 三角形メッシュ用（FBXメッシュ対応）
   - ClosestHit_Diffuse.hlsl / ClosestHit_Metal.hlsl - レガシーシェーダー
   - Miss.hlsl - ミスシェーダー（空の色）
   - Intersection.hlsl - カスタム交差判定（球/平面/ボックス）
   - Composite.hlsl - 最終合成、トーンマッピング、ガンマ補正
   - PhotonEmit.hlsl / PhotonTrace.hlsl - フォトンマッピング
-  - Common.hlsli - 共通定義（空間ハッシュ対応）
+  - Common.hlsli - 共通定義（空間ハッシュ、ペイロード構造）
   - NRDEncoding.hlsli - NRDデノイザー用エンコーディング
 - ✅ ライティング計算（拡散反射、Blinn-Phong スペキュラ、フレネル）
 - ✅ ソフトシャドウ（エリアライトサンプリング）
 - ✅ 再帰的レイトレーシング（反射、屈折、Scene.MaxBounces設定可能）
 - ✅ GGX-like roughness perturbation
+- ✅ ガラス媒質追跡（mediumEta、frontFace、PATH_FLAG_INSIDE）
 
 #### 7.1 NRDデノイザー統合
 - ✅ REBLUR（Diffuse/Specularデノイズ）
