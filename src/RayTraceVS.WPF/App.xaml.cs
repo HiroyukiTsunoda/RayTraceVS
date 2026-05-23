@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using RayTraceVS.WPF.Services;
 
@@ -17,21 +18,53 @@ namespace RayTraceVS.WPF
         /// </summary>
         public static MeshCacheService MeshCacheService { get; private set; } = null!;
 
+        // CLIから起動された場合に親プロセスのコンソールへ出力するための P/Invoke
+        [DllImport("kernel32.dll")]
+        private static extern bool AttachConsole(int dwProcessId);
+        private const int ATTACH_PARENT_PROCESS = -1;
+
         protected override async void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
-            
+
+            // コマンドライン引数を解析
+            //   --render <scene> --output <png> : ヘッドレスレンダリング
+            //   --compare <ref> <target>        : 画像比較（出力同一性の検証用）
+            var headless = HeadlessRenderer.ParseArgs(e.Args);
+            bool isCompare = Array.Exists(e.Args, a => a.Equals("--compare", StringComparison.OrdinalIgnoreCase));
+
+            if (headless != null || isCompare)
+            {
+                // CLIから起動された場合、親プロセスのコンソールに進捗/エラーを出力できるようにする
+                AttachConsole(ATTACH_PARENT_PROCESS);
+            }
+
+            // 画像比較モード（レンダリング不要なので最優先で処理して終了）
+            if (ImageComparer.TryParseAndRun(e.Args, out int compareExit))
+            {
+                Shutdown(compareExit);
+                return;
+            }
+
 #if DEBUG
             // アプリケーション起動時にデバッグログファイルをクリア
             ClearDebugLog();
 #endif
-            
+
             // メッシュキャッシュを初期化（FBX変換）
-            // 重要: MainWindow表示前に完了させる必要がある
+            // 重要: MainWindow表示前 / ヘッドレスレンダリング前に完了させる必要がある
             MeshCacheService = new MeshCacheService();
             await MeshCacheService.InitializeAsync();
-            
-            // キャッシュ初期化完了後にMainWindowを表示
+
+            if (headless != null)
+            {
+                // ヘッドレスモード: レンダリングして画像保存後、終了コードを返してプロセス終了
+                int exitCode = headless.Run();
+                Shutdown(exitCode);
+                return;
+            }
+
+            // 通常起動: キャッシュ初期化完了後にMainWindowを表示
             // StartupUriを使わず手動で表示することで、初期化完了を保証
             var mainWindow = new MainWindow();
             mainWindow.Show();
