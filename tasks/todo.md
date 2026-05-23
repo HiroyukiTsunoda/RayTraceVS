@@ -32,12 +32,19 @@
 - 追加ファイル: `HeadlessRenderer.cs`, `ImageComparer.cs`, `tools/verify_render.ps1`。変更: `App.xaml.cs`, `.gitignore`。
 - 既存のレンダリングロジックには未介入（出力同一性を確認済み）。
 
-## Phase 1: シリアライズ/デシリアライズの三重重複を統一 ← 最大の技術的負債
-- [ ] `ISerializableNode` / `NodeRegistry` を単一の正規経路として整備
-- [ ] `SceneFileService` のノードプロパティ用switch文（:162-576）を `NodeRegistry` 経由に置換
-- [ ] `NodeEditorView.xaml.cs` のクリップボード用シリアライズ（:942-1354）を同経路に統一
-- [ ] ノード生成のswitch（複数箇所）を `NodeRegistry.CreateNode()` に統一
-- [ ] 検証: 保存→読込、コピー→ペーストが従来と同一動作。ヘッドレス出力がベースライン一致。
+## Phase 1: シリアライズ/デシリアライズの三重重複を統一 ← ✅完了
+- [x] `ISerializableNode` を Dictionary ベースに変更（現状の保存形式=PascalCaseキー+値直接代入を維持）
+- [x] 全22ノードに `SerializeProperties`/`DeserializeProperties` を実装（switchから1対1移植）
+- [x] `SceneFileService` の巨大switch2つ（プロパティ約400行）を ISerializableNode 経由の数行に置換
+- [x] ノード生成の型switchを `NodeRegistry.CreateNodeByClassName` に統一（クラス名対応を追加、"LightNode"互換維持）
+- [x] `NodeEditorView.xaml.cs` のクリップボード重複（約500行）を削除し `SceneFileService` の公開メソッドに統一
+- [x] 検証ツール追加: `--resave`（保存形式の往復検証）
+- [x] 検証: **RESAVE完全一致（保存形式不変）＋レンダリングpiクセル完全一致**（独立再検証済み）
+
+### Phase 1 成果
+- 重複コード **約1,008行を削除**。シリアライズロジックが各ノードに1箇所集約。
+- 新ノード追加時は `NodeRegistry.Register` + `ISerializableNode` 実装だけで保存/読込/コピペ対応。
+- 出力・保存形式とも1ビットも変えずに達成（render一致 + resave一致で二重検証）。
 
 ## Phase 2: SceneEvaluator の戻り値クラス化 ＋ 詰め替え重複の解消 ← 出力に直結、慎重に
 - [ ] `SceneEvaluator.EvaluateScene` の23要素タプルを `SceneEvaluationResult` クラスに置換

@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
-using Newtonsoft.Json.Linq;
 using RayTraceVS.WPF.Models.Data;
 using RayTraceVS.WPF.Models.Serialization;
 
@@ -138,16 +137,18 @@ namespace RayTraceVS.WPF.Models.Nodes
 
         #region ISerializableNode
 
-        public void SerializeProperties(JObject json)
+        public void SerializeProperties(IDictionary<string, object?> properties)
         {
-            json["meshName"] = MeshName;
-            json["transform"] = ObjectTransform.ToJson();
+            properties["MeshName"] = MeshName;
+            properties["Transform"] = ObjectTransform;
         }
 
-        public void DeserializeProperties(JObject json)
+        public void DeserializeProperties(IReadOnlyDictionary<string, object?> properties)
         {
-            MeshName = json["meshName"]?.ToString() ?? "";
-            ObjectTransform = json["transform"].ToTransform();
+            if (properties.TryGetValue("MeshName", out var meshNameObj))
+                MeshName = meshNameObj?.ToString() ?? "";
+            if (properties.TryGetValue("Transform", out var fbxTransform))
+                ObjectTransform = SerializationHelpers.ConvertToTransform(fbxTransform);
         }
 
         #endregion

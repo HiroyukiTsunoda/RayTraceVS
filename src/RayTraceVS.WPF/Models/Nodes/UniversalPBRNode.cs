@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using RayTraceVS.WPF.Models.Data;
+using RayTraceVS.WPF.Models.Serialization;
 
 namespace RayTraceVS.WPF.Models.Nodes
 {
@@ -9,7 +10,7 @@ namespace RayTraceVS.WPF.Models.Nodes
     /// Universal PBR マテリアルノード
     /// 標準的なMetallic-Roughnessワークフローに基づくPBRマテリアル
     /// </summary>
-    public class UniversalPBRNode : Node
+    public class UniversalPBRNode : Node, ISerializableNode
     {
         private Vector4 _baseColor = new Vector4(0.8f, 0.8f, 0.8f, 1.0f);
         private float _metallic = 0.0f;
@@ -97,5 +98,27 @@ namespace RayTraceVS.WPF.Models.Nodes
                 Absorption = Vector3.Zero
             };
         }
+
+        #region ISerializableNode
+        public void SerializeProperties(IDictionary<string, object?> properties)
+        {
+            properties["BaseColor"] = BaseColor;
+            properties["Metallic"] = Metallic;
+            properties["Roughness"] = Roughness;
+            properties["Emissive"] = Emissive;
+        }
+
+        public void DeserializeProperties(IReadOnlyDictionary<string, object?> properties)
+        {
+            if (properties.TryGetValue("BaseColor", out var pbrBaseColor))
+                BaseColor = SerializationHelpers.ConvertToVector4(pbrBaseColor);
+            if (properties.TryGetValue("Metallic", out var pbrMetallic))
+                Metallic = Convert.ToSingle(pbrMetallic);
+            if (properties.TryGetValue("Roughness", out var pbrRoughness))
+                Roughness = Convert.ToSingle(pbrRoughness);
+            if (properties.TryGetValue("Emissive", out var pbrEmissive))
+                Emissive = SerializationHelpers.ConvertToVector3(pbrEmissive);
+        }
+        #endregion
     }
 }

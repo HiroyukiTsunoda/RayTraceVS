@@ -16,6 +16,7 @@ using RayTraceVS.WPF.Commands;
 using RayTraceVS.WPF.ViewModels;
 using RayTraceVS.WPF.Models;
 using RayTraceVS.WPF.Models.Nodes;
+using RayTraceVS.WPF.Services;
 using RayTraceVS.WPF.Utils;
 using RayTraceVS.WPF.Views.Handlers;
 
@@ -750,15 +751,15 @@ namespace RayTraceVS.WPF.Views
                 // 選択されたノードのIDセット
                 var selectedNodeIds = new HashSet<Guid>(selectedNodes.Select(n => n.Id));
                 
-                // ノードをシリアライズ
-                var nodeDataList = selectedNodes.Select(n => SerializeNodeForClipboard(n)).ToList();
-                
+                // ノードをシリアライズ（SceneFileServiceの公開メソッドを共用）
+                var nodeDataList = selectedNodes.Select(n => SceneFileService.SerializeNode(n)).ToList();
+
                 // 選択されたノード間の接続のみをシリアライズ
                 var connectionDataList = viewModel.Connections
                     .Where(c => c.OutputSocket?.ParentNode != null && c.InputSocket?.ParentNode != null &&
                                selectedNodeIds.Contains(c.OutputSocket.ParentNode.Id) &&
                                selectedNodeIds.Contains(c.InputSocket.ParentNode.Id))
-                    .Select(c => new ClipboardConnectionData
+                    .Select(c => new SceneFileService.ConnectionData
                     {
                         OutputNodeId = c.OutputSocket!.ParentNode!.Id,
                         OutputSocketName = c.OutputSocket.Name,
@@ -766,7 +767,7 @@ namespace RayTraceVS.WPF.Views
                         InputSocketName = c.InputSocket.Name
                     })
                     .ToList();
-                
+
                 var clipboardData = new ClipboardData
                 {
                     Nodes = nodeDataList,
@@ -845,15 +846,18 @@ namespace RayTraceVS.WPF.Views
                 var newNodes = new List<Node>();
                 var newConnections = new List<NodeConnection>();
                 
-                // ノードをデシリアライズして新しいIDを割り当て
+                // ノードをデシリアライズして新しいIDを割り当て（SceneFileService共用）
                 foreach (var nodeData in clipboardData.Nodes)
                 {
-                    var node = DeserializeNodeFromClipboard(nodeData);
+                    // DeserializeNodeは元のIDを設定するので、まずそれを使って復元
+                    var node = SceneFileService.DeserializeNode(nodeData);
                     if (node != null)
                     {
+                        // 旧IDを記録してから新しいIDを割り当て
+                        idMapping[nodeData.Id] = node;
+                        node.Id = Guid.NewGuid();
                         // 新しい位置を設定
                         node.Position = new Point(nodeData.PositionX + offsetX, nodeData.PositionY + offsetY);
-                        idMapping[nodeData.Id] = node;
                         newNodes.Add(node);
                     }
                 }
@@ -919,555 +923,19 @@ namespace RayTraceVS.WPF.Views
             }
         }
         
-        /// <summary>
-        /// ノードをクリップボード用にシリアライズ
-        /// </summary>
-        private ClipboardNodeData SerializeNodeForClipboard(Node node)
-        {
-            return new ClipboardNodeData
-            {
-                Id = node.Id,
-                Type = node.GetType().Name,
-                Title = node.Title,
-                PositionX = node.Position.X,
-                PositionY = node.Position.Y,
-                Properties = SerializeNodeProperties(node)
-            };
-        }
-        
-        /// <summary>
-        /// クリップボードデータからノードをデシリアライズ（新しいIDを割り当て）
-        /// </summary>
-        private Node? DeserializeNodeFromClipboard(ClipboardNodeData data)
-        {
-            Node? node = data.Type switch
-            {
-                nameof(SphereNode) => new SphereNode(),
-                nameof(PlaneNode) => new PlaneNode(),
-                nameof(BoxNode) => new BoxNode(),
-                nameof(FBXMeshNode) => new FBXMeshNode(),
-                nameof(CameraNode) => new CameraNode(),
-                nameof(PointLightNode) => new PointLightNode(),
-                nameof(AmbientLightNode) => new AmbientLightNode(),
-                nameof(DirectionalLightNode) => new DirectionalLightNode(),
-                nameof(MaterialBSDFNode) => new MaterialBSDFNode(),
-                nameof(ColorNode) => new ColorNode(),
-                nameof(EmissionMaterialNode) => new EmissionMaterialNode(),
-                nameof(UniversalPBRNode) => new UniversalPBRNode(),
-                nameof(SceneNode) => new SceneNode(),
-                nameof(Vector3Node) => new Vector3Node(),
-                nameof(Vector4Node) => new Vector4Node(),
-                nameof(FloatNode) => new FloatNode(),
-                nameof(AddNode) => new AddNode(),
-                nameof(SubNode) => new SubNode(),
-                nameof(MulNode) => new MulNode(),
-                nameof(DivNode) => new DivNode(),
-                nameof(TransformNode) => new TransformNode(),
-                nameof(CombineTransformNode) => new CombineTransformNode(),
-                _ => null
-            };
-
-            if (node != null)
-            {
-                // 新しいIDを自動的に生成（コンストラクタで）
-                // 位置は呼び出し元で設定
-                DeserializeNodeProperties(node, data.Properties);
-            }
-
-            return node;
-        }
-        
-        /// <summary>
-        /// ノードのプロパティをシリアライズ
-        /// </summary>
-        private Dictionary<string, object?> SerializeNodeProperties(Node node)
-        {
-            var properties = new Dictionary<string, object?>();
-
-            switch (node)
-            {
-                case SphereNode sphere:
-                    properties["Transform"] = sphere.ObjectTransform;
-                    properties["Radius"] = sphere.Radius;
-                    break;
-
-                case PlaneNode plane:
-                    properties["Transform"] = plane.ObjectTransform;
-                    properties["Normal"] = plane.Normal;
-                    break;
-
-                case BoxNode box:
-                    properties["Transform"] = box.ObjectTransform;
-                    properties["Size"] = box.Size;
-                    break;
-
-                case FBXMeshNode fbxMesh:
-                    properties["MeshName"] = fbxMesh.MeshName;
-                    properties["Transform"] = fbxMesh.ObjectTransform;
-                    break;
-
-                case CameraNode camera:
-                    properties["CameraPosition"] = camera.CameraPosition;
-                    properties["LookAt"] = camera.LookAt;
-                    properties["Up"] = camera.Up;
-                    properties["FieldOfView"] = camera.FieldOfView;
-                    properties["Near"] = camera.Near;
-                    properties["Far"] = camera.Far;
-                    properties["ApertureSize"] = camera.ApertureSize;
-                    properties["FocusDistance"] = camera.FocusDistance;
-                    break;
-
-                case PointLightNode pointLight:
-                    properties["LightPosition"] = pointLight.LightPosition;
-                    properties["Color"] = pointLight.Color;
-                    properties["Intensity"] = pointLight.Intensity;
-                    properties["Attenuation"] = pointLight.Attenuation;
-                    break;
-
-                case AmbientLightNode ambientLight:
-                    properties["Color"] = ambientLight.Color;
-                    properties["Intensity"] = ambientLight.Intensity;
-                    break;
-
-                case DirectionalLightNode directionalLight:
-                    properties["Direction"] = directionalLight.Direction;
-                    properties["Color"] = directionalLight.Color;
-                    properties["Intensity"] = directionalLight.Intensity;
-                    break;
-
-                case MaterialBSDFNode material:
-                    properties["BaseColor"] = material.BaseColor;
-                    properties["Metallic"] = material.Metallic;
-                    properties["Roughness"] = material.Roughness;
-                    properties["Transmission"] = material.Transmission;
-                    properties["IOR"] = material.IOR;
-                    properties["Emission"] = material.Emission;
-                    break;
-
-                case ColorNode color:
-                    properties["R"] = color.R;
-                    properties["G"] = color.G;
-                    properties["B"] = color.B;
-                    properties["A"] = color.A;
-                    break;
-
-                case EmissionMaterialNode emission:
-                    properties["EmissionColor"] = emission.EmissionColor;
-                    properties["Strength"] = emission.Strength;
-                    properties["BaseColor"] = emission.BaseColor;
-                    break;
-
-                case UniversalPBRNode universalPBR:
-                    properties["BaseColor"] = universalPBR.BaseColor;
-                    properties["Metallic"] = universalPBR.Metallic;
-                    properties["Roughness"] = universalPBR.Roughness;
-                    properties["Emissive"] = universalPBR.Emissive;
-                    break;
-
-                case SceneNode sceneNode:
-                    var objectSocketNames = sceneNode.InputSockets
-                        .Where(s => s.SocketType == SocketType.Object)
-                        .Select(s => s.Name)
-                        .ToList();
-                    var lightSocketNames = sceneNode.InputSockets
-                        .Where(s => s.SocketType == SocketType.Light)
-                        .Select(s => s.Name)
-                        .ToList();
-                    properties["ObjectSocketNames"] = objectSocketNames;
-                    properties["LightSocketNames"] = lightSocketNames;
-                    properties["SamplesPerPixel"] = sceneNode.SamplesPerPixel;
-                    properties["MaxBounces"] = sceneNode.MaxBounces;
-                    properties["TraceRecursionDepth"] = sceneNode.TraceRecursionDepth;
-                    properties["Exposure"] = sceneNode.Exposure;
-                    properties["ToneMapOperator"] = sceneNode.ToneMapOperator;
-                    properties["DenoiserStabilization"] = sceneNode.DenoiserStabilization;
-                    properties["ShadowStrength"] = sceneNode.ShadowStrength;
-                    properties["EnableDenoiser"] = sceneNode.EnableDenoiser;
-                    properties["Gamma"] = sceneNode.Gamma;
-                    break;
-
-                case Vector3Node vector3:
-                    properties["X"] = vector3.X;
-                    properties["Y"] = vector3.Y;
-                    properties["Z"] = vector3.Z;
-                    break;
-
-                case Vector4Node vector4:
-                    properties["X"] = vector4.X;
-                    properties["Y"] = vector4.Y;
-                    properties["Z"] = vector4.Z;
-                    properties["W"] = vector4.W;
-                    break;
-
-                case FloatNode floatNode:
-                    properties["Value"] = floatNode.Value;
-                    break;
-
-                case TransformNode transformNode:
-                    properties["PositionX"] = transformNode.PositionX;
-                    properties["PositionY"] = transformNode.PositionY;
-                    properties["PositionZ"] = transformNode.PositionZ;
-                    properties["RotationX"] = transformNode.RotationX;
-                    properties["RotationY"] = transformNode.RotationY;
-                    properties["RotationZ"] = transformNode.RotationZ;
-                    properties["ScaleX"] = transformNode.ScaleX;
-                    properties["ScaleY"] = transformNode.ScaleY;
-                    properties["ScaleZ"] = transformNode.ScaleZ;
-                    break;
-
-                case CombineTransformNode:
-                    break;
-            }
-
-            return properties;
-        }
-
-        /// <summary>
-        /// ノードのプロパティをデシリアライズ
-        /// </summary>
-        private void DeserializeNodeProperties(Node node, Dictionary<string, object?>? properties)
-        {
-            if (properties == null) return;
-
-            switch (node)
-            {
-                case SphereNode sphere:
-                    if (properties.TryGetValue("Transform", out var sphereTransform))
-                        sphere.ObjectTransform = ConvertToTransform(sphereTransform);
-                    if (properties.TryGetValue("Radius", out var radius))
-                        sphere.Radius = Convert.ToSingle(radius);
-                    break;
-
-                case PlaneNode plane:
-                    if (properties.TryGetValue("Transform", out var planeTransform))
-                        plane.ObjectTransform = ConvertToTransform(planeTransform);
-                    if (properties.TryGetValue("Normal", out var normal))
-                        plane.Normal = ConvertToVector3(normal);
-                    break;
-
-                case BoxNode box:
-                    if (properties.TryGetValue("Transform", out var boxTransform))
-                        box.ObjectTransform = ConvertToTransform(boxTransform);
-                    if (properties.TryGetValue("Size", out var size))
-                        box.Size = ConvertToVector3(size);
-                    break;
-
-                case FBXMeshNode fbxMesh:
-                    if (properties.TryGetValue("MeshName", out var meshNameObj))
-                        fbxMesh.MeshName = meshNameObj?.ToString() ?? "";
-                    if (properties.TryGetValue("Transform", out var fbxTransform))
-                        fbxMesh.ObjectTransform = ConvertToTransform(fbxTransform);
-                    break;
-
-                case CameraNode camera:
-                    if (properties.TryGetValue("CameraPosition", out var camPos))
-                        camera.CameraPosition = ConvertToVector3(camPos);
-                    if (properties.TryGetValue("LookAt", out var lookAt))
-                        camera.LookAt = ConvertToVector3(lookAt);
-                    if (properties.TryGetValue("Up", out var up))
-                        camera.Up = ConvertToVector3(up);
-                    if (properties.TryGetValue("FieldOfView", out var fov))
-                        camera.FieldOfView = Convert.ToSingle(fov);
-                    if (properties.TryGetValue("Near", out var near))
-                        camera.Near = Convert.ToSingle(near);
-                    if (properties.TryGetValue("Far", out var far))
-                        camera.Far = Convert.ToSingle(far);
-                    if (properties.TryGetValue("ApertureSize", out var aperture))
-                        camera.ApertureSize = Convert.ToSingle(aperture);
-                    if (properties.TryGetValue("FocusDistance", out var focusDist))
-                        camera.FocusDistance = Convert.ToSingle(focusDist);
-                    break;
-
-                case PointLightNode pointLight:
-                    if (properties.TryGetValue("LightPosition", out var lightPos))
-                        pointLight.LightPosition = ConvertToVector3(lightPos);
-                    if (properties.TryGetValue("Color", out var pointLightColor))
-                        pointLight.Color = ConvertToVector4(pointLightColor);
-                    if (properties.TryGetValue("Intensity", out var pointIntensity))
-                        pointLight.Intensity = Convert.ToSingle(pointIntensity);
-                    if (properties.TryGetValue("Attenuation", out var attenuation))
-                        pointLight.Attenuation = Convert.ToSingle(attenuation);
-                    break;
-
-                case AmbientLightNode ambientLight:
-                    if (properties.TryGetValue("Color", out var ambientColor))
-                        ambientLight.Color = ConvertToVector4(ambientColor);
-                    if (properties.TryGetValue("Intensity", out var ambientIntensity))
-                        ambientLight.Intensity = Convert.ToSingle(ambientIntensity);
-                    break;
-
-                case DirectionalLightNode directionalLight:
-                    if (properties.TryGetValue("Direction", out var direction))
-                        directionalLight.Direction = ConvertToVector3(direction);
-                    if (properties.TryGetValue("Color", out var dirColor))
-                        directionalLight.Color = ConvertToVector4(dirColor);
-                    if (properties.TryGetValue("Intensity", out var dirIntensity))
-                        directionalLight.Intensity = Convert.ToSingle(dirIntensity);
-                    break;
-
-                case MaterialBSDFNode material:
-                    if (properties.TryGetValue("BaseColor", out var baseColor))
-                        material.BaseColor = ConvertToVector4(baseColor);
-                    if (properties.TryGetValue("Metallic", out var metallic))
-                        material.Metallic = Convert.ToSingle(metallic);
-                    if (properties.TryGetValue("Roughness", out var roughness))
-                        material.Roughness = Convert.ToSingle(roughness);
-                    if (properties.TryGetValue("Transmission", out var transmission))
-                        material.Transmission = Convert.ToSingle(transmission);
-                    if (properties.TryGetValue("IOR", out var ior))
-                        material.IOR = Convert.ToSingle(ior);
-                    if (properties.TryGetValue("Emission", out var emission))
-                        material.Emission = ConvertToVector4(emission);
-                    break;
-
-                case ColorNode color:
-                    if (properties.TryGetValue("R", out var r))
-                        color.R = Convert.ToSingle(r);
-                    if (properties.TryGetValue("G", out var g))
-                        color.G = Convert.ToSingle(g);
-                    if (properties.TryGetValue("B", out var b))
-                        color.B = Convert.ToSingle(b);
-                    if (properties.TryGetValue("A", out var a))
-                        color.A = Convert.ToSingle(a);
-                    break;
-
-                case EmissionMaterialNode emissionMat:
-                    if (properties.TryGetValue("EmissionColor", out var emissionColor))
-                        emissionMat.EmissionColor = ConvertToVector4(emissionColor);
-                    if (properties.TryGetValue("Strength", out var strength))
-                        emissionMat.Strength = Convert.ToSingle(strength);
-                    if (properties.TryGetValue("BaseColor", out var emissionBaseColor))
-                        emissionMat.BaseColor = ConvertToVector4(emissionBaseColor);
-                    break;
-
-                case UniversalPBRNode universalPBR:
-                    if (properties.TryGetValue("BaseColor", out var pbrBaseColor))
-                        universalPBR.BaseColor = ConvertToVector4(pbrBaseColor);
-                    if (properties.TryGetValue("Metallic", out var pbrMetallic))
-                        universalPBR.Metallic = Convert.ToSingle(pbrMetallic);
-                    if (properties.TryGetValue("Roughness", out var pbrRoughness))
-                        universalPBR.Roughness = Convert.ToSingle(pbrRoughness);
-                    if (properties.TryGetValue("Emissive", out var pbrEmissive))
-                        universalPBR.Emissive = ConvertToVector3(pbrEmissive);
-                    break;
-
-                case SceneNode sceneNode:
-                    if (properties.TryGetValue("ObjectSocketNames", out var objSocketNamesObj) && objSocketNamesObj is JArray objSocketArray)
-                    {
-                        var objectSocketNames = objSocketArray.ToObject<List<string>>() ?? new List<string>();
-                        var existingObjectSockets = sceneNode.InputSockets.Where(s => s.SocketType == SocketType.Object).ToList();
-                        foreach (var socket in existingObjectSockets)
-                        {
-                            sceneNode.InputSockets.Remove(socket);
-                        }
-                        foreach (var socketName in objectSocketNames)
-                        {
-                            sceneNode.AddNamedInputSocket(socketName, SocketType.Object);
-                        }
-                    }
-                    
-                    if (properties.TryGetValue("LightSocketNames", out var lightSocketNamesObj) && lightSocketNamesObj is JArray lightSocketArray)
-                    {
-                        var lightSocketNames = lightSocketArray.ToObject<List<string>>() ?? new List<string>();
-                        var existingLightSockets = sceneNode.InputSockets.Where(s => s.SocketType == SocketType.Light).ToList();
-                        foreach (var socket in existingLightSockets)
-                        {
-                            sceneNode.InputSockets.Remove(socket);
-                        }
-                        foreach (var socketName in lightSocketNames)
-                        {
-                            sceneNode.AddNamedInputSocket(socketName, SocketType.Light);
-                        }
-                    }
-                    
-                    sceneNode.RestoreSocketCounters();
-                    
-                    if (properties.TryGetValue("SamplesPerPixel", out var samplesObj))
-                        sceneNode.SamplesPerPixel = Convert.ToInt32(samplesObj);
-                    if (properties.TryGetValue("MaxBounces", out var bouncesObj))
-                        sceneNode.MaxBounces = Convert.ToInt32(bouncesObj);
-                    if (properties.TryGetValue("TraceRecursionDepth", out var depthObj))
-                        sceneNode.TraceRecursionDepth = Convert.ToInt32(depthObj);
-                    if (properties.TryGetValue("Exposure", out var exposureObj))
-                        sceneNode.Exposure = Convert.ToSingle(exposureObj);
-                    if (properties.TryGetValue("ToneMapOperator", out var toneMapObj))
-                        sceneNode.ToneMapOperator = Convert.ToInt32(toneMapObj);
-                    if (properties.TryGetValue("DenoiserStabilization", out var stabObj))
-                        sceneNode.DenoiserStabilization = Convert.ToSingle(stabObj);
-                    if (properties.TryGetValue("ShadowStrength", out var shadowObj))
-                        sceneNode.ShadowStrength = Convert.ToSingle(shadowObj);
-                    if (properties.TryGetValue("EnableDenoiser", out var denoiserObj))
-                        sceneNode.EnableDenoiser = Convert.ToBoolean(denoiserObj);
-                    if (properties.TryGetValue("Gamma", out var gammaObj))
-                        sceneNode.Gamma = Convert.ToSingle(gammaObj);
-                    break;
-
-                case Vector3Node vector3:
-                    if (properties.TryGetValue("X", out var x))
-                        vector3.X = Convert.ToSingle(x);
-                    if (properties.TryGetValue("Y", out var y))
-                        vector3.Y = Convert.ToSingle(y);
-                    if (properties.TryGetValue("Z", out var z))
-                        vector3.Z = Convert.ToSingle(z);
-                    break;
-
-                case Vector4Node vector4:
-                    if (properties.TryGetValue("X", out var v4x))
-                        vector4.X = Convert.ToSingle(v4x);
-                    if (properties.TryGetValue("Y", out var v4y))
-                        vector4.Y = Convert.ToSingle(v4y);
-                    if (properties.TryGetValue("Z", out var v4z))
-                        vector4.Z = Convert.ToSingle(v4z);
-                    if (properties.TryGetValue("W", out var v4w))
-                        vector4.W = Convert.ToSingle(v4w);
-                    break;
-
-                case FloatNode floatNode:
-                    if (properties.TryGetValue("Value", out var value))
-                        floatNode.Value = Convert.ToSingle(value);
-                    break;
-
-                case TransformNode transformNode:
-                    if (properties.TryGetValue("PositionX", out var posX))
-                        transformNode.PositionX = Convert.ToSingle(posX);
-                    if (properties.TryGetValue("PositionY", out var posY))
-                        transformNode.PositionY = Convert.ToSingle(posY);
-                    if (properties.TryGetValue("PositionZ", out var posZ))
-                        transformNode.PositionZ = Convert.ToSingle(posZ);
-                    if (properties.TryGetValue("RotationX", out var rotX))
-                        transformNode.RotationX = Convert.ToSingle(rotX);
-                    if (properties.TryGetValue("RotationY", out var rotY))
-                        transformNode.RotationY = Convert.ToSingle(rotY);
-                    if (properties.TryGetValue("RotationZ", out var rotZ))
-                        transformNode.RotationZ = Convert.ToSingle(rotZ);
-                    if (properties.TryGetValue("ScaleX", out var scaleX))
-                        transformNode.ScaleX = Convert.ToSingle(scaleX);
-                    if (properties.TryGetValue("ScaleY", out var scaleY))
-                        transformNode.ScaleY = Convert.ToSingle(scaleY);
-                    if (properties.TryGetValue("ScaleZ", out var scaleZ))
-                        transformNode.ScaleZ = Convert.ToSingle(scaleZ);
-                    break;
-
-                case CombineTransformNode:
-                    break;
-            }
-        }
-        
-        /// <summary>
-        /// オブジェクトをVector3に変換
-        /// </summary>
-        private System.Numerics.Vector3 ConvertToVector3(object? obj)
-        {
-            if (obj == null)
-                return System.Numerics.Vector3.Zero;
-                
-            if (obj is System.Numerics.Vector3 vec3)
-                return vec3;
-                
-            if (obj is JObject jobj)
-            {
-                return new System.Numerics.Vector3(
-                    jobj["X"]?.Value<float>() ?? 0,
-                    jobj["Y"]?.Value<float>() ?? 0,
-                    jobj["Z"]?.Value<float>() ?? 0
-                );
-            }
-            
-            return System.Numerics.Vector3.Zero;
-        }
-        
-        /// <summary>
-        /// オブジェクトをVector4に変換
-        /// </summary>
-        private System.Numerics.Vector4 ConvertToVector4(object? obj)
-        {
-            if (obj == null)
-                return System.Numerics.Vector4.One;
-                
-            if (obj is System.Numerics.Vector4 vec4)
-                return vec4;
-                
-            if (obj is JObject jobj)
-            {
-                return new System.Numerics.Vector4(
-                    jobj["X"]?.Value<float>() ?? 0,
-                    jobj["Y"]?.Value<float>() ?? 0,
-                    jobj["Z"]?.Value<float>() ?? 0,
-                    jobj["W"]?.Value<float>() ?? 1
-                );
-            }
-            
-            return System.Numerics.Vector4.One;
-        }
-        
-        /// <summary>
-        /// オブジェクトをTransformに変換
-        /// </summary>
-        private Models.Transform ConvertToTransform(object? obj)
-        {
-            if (obj == null)
-                return Models.Transform.Identity;
-
-            if (obj is Models.Transform transform)
-                return transform;
-
-            if (obj is JObject jobj)
-            {
-                var position = ConvertToVector3(jobj["Position"]);
-                var rotationEuler = jobj["Rotation"] != null 
-                    ? ConvertToVector3(jobj["Rotation"]) 
-                    : ConvertToVector3(jobj["EulerAngles"]);
-                var scale = ConvertToVector3(jobj["Scale"]);
-
-                var result = new Models.Transform
-                {
-                    Position = position,
-                    Scale = scale
-                };
-                result.EulerAngles = rotationEuler;
-                return result;
-            }
-
-            return Models.Transform.Identity;
-        }
-        
         #endregion コピー＆ペースト
-        
+
         #region クリップボード用データクラス
-        
+
         /// <summary>
-        /// クリップボードに保存するデータ
+        /// クリップボードに保存するデータ（SceneFileServiceのNodeData/ConnectionDataを共用）
         /// </summary>
         private class ClipboardData
         {
-            public List<ClipboardNodeData> Nodes { get; set; } = new();
-            public List<ClipboardConnectionData> Connections { get; set; } = new();
+            public List<SceneFileService.NodeData> Nodes { get; set; } = new();
+            public List<SceneFileService.ConnectionData> Connections { get; set; } = new();
         }
-        
-        /// <summary>
-        /// ノードのクリップボードデータ
-        /// </summary>
-        private class ClipboardNodeData
-        {
-            public Guid Id { get; set; }
-            public string Type { get; set; } = string.Empty;
-            public string Title { get; set; } = string.Empty;
-            public double PositionX { get; set; }
-            public double PositionY { get; set; }
-            public Dictionary<string, object?>? Properties { get; set; }
-        }
-        
-        /// <summary>
-        /// 接続のクリップボードデータ
-        /// </summary>
-        private class ClipboardConnectionData
-        {
-            public Guid OutputNodeId { get; set; }
-            public string OutputSocketName { get; set; } = string.Empty;
-            public Guid InputNodeId { get; set; }
-            public string InputSocketName { get; set; } = string.Empty;
-        }
-        
+
         #endregion クリップボード用データクラス
         
         /// <summary>

@@ -3,13 +3,14 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using RayTraceVS.WPF.Models.Serialization;
 
 namespace RayTraceVS.WPF.Models.Nodes
 {
     /// <summary>
     /// RGB/RGBAカラーを出力するノード
     /// </summary>
-    public partial class ColorNode : Node
+    public partial class ColorNode : Node, ISerializableNode
     {
         private float _r = 0.8f;
         public float R
@@ -161,5 +162,27 @@ namespace RayTraceVS.WPF.Models.Nodes
 
             return new Vector4(r, g, b, a);
         }
+
+        #region ISerializableNode
+        public void SerializeProperties(IDictionary<string, object?> properties)
+        {
+            properties["R"] = R;
+            properties["G"] = G;
+            properties["B"] = B;
+            properties["A"] = A;
+        }
+
+        public void DeserializeProperties(IReadOnlyDictionary<string, object?> properties)
+        {
+            if (properties.TryGetValue("R", out var r))
+                R = Convert.ToSingle(r);
+            if (properties.TryGetValue("G", out var g))
+                G = Convert.ToSingle(g);
+            if (properties.TryGetValue("B", out var b))
+                B = Convert.ToSingle(b);
+            if (properties.TryGetValue("A", out var a))
+                A = Convert.ToSingle(a);
+        }
+        #endregion
     }
 }

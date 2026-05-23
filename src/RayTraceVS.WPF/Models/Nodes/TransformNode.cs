@@ -1,14 +1,16 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using RayTraceVS.WPF.Models.Serialization;
 
 namespace RayTraceVS.WPF.Models.Nodes
 {
     /// <summary>
     /// Position、Rotation（オイラー角）、Scaleの3つのVector3入力を受け取り、Transformを出力するノード
     /// </summary>
-    public partial class TransformNode : Node
+    public partial class TransformNode : Node, ISerializableNode
     {
         [ObservableProperty]
         private float _positionX = 0.0f;
@@ -114,5 +116,42 @@ namespace RayTraceVS.WPF.Models.Nodes
 
             return transform;
         }
+
+        #region ISerializableNode
+        public void SerializeProperties(IDictionary<string, object?> properties)
+        {
+            properties["PositionX"] = PositionX;
+            properties["PositionY"] = PositionY;
+            properties["PositionZ"] = PositionZ;
+            properties["RotationX"] = RotationX;
+            properties["RotationY"] = RotationY;
+            properties["RotationZ"] = RotationZ;
+            properties["ScaleX"] = ScaleX;
+            properties["ScaleY"] = ScaleY;
+            properties["ScaleZ"] = ScaleZ;
+        }
+
+        public void DeserializeProperties(IReadOnlyDictionary<string, object?> properties)
+        {
+            if (properties.TryGetValue("PositionX", out var posX))
+                PositionX = Convert.ToSingle(posX);
+            if (properties.TryGetValue("PositionY", out var posY))
+                PositionY = Convert.ToSingle(posY);
+            if (properties.TryGetValue("PositionZ", out var posZ))
+                PositionZ = Convert.ToSingle(posZ);
+            if (properties.TryGetValue("RotationX", out var rotX))
+                RotationX = Convert.ToSingle(rotX);
+            if (properties.TryGetValue("RotationY", out var rotY))
+                RotationY = Convert.ToSingle(rotY);
+            if (properties.TryGetValue("RotationZ", out var rotZ))
+                RotationZ = Convert.ToSingle(rotZ);
+            if (properties.TryGetValue("ScaleX", out var scaleX))
+                ScaleX = Convert.ToSingle(scaleX);
+            if (properties.TryGetValue("ScaleY", out var scaleY))
+                ScaleY = Convert.ToSingle(scaleY);
+            if (properties.TryGetValue("ScaleZ", out var scaleZ))
+                ScaleZ = Convert.ToSingle(scaleZ);
+        }
+        #endregion
     }
 }

@@ -3,11 +3,13 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
+using Newtonsoft.Json.Linq;
 using RayTraceVS.WPF.Models.Data;
+using RayTraceVS.WPF.Models.Serialization;
 
 namespace RayTraceVS.WPF.Models.Nodes
 {
-    public partial class SceneNode : Node
+    public partial class SceneNode : Node, ISerializableNode
     {
         private int objectSocketCount = 0;
         private int lightSocketCount = 0;
@@ -514,5 +516,90 @@ namespace RayTraceVS.WPF.Models.Nodes
                 NRDBypassBlendRange = NRDBypassBlendRange
             };
         }
+
+        #region ISerializableNode
+        public void SerializeProperties(IDictionary<string, object?> properties)
+        {
+            // シーンノードのソケット名を保存
+            var objectSocketNames = InputSockets
+                .Where(s => s.SocketType == SocketType.Object)
+                .Select(s => s.Name)
+                .ToList();
+            var lightSocketNames = InputSockets
+                .Where(s => s.SocketType == SocketType.Light)
+                .Select(s => s.Name)
+                .ToList();
+            properties["ObjectSocketNames"] = objectSocketNames;
+            properties["LightSocketNames"] = lightSocketNames;
+            properties["SamplesPerPixel"] = SamplesPerPixel;
+            properties["MaxBounces"] = MaxBounces;
+            properties["TraceRecursionDepth"] = TraceRecursionDepth;
+            properties["Exposure"] = Exposure;
+            properties["ToneMapOperator"] = ToneMapOperator;
+            properties["DenoiserStabilization"] = DenoiserStabilization;
+            properties["ShadowStrength"] = ShadowStrength;
+            properties["EnableDenoiser"] = EnableDenoiser;
+            properties["Gamma"] = Gamma;
+        }
+
+        public void DeserializeProperties(IReadOnlyDictionary<string, object?> properties)
+        {
+            // シーンノードのソケットを復元
+            if (properties.TryGetValue("ObjectSocketNames", out var objSocketNamesObj) && objSocketNamesObj is JArray objSocketArray)
+            {
+                var objectSocketNames = objSocketArray.ToObject<List<string>>() ?? new List<string>();
+                // 既存のソケットをクリア（コンストラクタで作成された初期ソケット以外）
+                var existingObjectSockets = InputSockets.Where(s => s.SocketType == SocketType.Object).ToList();
+                foreach (var socket in existingObjectSockets)
+                {
+                    InputSockets.Remove(socket);
+                }
+                // 保存されたソケットを再作成
+                foreach (var socketName in objectSocketNames)
+                {
+                    AddNamedInputSocket(socketName, SocketType.Object);
+                }
+            }
+
+            if (properties.TryGetValue("LightSocketNames", out var lightSocketNamesObj) && lightSocketNamesObj is JArray lightSocketArray)
+            {
+                var lightSocketNames = lightSocketArray.ToObject<List<string>>() ?? new List<string>();
+                // 既存のソケットをクリア
+                var existingLightSockets = InputSockets.Where(s => s.SocketType == SocketType.Light).ToList();
+                foreach (var socket in existingLightSockets)
+                {
+                    InputSockets.Remove(socket);
+                }
+                // 保存されたソケットを再作成
+                foreach (var socketName in lightSocketNames)
+                {
+                    AddNamedInputSocket(socketName, SocketType.Light);
+                }
+            }
+
+            // ソケット名からカウンタを復元
+            RestoreSocketCounters();
+
+            // レンダリング設定を復元
+            if (properties.TryGetValue("SamplesPerPixel", out var samplesObj))
+                SamplesPerPixel = Convert.ToInt32(samplesObj);
+            if (properties.TryGetValue("MaxBounces", out var bouncesObj))
+                MaxBounces = Convert.ToInt32(bouncesObj);
+            if (properties.TryGetValue("TraceRecursionDepth", out var depthObj))
+                TraceRecursionDepth = Convert.ToInt32(depthObj);
+            if (properties.TryGetValue("Exposure", out var exposureObj))
+                Exposure = Convert.ToSingle(exposureObj);
+            if (properties.TryGetValue("ToneMapOperator", out var toneMapObj))
+                ToneMapOperator = Convert.ToInt32(toneMapObj);
+            if (properties.TryGetValue("DenoiserStabilization", out var stabObj))
+                DenoiserStabilization = Convert.ToSingle(stabObj);
+            if (properties.TryGetValue("ShadowStrength", out var shadowObj))
+                ShadowStrength = Convert.ToSingle(shadowObj);
+            if (properties.TryGetValue("EnableDenoiser", out var denoiserObj))
+                EnableDenoiser = Convert.ToBoolean(denoiserObj);
+            if (properties.TryGetValue("Gamma", out var gammaObj))
+                Gamma = Convert.ToSingle(gammaObj);
+        }
+        #endregion
     }
 }

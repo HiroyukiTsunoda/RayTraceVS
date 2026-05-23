@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Numerics;
+using RayTraceVS.WPF.Models.Serialization;
 
 namespace RayTraceVS.WPF.Models.Nodes
 {
@@ -7,7 +8,7 @@ namespace RayTraceVS.WPF.Models.Nodes
     /// 除算ノード（割り算）
     /// Float同士、Vector3とFloatの除算に対応
     /// </summary>
-    public class DivNode : Node
+    public class DivNode : Node, ISerializableNode
     {
         public DivNode() : base("Div", NodeCategory.Math)
         {
@@ -56,5 +57,10 @@ namespace RayTraceVS.WPF.Models.Nodes
             if (b == 0.0f) return a; // ゼロ除算回避
             return a / b;
         }
+
+        #region ISerializableNode
+        public void SerializeProperties(IDictionary<string, object?> properties) { }
+        public void DeserializeProperties(IReadOnlyDictionary<string, object?> properties) { }
+        #endregion
     }
 }

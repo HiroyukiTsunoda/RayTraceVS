@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Numerics;
+using RayTraceVS.WPF.Models.Serialization;
 
 namespace RayTraceVS.WPF.Models.Nodes
 {
@@ -7,7 +8,7 @@ namespace RayTraceVS.WPF.Models.Nodes
     /// 減算ノード（引き算）
     /// Float同士、Vector3同士の減算に対応
     /// </summary>
-    public class SubNode : Node
+    public class SubNode : Node, ISerializableNode
     {
         public SubNode() : base("Sub", NodeCategory.Math)
         {
@@ -44,5 +45,10 @@ namespace RayTraceVS.WPF.Models.Nodes
 
             return a - b;
         }
+
+        #region ISerializableNode
+        public void SerializeProperties(IDictionary<string, object?> properties) { }
+        public void DeserializeProperties(IReadOnlyDictionary<string, object?> properties) { }
+        #endregion
     }
 }
