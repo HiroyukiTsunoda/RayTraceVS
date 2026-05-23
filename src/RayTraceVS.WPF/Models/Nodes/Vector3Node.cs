@@ -6,7 +6,7 @@ using RayTraceVS.WPF.Models.Serialization;
 
 namespace RayTraceVS.WPF.Models.Nodes
 {
-    public partial class Vector3Node : Node, ISerializableNode
+    public partial class Vector3Node : Node, ISerializableNode, ISocketValueNode
     {
         private float _x = 1.0f;
         public float X

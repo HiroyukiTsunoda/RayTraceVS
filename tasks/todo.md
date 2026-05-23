@@ -56,9 +56,16 @@
 - 23要素の無名タプル（可読性最悪）を名前付き結果クラスに。呼び出し側が `ev.Spheres` 等で明快に。
 - 詰め替え重複（3箇所×約12行）を解消。新パラメータ追加時の修正箇所が1→大幅減。
 
-## Phase 3: TextBox編集ハンドラの共通化（約740行削減）
-- [ ] Float/Vector3/Vector4/Color の `PreviewTextInput`/`KeyDown`/`LostFocus`/`GotFocus`/`Apply*` を汎用ハンドラに統合
-- [ ] 検証: 各ノードの数値入力・確定・キャンセル動作が従来通り。ヘッドレス出力一致。
+## Phase 3: TextBox編集ハンドラの共通化（約740行削減）← ✅完了
+- [x] Float/Vector3/Vector4/Color の重複ハンドラを `TextBoxInputHandler` に集約
+- [x] `ISocketValueNode` インターフェースで Vector3/Vector4/Color のソケット値アクセスを抽象化
+- [x] `supportsUndo` フラグで型ごとのUndo挙動差（Color=Undo無）を保持。FloatNodeはBinding方式で別系統維持
+- [x] XAMLイベント名は不変（NodeEditorView.xaml 無変更）
+- [x] 検証: ビルドOK + **レンダリングpクセル完全一致**（コードレビューでロジック保持を確認）
+
+### Phase 3 成果
+- NodeEditorView.xaml.cs を **624行削減**（2630→2006行）。純削減 約341行。
+- ⚠️ TextBox手入力のUI動作はヘッドレス検証不可。ロジック1対1保持＋出力一致で技術担保。最終的なUI操作確認はユーザー手動で推奨。
 
 ## Phase 4: 神クラスの分割（保守性向上）
 - [ ] `NodeEditorView.xaml.cs`(3,162行) からソケットドラッグ等の重複ロジックをハンドラ/ヘルパーへ抽出
