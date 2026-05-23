@@ -74,6 +74,17 @@ Visual Studioは自動的にNuGetパッケージを復元しますが、手動�
 msbuild RayTraceVS.sln /p:Configuration=Release /p:Platform=x64
 ```
 
+**方法3: ビルドスクリプト（PowerShell）から**
+
+リポジトリルートの `build.ps1` はMSBuildの自動検出とオプション付きビルドに対応します（構成は Debug / x64）:
+```powershell
+.\build.ps1               # 通常ビルド（ソリューション全体）
+.\build.ps1 -NoPackage    # MSIX/Packageを除外しWPFアプリのみビルド（CLI検証に有用）
+.\build.ps1 -Rebuild      # クリーンしてリビルド
+.\build.ps1 -Clean        # クリーンのみ
+.\build.ps1 -Run          # ビルド後にアプリを起動
+```
+
 ### 6. 実行
 
 1. ソリューションエクスプローラーで `RayTraceVS.WPF` を右クリック
@@ -209,6 +220,26 @@ Visual StudioのGraphics Diagnosticsを使用:
 
 C#コードの変更は、ホットリロード機能で即座に反映できます:
 - デバッグ中に変更を保存すると自動的に適用されます
+
+### ヘッドレスレンダリング検証（CLI）
+
+リファクタリング等でレンダリング出力が変わっていないことを検証するためのCLIモードがあります。レンダリングは決定的（同一入力→同一出力）なので、出力画像をピクセル単位で比較できます。
+
+まずCLI検証用にWPFアプリ単体をビルドします（Debug / x64）:
+```powershell
+.\build.ps1 -NoPackage
+```
+
+ビルドした `RayTraceVS.WPF.exe` は以下のCLI引数に対応します:
+- `--render <scene.rtvs> --output <out.png> [--width W --height H --passes N]` — ヘッドレスでレンダリングしPNG保存
+- `--compare <ref.png> <target.png>` — 2枚の画像をピクセル比較（一致で終了コード0）
+- `--resave <in.rtvs> <out.rtvs>` — シーンを読み込んで再保存（シリアライズ往復の検証）
+
+検証スクリプト `tools\verify_render.ps1` で一連の流れを自動化できます:
+```powershell
+.\tools\verify_render.ps1 -UpdateBaseline   # 変更前に1回だけ実行し、ベースライン画像を生成
+.\tools\verify_render.ps1                    # 変更後に実行し、ベースラインと比較（[検証OK] / [検証NG]）
+```
 
 ## サポート
 

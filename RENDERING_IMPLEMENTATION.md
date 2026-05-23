@@ -653,7 +653,7 @@ void NRD_FrontEnd_UnpackNormalAndRoughness(float4 packed, out float3 normal, out
 #### 1.3 アクセラレーション構造
 | ID | 条件 | 処理 | タイプ |
 |----|------|------|--------|
-| CPP-008 | `needsAccelerationStructureRebuild \|\| scene != lastScene` | BLAS/TLAS再構築 | [BRANCH] |
+| CPP-008 | `needsAccelerationStructureRebuild \|\| scene != lastScene \|\| sceneContentChanged` | BLAS/TLAS再構築（ジオメトリのチェックサム変化時のみ） | [BRANCH] |
 | CPP-009 | `BuildAccelerationStructures()` 失敗 | Computeシェーダーにフォールバック | [FALLBACK] |
 
 #### 1.4 コースティクス (フォトンマッピング)
@@ -1030,8 +1030,9 @@ HLSL Shaders
 
 ```csharp
 // レンダリング実行フロー
-var (spheres, planes, boxes, camera, lights, ...) = sceneEvaluator.EvaluateScene(nodeGraph);
-renderService.UpdateScene(spheres, planes, boxes, camera, lights, ...);
+var ev = sceneEvaluator.EvaluateScene(nodeGraph);   // 名前付きの SceneEvaluationResult を返す
+// SceneParams への詰め替えは BuildSceneParams() に集約
+renderService.UpdateScene(ev.Spheres, ev.Planes, ev.Boxes, ev.Camera, ev.Lights, ...);
 renderService.Render();
 var pixelData = renderService.GetPixelData(); // RGBA -> BGRA変換後に表示
 ```
@@ -1043,13 +1044,14 @@ var pixelData = renderService.GetPixelData(); // RGBA -> BGRA変換後に表示
 - SceneNodeが存在する場合: グラフ評価（増分評価対応）
 - SceneNodeがない場合: フォールバックモードで全ノードを収集
 
-**出力データ構造**:
+**出力データ構造** (`SceneEvaluationResult` クラスのプロパティ):
 
-- `InteropSphereData[]` - 球データ
-- `InteropPlaneData[]` - 平面データ
-- `InteropBoxData[]` - ボックスデータ
-- `InteropCameraData` - カメラ設定
-- `InteropLightData[]` - ライトデータ
+- `Spheres` (`SphereData[]`) - 球データ
+- `Planes` (`PlaneData[]`) - 平面データ
+- `Boxes` (`BoxData[]`) - ボックスデータ
+- `Camera` (`CameraData`) - カメラ設定
+- `Lights` (`LightData[]`) - ライトデータ
+- `MeshInstances` / `MeshCaches` - FBXメッシュ
 - レンダリングパラメータ (SamplesPerPixel, MaxBounces, Exposure, ToneMapOperator, etc.)
 
 ---
@@ -1409,3 +1411,4 @@ RenderWindow (RGBA→BGRA変換 + 表示)
 3. **増分評価**: ノードグラフのDirtyフラグで不要な再評価を回避
 4. **テンポラルデノイズ**: 5パス連続描画で安定化
 5. **パーフェクトミラーバイパス**: 低ラフネス面はNRDをスキップ
+6. **チェックサムベースのAS再構築スキップ**: ジオメトリのFNVチェックサムが変化しないフレームでは BLAS/TLAS の再構築を省略（静的シーンは2フレーム目以降スキップ、出力は不変）
