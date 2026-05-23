@@ -120,18 +120,7 @@ namespace RayTraceVS.WPF.Views
                 return;
 
             // UIスレッドでシーン評価（パラメーター取得）を1回だけ実行
-            var evaluated = sceneEvaluator.EvaluateScene(nodeGraph);
-            var sceneParams = new SceneParams(
-                evaluated.Item1, evaluated.Item2, evaluated.Item3,
-                evaluated.Item4, evaluated.Item5,
-                evaluated.Item6, evaluated.Item7,  // MeshInstances, MeshCaches
-                evaluated.SamplesPerPixel, evaluated.MaxBounces, evaluated.TraceRecursionDepth,
-                evaluated.Exposure, evaluated.ToneMapOperator,
-                evaluated.DenoiserStabilization, evaluated.ShadowStrength, evaluated.ShadowAbsorptionScale,
-                evaluated.EnableDenoiser, evaluated.Gamma,
-                photonDebugMode, photonDebugScale,
-                evaluated.LightAttenuationConstant, evaluated.LightAttenuationLinear, evaluated.LightAttenuationQuadratic,
-                evaluated.MaxShadowLights, evaluated.NRDBypassDistance, evaluated.NRDBypassBlendRange);
+            var sceneParams = BuildSceneParams();
 
             lock (_renderLock)
             {
@@ -309,18 +298,7 @@ namespace RayTraceVS.WPF.Views
             UpdateInfo();
 
             // 初回レンダリング：シーン評価してパラメーター取得
-            var evaluated = sceneEvaluator.EvaluateScene(nodeGraph);
-            var sceneParams = new SceneParams(
-                evaluated.Item1, evaluated.Item2, evaluated.Item3,
-                evaluated.Item4, evaluated.Item5,
-                evaluated.Item6, evaluated.Item7,  // MeshInstances, MeshCaches
-                evaluated.SamplesPerPixel, evaluated.MaxBounces, evaluated.TraceRecursionDepth,
-                evaluated.Exposure, evaluated.ToneMapOperator,
-                evaluated.DenoiserStabilization, evaluated.ShadowStrength, evaluated.ShadowAbsorptionScale,
-                evaluated.EnableDenoiser, evaluated.Gamma,
-                photonDebugMode, photonDebugScale,
-                evaluated.LightAttenuationConstant, evaluated.LightAttenuationLinear, evaluated.LightAttenuationQuadratic,
-                evaluated.MaxShadowLights, evaluated.NRDBypassDistance, evaluated.NRDBypassBlendRange);
+            var sceneParams = BuildSceneParams();
 
             lock (_renderLock)
             {
@@ -663,18 +641,7 @@ namespace RayTraceVS.WPF.Views
             if (!isRendering || renderService == null || nodeGraph == null || sceneEvaluator == null)
                 return;
 
-            var evaluated = sceneEvaluator.EvaluateScene(nodeGraph);
-            var sceneParams = new SceneParams(
-                evaluated.Item1, evaluated.Item2, evaluated.Item3,
-                evaluated.Item4, evaluated.Item5,
-                evaluated.Item6, evaluated.Item7,
-                evaluated.SamplesPerPixel, evaluated.MaxBounces, evaluated.TraceRecursionDepth,
-                evaluated.Exposure, evaluated.ToneMapOperator,
-                evaluated.DenoiserStabilization, evaluated.ShadowStrength, evaluated.ShadowAbsorptionScale,
-                evaluated.EnableDenoiser, evaluated.Gamma,
-                photonDebugMode, photonDebugScale,
-                evaluated.LightAttenuationConstant, evaluated.LightAttenuationLinear, evaluated.LightAttenuationQuadratic,
-                evaluated.MaxShadowLights, evaluated.NRDBypassDistance, evaluated.NRDBypassBlendRange);
+            var sceneParams = BuildSceneParams();
 
             lock (_renderLock)
             {
@@ -688,6 +655,25 @@ namespace RayTraceVS.WPF.Views
             }
 
             _ = RenderWithParamsAsync(sceneParams);
+        }
+
+        /// <summary>
+        /// 現在のノードグラフを評価し、レンダリング用パラメータ(SceneParams)を構築する。
+        /// 評価結果(SceneEvaluationResult)に、その時点のフォトンデバッグ設定を加える。
+        /// </summary>
+        private SceneParams BuildSceneParams()
+        {
+            var ev = sceneEvaluator!.EvaluateScene(nodeGraph!);
+            return new SceneParams(
+                ev.Spheres, ev.Planes, ev.Boxes, ev.Camera, ev.Lights,
+                ev.MeshInstances, ev.MeshCaches,
+                ev.SamplesPerPixel, ev.MaxBounces, ev.TraceRecursionDepth,
+                ev.Exposure, ev.ToneMapOperator,
+                ev.DenoiserStabilization, ev.ShadowStrength, ev.ShadowAbsorptionScale,
+                ev.EnableDenoiser, ev.Gamma,
+                photonDebugMode, photonDebugScale,
+                ev.LightAttenuationConstant, ev.LightAttenuationLinear, ev.LightAttenuationQuadratic,
+                ev.MaxShadowLights, ev.NRDBypassDistance, ev.NRDBypassBlendRange);
         }
 
     }

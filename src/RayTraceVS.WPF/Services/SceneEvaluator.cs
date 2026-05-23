@@ -31,7 +31,7 @@ namespace RayTraceVS.WPF.Services
 {
     public class SceneEvaluator
     {
-        public (InteropSphereData[], InteropPlaneData[], InteropBoxData[], InteropCameraData, InteropLightData[], InteropMeshInstanceData[], InteropMeshCacheData[], int SamplesPerPixel, int MaxBounces, int TraceRecursionDepth, float Exposure, int ToneMapOperator, float DenoiserStabilization, float ShadowStrength, float ShadowAbsorptionScale, bool EnableDenoiser, float Gamma, float LightAttenuationConstant, float LightAttenuationLinear, float LightAttenuationQuadratic, int MaxShadowLights, float NRDBypassDistance, float NRDBypassBlendRange) EvaluateScene(NodeGraph nodeGraph)
+        public SceneEvaluationResult EvaluateScene(NodeGraph nodeGraph)
         {
             var spheres = new List<InteropSphereData>();
             var planes = new List<InteropPlaneData>();
@@ -310,7 +310,32 @@ namespace RayTraceVS.WPF.Services
                 }
             }
 
-            return (spheres.ToArray(), planes.ToArray(), boxes.ToArray(), camera, lights.ToArray(), meshInstances.ToArray(), meshCaches.Values.ToArray(), samplesPerPixel, maxBounces, traceRecursionDepth, exposure, toneMapOperator, denoiserStabilization, shadowStrength, shadowAbsorptionScale, enableDenoiser, gamma, lightAttenuationConstant, lightAttenuationLinear, lightAttenuationQuadratic, maxShadowLights, nrdBypassDistance, nrdBypassBlendRange);
+            return new SceneEvaluationResult
+            {
+                Spheres = spheres.ToArray(),
+                Planes = planes.ToArray(),
+                Boxes = boxes.ToArray(),
+                Camera = camera,
+                Lights = lights.ToArray(),
+                MeshInstances = meshInstances.ToArray(),
+                MeshCaches = meshCaches.Values.ToArray(),
+                SamplesPerPixel = samplesPerPixel,
+                MaxBounces = maxBounces,
+                TraceRecursionDepth = traceRecursionDepth,
+                Exposure = exposure,
+                ToneMapOperator = toneMapOperator,
+                DenoiserStabilization = denoiserStabilization,
+                ShadowStrength = shadowStrength,
+                ShadowAbsorptionScale = shadowAbsorptionScale,
+                EnableDenoiser = enableDenoiser,
+                Gamma = gamma,
+                LightAttenuationConstant = lightAttenuationConstant,
+                LightAttenuationLinear = lightAttenuationLinear,
+                LightAttenuationQuadratic = lightAttenuationQuadratic,
+                MaxShadowLights = maxShadowLights,
+                NRDBypassDistance = nrdBypassDistance,
+                NRDBypassBlendRange = nrdBypassBlendRange
+            };
         }
 
         private InteropSphereData ConvertSphereData(SphereData data)

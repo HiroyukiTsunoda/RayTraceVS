@@ -151,8 +151,8 @@ namespace RayTraceVS.WPF.Services
                 for (int i = 0; i < Passes; i++)
                 {
                     renderService.UpdateScene(
-                        ev.Item1, ev.Item2, ev.Item3, ev.Item4, ev.Item5,
-                        ev.Item6, ev.Item7,
+                        ev.Spheres, ev.Planes, ev.Boxes, ev.Camera, ev.Lights,
+                        ev.MeshInstances, ev.MeshCaches,
                         ev.SamplesPerPixel, ev.MaxBounces, ev.TraceRecursionDepth,
                         ev.Exposure, ev.ToneMapOperator,
                         ev.DenoiserStabilization, ev.ShadowStrength, ev.ShadowAbsorptionScale,
