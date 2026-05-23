@@ -812,8 +812,9 @@ namespace RayTraceVS::DXEngine
 
         for (const auto& obj : objects)
         {
-            if (auto sphere = dynamic_cast<Sphere*>(obj.get()))
+            if (obj->GetType() == ObjectType::Sphere)
             {
+                auto sphere = static_cast<Sphere*>(obj.get());
                 GPUSphere gs;
                 gs.Center = sphere->GetCenter();
                 gs.Radius = sphere->GetRadius();
@@ -833,8 +834,9 @@ namespace RayTraceVS::DXEngine
                 gs.Padding5 = 0;
                 spheres.push_back(gs);
             }
-            else if (auto plane = dynamic_cast<Plane*>(obj.get()))
+            else if (obj->GetType() == ObjectType::Plane)
             {
+                auto plane = static_cast<Plane*>(obj.get());
                 GPUPlane gp;
                 gp.Position = plane->GetPosition();
                 gp.Normal = plane->GetNormal();
@@ -852,8 +854,9 @@ namespace RayTraceVS::DXEngine
                 gp.Padding3 = 0;
                 planes.push_back(gp);
             }
-            else if (auto box = dynamic_cast<Box*>(obj.get()))
+            else if (obj->GetType() == ObjectType::Box)
             {
+                auto box = static_cast<Box*>(obj.get());
                 GPUBox gb;
                 gb.Center = box->GetCenter();
                 gb.Padding1 = 0;
@@ -881,24 +884,28 @@ namespace RayTraceVS::DXEngine
                 gb.Absorption = mat.absorption;
                 gb.Padding10 = 0;
                 
-                // DEBUG: Log box axes orthonormality check
-                char debugBuf[512];
-                float lenX = sqrtf(gb.AxisX.x * gb.AxisX.x + gb.AxisX.y * gb.AxisX.y + gb.AxisX.z * gb.AxisX.z);
-                float lenY = sqrtf(gb.AxisY.x * gb.AxisY.x + gb.AxisY.y * gb.AxisY.y + gb.AxisY.z * gb.AxisY.z);
-                float lenZ = sqrtf(gb.AxisZ.x * gb.AxisZ.x + gb.AxisZ.y * gb.AxisZ.y + gb.AxisZ.z * gb.AxisZ.z);
-                float dotXY = gb.AxisX.x * gb.AxisY.x + gb.AxisX.y * gb.AxisY.y + gb.AxisX.z * gb.AxisY.z;
-                float dotXZ = gb.AxisX.x * gb.AxisZ.x + gb.AxisX.y * gb.AxisZ.y + gb.AxisX.z * gb.AxisZ.z;
-                float dotYZ = gb.AxisY.x * gb.AxisZ.x + gb.AxisY.y * gb.AxisZ.y + gb.AxisY.z * gb.AxisZ.z;
-                sprintf_s(debugBuf, "BOX[%zu] Axes: lenX=%.4f, lenY=%.4f, lenZ=%.4f, dotXY=%.4f, dotXZ=%.4f, dotYZ=%.4f", 
-                    Boxes.size(), lenX, lenY, lenZ, dotXY, dotXZ, dotYZ);
-                LOG_INFO(debugBuf);
-                sprintf_s(debugBuf, "BOX[%zu] AxisX=(%.4f,%.4f,%.4f) AxisY=(%.4f,%.4f,%.4f) AxisZ=(%.4f,%.4f,%.4f)", 
-                    Boxes.size(), gb.AxisX.x, gb.AxisX.y, gb.AxisX.z, gb.AxisY.x, gb.AxisY.y, gb.AxisY.z, gb.AxisZ.x, gb.AxisZ.y, gb.AxisZ.z);
-                LOG_INFO(debugBuf);
-                sprintf_s(debugBuf, "BOX[%zu] Material: BaseColor=(%.3f,%.3f,%.3f) Metallic=%.3f Roughness=%.3f Transmission=%.3f IOR=%.3f Specular=%.3f",
-                    Boxes.size(), gb.Color.x, gb.Color.y, gb.Color.z, gb.Metallic, gb.Roughness, gb.Transmission, gb.IOR, gb.Specular);
-                LOG_INFO(debugBuf);
-                
+                // DEBUG: Log box axes orthonormality check.
+                // Guard with GetLogEnabled() to avoid per-frame sprintf_s cost when logging is off.
+                if (RayTraceVS::DXEngine::GetLogEnabled())
+                {
+                    char debugBuf[512];
+                    float lenX = sqrtf(gb.AxisX.x * gb.AxisX.x + gb.AxisX.y * gb.AxisX.y + gb.AxisX.z * gb.AxisX.z);
+                    float lenY = sqrtf(gb.AxisY.x * gb.AxisY.x + gb.AxisY.y * gb.AxisY.y + gb.AxisY.z * gb.AxisY.z);
+                    float lenZ = sqrtf(gb.AxisZ.x * gb.AxisZ.x + gb.AxisZ.y * gb.AxisZ.y + gb.AxisZ.z * gb.AxisZ.z);
+                    float dotXY = gb.AxisX.x * gb.AxisY.x + gb.AxisX.y * gb.AxisY.y + gb.AxisX.z * gb.AxisY.z;
+                    float dotXZ = gb.AxisX.x * gb.AxisZ.x + gb.AxisX.y * gb.AxisZ.y + gb.AxisX.z * gb.AxisZ.z;
+                    float dotYZ = gb.AxisY.x * gb.AxisZ.x + gb.AxisY.y * gb.AxisZ.y + gb.AxisY.z * gb.AxisZ.z;
+                    sprintf_s(debugBuf, "BOX[%zu] Axes: lenX=%.4f, lenY=%.4f, lenZ=%.4f, dotXY=%.4f, dotXZ=%.4f, dotYZ=%.4f",
+                        Boxes.size(), lenX, lenY, lenZ, dotXY, dotXZ, dotYZ);
+                    LOG_INFO(debugBuf);
+                    sprintf_s(debugBuf, "BOX[%zu] AxisX=(%.4f,%.4f,%.4f) AxisY=(%.4f,%.4f,%.4f) AxisZ=(%.4f,%.4f,%.4f)",
+                        Boxes.size(), gb.AxisX.x, gb.AxisX.y, gb.AxisX.z, gb.AxisY.x, gb.AxisY.y, gb.AxisY.z, gb.AxisZ.x, gb.AxisZ.y, gb.AxisZ.z);
+                    LOG_INFO(debugBuf);
+                    sprintf_s(debugBuf, "BOX[%zu] Material: BaseColor=(%.3f,%.3f,%.3f) Metallic=%.3f Roughness=%.3f Transmission=%.3f IOR=%.3f Specular=%.3f",
+                        Boxes.size(), gb.Color.x, gb.Color.y, gb.Color.z, gb.Metallic, gb.Roughness, gb.Transmission, gb.IOR, gb.Specular);
+                    LOG_INFO(debugBuf);
+                }
+
                 Boxes.push_back(gb);
             }
         }
@@ -2799,27 +2806,32 @@ namespace RayTraceVS::DXEngine
         const auto& objects = scene->GetObjects();
         for (const auto& obj : objects)
         {
-            auto sphere = std::dynamic_pointer_cast<Sphere>(obj);
-            auto plane = std::dynamic_pointer_cast<Plane>(obj);
-            auto box = std::dynamic_pointer_cast<Box>(obj);
-
-            if (sphere)
+            switch (obj->GetType())
             {
+            case ObjectType::Sphere:
+            {
+                auto sphere = static_cast<Sphere*>(obj.get());
                 hashVec3(sphere->GetCenter());
                 hashFloat(sphere->GetRadius());
+                break;
             }
-            else if (plane)
+            case ObjectType::Plane:
             {
+                auto plane = static_cast<Plane*>(obj.get());
                 hashVec3(plane->GetPosition());
                 hashVec3(plane->GetNormal());
+                break;
             }
-            else if (box)
+            case ObjectType::Box:
             {
+                auto box = static_cast<Box*>(obj.get());
                 hashVec3(box->GetCenter());
                 hashVec3(box->GetSize());
                 hashVec3(box->GetAxisX());
                 hashVec3(box->GetAxisY());
                 hashVec3(box->GetAxisZ());
+                break;
+            }
             }
         }
 
