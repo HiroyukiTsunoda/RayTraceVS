@@ -3,10 +3,11 @@ using System.Collections.Generic;
 using System.Numerics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using RayTraceVS.WPF.Models.Data;
+using RayTraceVS.WPF.Models.Serialization;
 
 namespace RayTraceVS.WPF.Models.Nodes
 {
-    public partial class CameraNode : Node
+    public partial class CameraNode : Node, ISerializableNode
     {
         private Vector3 _cameraPosition = new Vector3(0, 2, -5);
         public Vector3 CameraPosition
@@ -124,7 +125,7 @@ namespace RayTraceVS.WPF.Models.Nodes
         {
             var positionInput = GetInputValue<Vector3?>("Position", inputValues);
             var lookAtInput = GetInputValue<Vector3?>("Look At", inputValues);
-            
+
             var position = positionInput ?? CameraPosition;
             var lookAtValue = lookAtInput ?? LookAt;
 
@@ -140,5 +141,44 @@ namespace RayTraceVS.WPF.Models.Nodes
                 FocusDistance = FocusDistance
             };
         }
+
+        #region ISerializableNode
+        public void SerializeProperties(IDictionary<string, object?> properties)
+        {
+            properties["CameraPosition"] = CameraPosition;
+            properties["LookAt"] = LookAt;
+            properties["Up"] = Up;
+            properties["FieldOfView"] = FieldOfView;
+            properties["Near"] = Near;
+            properties["Far"] = Far;
+            properties["ApertureSize"] = ApertureSize;
+            properties["FocusDistance"] = FocusDistance;
+        }
+
+        public void DeserializeProperties(IReadOnlyDictionary<string, object?> properties)
+        {
+            // 新形式
+            if (properties.TryGetValue("CameraPosition", out var camPos))
+                CameraPosition = SerializationHelpers.ConvertToVector3(camPos);
+            // 後方互換性: 旧形式のPosition
+            else if (properties.TryGetValue("Position", out var oldCamPos))
+                CameraPosition = SerializationHelpers.ConvertToVector3(oldCamPos);
+
+            if (properties.TryGetValue("LookAt", out var lookAt))
+                LookAt = SerializationHelpers.ConvertToVector3(lookAt);
+            if (properties.TryGetValue("Up", out var up))
+                Up = SerializationHelpers.ConvertToVector3(up);
+            if (properties.TryGetValue("FieldOfView", out var fov))
+                FieldOfView = Convert.ToSingle(fov);
+            if (properties.TryGetValue("Near", out var near))
+                Near = Convert.ToSingle(near);
+            if (properties.TryGetValue("Far", out var far))
+                Far = Convert.ToSingle(far);
+            if (properties.TryGetValue("ApertureSize", out var aperture))
+                ApertureSize = Convert.ToSingle(aperture);
+            if (properties.TryGetValue("FocusDistance", out var focusDist))
+                FocusDistance = Convert.ToSingle(focusDist);
+        }
+        #endregion
     }
 }

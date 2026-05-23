@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using RayTraceVS.WPF.Models.Data;
+using RayTraceVS.WPF.Models.Serialization;
 
 namespace RayTraceVS.WPF.Models.Nodes
 {
@@ -9,7 +10,7 @@ namespace RayTraceVS.WPF.Models.Nodes
     /// アンビエントライトノード（環境光）
     /// シーン全体を均一に照らす光源
     /// </summary>
-    public partial class AmbientLightNode : Node
+    public partial class AmbientLightNode : Node, ISerializableNode
     {
         private Vector4 _color = new Vector4(0.2f, 0.2f, 0.2f, 1.0f);
         public Vector4 Color
@@ -66,5 +67,21 @@ namespace RayTraceVS.WPF.Models.Nodes
                 SoftShadowSamples = 1.0f
             };
         }
+
+        #region ISerializableNode
+        public void SerializeProperties(IDictionary<string, object?> properties)
+        {
+            properties["Color"] = Color;
+            properties["Intensity"] = Intensity;
+        }
+
+        public void DeserializeProperties(IReadOnlyDictionary<string, object?> properties)
+        {
+            if (properties.TryGetValue("Color", out var ambientColor))
+                Color = SerializationHelpers.ConvertToVector4(ambientColor);
+            if (properties.TryGetValue("Intensity", out var ambientIntensity))
+                Intensity = Convert.ToSingle(ambientIntensity);
+        }
+        #endregion
     }
 }

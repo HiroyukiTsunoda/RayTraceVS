@@ -27,13 +27,15 @@ namespace RayTraceVS.WPF
         {
             base.OnStartup(e);
 
-            // コマンドライン引数を解析
+            // コマンドライン引数を解析（CLI検証モード）
             //   --render <scene> --output <png> : ヘッドレスレンダリング
             //   --compare <ref> <target>        : 画像比較（出力同一性の検証用）
+            //   --resave <in> <out>             : シーン再保存（シリアライズ往復の検証用）
             var headless = HeadlessRenderer.ParseArgs(e.Args);
             bool isCompare = Array.Exists(e.Args, a => a.Equals("--compare", StringComparison.OrdinalIgnoreCase));
+            bool isResave = Array.Exists(e.Args, a => a.Equals("--resave", StringComparison.OrdinalIgnoreCase));
 
-            if (headless != null || isCompare)
+            if (headless != null || isCompare || isResave)
             {
                 // CLIから起動された場合、親プロセスのコンソールに進捗/エラーを出力できるようにする
                 AttachConsole(ATTACH_PARENT_PROCESS);
@@ -52,9 +54,16 @@ namespace RayTraceVS.WPF
 #endif
 
             // メッシュキャッシュを初期化（FBX変換）
-            // 重要: MainWindow表示前 / ヘッドレスレンダリング前に完了させる必要がある
+            // 重要: MainWindow表示前 / ヘッドレスレンダリング前 / 再保存前に完了させる必要がある
             MeshCacheService = new MeshCacheService();
             await MeshCacheService.InitializeAsync();
+
+            // シーン再保存モード（MeshCache初期化後＝LoadSceneがFBXキャッシュ判定に使う）
+            if (SceneResaver.TryParseAndRun(e.Args, out int resaveExit))
+            {
+                Shutdown(resaveExit);
+                return;
+            }
 
             if (headless != null)
             {

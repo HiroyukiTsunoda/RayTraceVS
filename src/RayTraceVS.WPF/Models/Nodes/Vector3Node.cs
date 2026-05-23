@@ -1,10 +1,12 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using System;
 using System.Collections.Generic;
 using System.Numerics;
+using RayTraceVS.WPF.Models.Serialization;
 
 namespace RayTraceVS.WPF.Models.Nodes
 {
-    public partial class Vector3Node : Node
+    public partial class Vector3Node : Node, ISerializableNode
     {
         private float _x = 1.0f;
         public float X
@@ -112,5 +114,24 @@ namespace RayTraceVS.WPF.Models.Nodes
 
             return new Vector3(x, y, z);
         }
+
+        #region ISerializableNode
+        public void SerializeProperties(IDictionary<string, object?> properties)
+        {
+            properties["X"] = X;
+            properties["Y"] = Y;
+            properties["Z"] = Z;
+        }
+
+        public void DeserializeProperties(IReadOnlyDictionary<string, object?> properties)
+        {
+            if (properties.TryGetValue("X", out var x))
+                X = Convert.ToSingle(x);
+            if (properties.TryGetValue("Y", out var y))
+                Y = Convert.ToSingle(y);
+            if (properties.TryGetValue("Z", out var z))
+                Z = Convert.ToSingle(z);
+        }
+        #endregion
     }
 }

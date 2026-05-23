@@ -12,6 +12,10 @@ namespace RayTraceVS.WPF.Models.Serialization
     {
         private static readonly Dictionary<string, Func<Node>> _nodeFactories = new();
         private static readonly Dictionary<Type, string> _typeToName = new();
+        /// <summary>
+        /// クラス名（GetType().Name）からノード生成するファクトリ（保存形式互換用）
+        /// </summary>
+        private static readonly Dictionary<string, Func<Node>> _classNameFactories = new();
         private static bool _initialized = false;
 
         /// <summary>
@@ -20,27 +24,27 @@ namespace RayTraceVS.WPF.Models.Serialization
         public static void Initialize()
         {
             if (_initialized) return;
-            
+
             // オブジェクトノード
             Register<SphereNode>("Sphere");
             Register<PlaneNode>("Plane");
             Register<BoxNode>("Box");
             Register<FBXMeshNode>("FBXMesh");
-            
+
             // マテリアルノード
             Register<EmissionMaterialNode>("Emission");
             Register<MaterialBSDFNode>("MaterialBSDF");
             Register<UniversalPBRNode>("UniversalPBR");
-            
+
             // ライトノード
             Register<PointLightNode>("PointLight");
             Register<DirectionalLightNode>("DirectionalLight");
             Register<AmbientLightNode>("AmbientLight");
-            
+
             // カメラ・シーンノード
             Register<CameraNode>("Camera");
             Register<SceneNode>("Scene");
-            
+
             // 算術ノード
             Register<FloatNode>("Float");
             Register<Vector3Node>("Vector3");
@@ -50,11 +54,14 @@ namespace RayTraceVS.WPF.Models.Serialization
             Register<SubNode>("Sub");
             Register<MulNode>("Mul");
             Register<DivNode>("Div");
-            
+
             // トランスフォームノード
             Register<TransformNode>("Transform");
             Register<CombineTransformNode>("CombineTransform");
-            
+
+            // 後方互換性: 旧LightNodeはPointLightNodeとして読み込む
+            _classNameFactories["LightNode"] = () => new PointLightNode();
+
             _initialized = true;
         }
 
@@ -67,6 +74,8 @@ namespace RayTraceVS.WPF.Models.Serialization
         {
             _nodeFactories[typeName] = () => new T();
             _typeToName[typeof(T)] = typeName;
+            // クラス名でも引けるように登録
+            _classNameFactories[typeof(T).Name] = () => new T();
         }
 
         /// <summary>
@@ -78,6 +87,18 @@ namespace RayTraceVS.WPF.Models.Serialization
         {
             EnsureInitialized();
             return _nodeFactories.TryGetValue(typeName, out var factory) ? factory() : null;
+        }
+
+        /// <summary>
+        /// クラス名（GetType().Name）からノードを生成する
+        /// 保存ファイルの Type フィールドはクラス名で保存されているため、こちらを使う
+        /// </summary>
+        /// <param name="className">クラス名（例: "SphereNode"）</param>
+        /// <returns>生成されたノード、または登録されていない場合はnull</returns>
+        public static Node? CreateNodeByClassName(string className)
+        {
+            EnsureInitialized();
+            return _classNameFactories.TryGetValue(className, out var factory) ? factory() : null;
         }
 
         /// <summary>
@@ -99,6 +120,15 @@ namespace RayTraceVS.WPF.Models.Serialization
         {
             EnsureInitialized();
             return _nodeFactories.ContainsKey(typeName);
+        }
+
+        /// <summary>
+        /// 指定したクラス名が登録されているかどうかを確認する
+        /// </summary>
+        public static bool IsClassNameRegistered(string className)
+        {
+            EnsureInitialized();
+            return _classNameFactories.ContainsKey(className);
         }
 
         /// <summary>

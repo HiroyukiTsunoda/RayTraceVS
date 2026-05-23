@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Numerics;
+using RayTraceVS.WPF.Models.Serialization;
 
 namespace RayTraceVS.WPF.Models.Nodes
 {
@@ -7,7 +8,7 @@ namespace RayTraceVS.WPF.Models.Nodes
     /// 乗算ノード（掛け算）
     /// Float同士、Vector3とFloatの乗算に対応
     /// </summary>
-    public class MulNode : Node
+    public class MulNode : Node, ISerializableNode
     {
         public MulNode() : base("Mul", NodeCategory.Math)
         {
@@ -54,5 +55,10 @@ namespace RayTraceVS.WPF.Models.Nodes
 
             return a * b;
         }
+
+        #region ISerializableNode
+        public void SerializeProperties(IDictionary<string, object?> properties) { }
+        public void DeserializeProperties(IReadOnlyDictionary<string, object?> properties) { }
+        #endregion
     }
 }

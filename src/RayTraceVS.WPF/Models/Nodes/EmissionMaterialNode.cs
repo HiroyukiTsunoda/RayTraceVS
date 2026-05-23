@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using RayTraceVS.WPF.Models.Data;
+using RayTraceVS.WPF.Models.Serialization;
 
 namespace RayTraceVS.WPF.Models.Nodes
 {
@@ -9,7 +10,7 @@ namespace RayTraceVS.WPF.Models.Nodes
     /// 発光（Emission）マテリアルノード
     /// 光源として機能するマテリアル
     /// </summary>
-    public partial class EmissionMaterialNode : Node
+    public partial class EmissionMaterialNode : Node, ISerializableNode
     {
         private Vector4 _emissionColor = new Vector4(1.0f, 1.0f, 1.0f, 1.0f);
         private float _strength = 1.0f;
@@ -107,5 +108,24 @@ namespace RayTraceVS.WPF.Models.Nodes
                 Absorption = Vector3.Zero
             };
         }
+
+        #region ISerializableNode
+        public void SerializeProperties(IDictionary<string, object?> properties)
+        {
+            properties["EmissionColor"] = EmissionColor;
+            properties["Strength"] = Strength;
+            properties["BaseColor"] = BaseColor;
+        }
+
+        public void DeserializeProperties(IReadOnlyDictionary<string, object?> properties)
+        {
+            if (properties.TryGetValue("EmissionColor", out var emissionColor))
+                EmissionColor = SerializationHelpers.ConvertToVector4(emissionColor);
+            if (properties.TryGetValue("Strength", out var strength))
+                Strength = Convert.ToSingle(strength);
+            if (properties.TryGetValue("BaseColor", out var emissionBaseColor))
+                BaseColor = SerializationHelpers.ConvertToVector4(emissionBaseColor);
+        }
+        #endregion
     }
 }

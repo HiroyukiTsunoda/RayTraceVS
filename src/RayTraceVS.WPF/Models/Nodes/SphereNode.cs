@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Newtonsoft.Json.Linq;
 using RayTraceVS.WPF.Models.Data;
 using RayTraceVS.WPF.Models.Serialization;
 
@@ -80,16 +79,25 @@ namespace RayTraceVS.WPF.Models.Nodes
         }
 
         #region ISerializableNode
-        public void SerializeProperties(JObject json)
+        public void SerializeProperties(IDictionary<string, object?> properties)
         {
-            json["transform"] = ObjectTransform.ToJson();
-            json["radius"] = Radius;
+            properties["Transform"] = ObjectTransform;
+            properties["Radius"] = Radius;
         }
 
-        public void DeserializeProperties(JObject json)
+        public void DeserializeProperties(IReadOnlyDictionary<string, object?> properties)
         {
-            ObjectTransform = json["transform"].ToTransform();
-            Radius = json.GetFloat("radius", 1.0f);
+            if (properties.TryGetValue("Transform", out var sphereTransform))
+                ObjectTransform = SerializationHelpers.ConvertToTransform(sphereTransform);
+            // 後方互換性: 旧形式のPositionがあればTransformに変換
+            else if (properties.TryGetValue("Position", out var spherePos))
+            {
+                var transform = Transform.Identity;
+                transform.Position = SerializationHelpers.ConvertToVector3(spherePos);
+                ObjectTransform = transform;
+            }
+            if (properties.TryGetValue("Radius", out var radius))
+                Radius = Convert.ToSingle(radius);
         }
         #endregion
     }

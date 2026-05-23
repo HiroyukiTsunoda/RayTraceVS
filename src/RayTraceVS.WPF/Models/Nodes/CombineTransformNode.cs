@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using RayTraceVS.WPF.Models.Serialization;
 
 namespace RayTraceVS.WPF.Models.Nodes
 {
@@ -7,7 +8,7 @@ namespace RayTraceVS.WPF.Models.Nodes
     /// 親子関係の階層化を実現するノード
     /// UE5の MultiplyUsingMatrixWithScale 相当の合成を行う
     /// </summary>
-    public class CombineTransformNode : Node
+    public class CombineTransformNode : Node, ISerializableNode
     {
         public CombineTransformNode() : base("Combine Transform", NodeCategory.Math)
         {
@@ -44,5 +45,17 @@ namespace RayTraceVS.WPF.Models.Nodes
             // LocalTransform を ParentTransform の座標系で適用
             return local.Combine(parent);
         }
+
+        #region ISerializableNode
+        public void SerializeProperties(IDictionary<string, object?> properties)
+        {
+            // CombineTransformNodeにはプロパティがない（入力ソケットのみ）
+        }
+
+        public void DeserializeProperties(IReadOnlyDictionary<string, object?> properties)
+        {
+            // CombineTransformNodeにはプロパティがない
+        }
+        #endregion
     }
 }

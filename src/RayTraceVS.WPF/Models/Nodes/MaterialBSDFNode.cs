@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using RayTraceVS.WPF.Models.Data;
+using RayTraceVS.WPF.Models.Serialization;
 
 namespace RayTraceVS.WPF.Models.Nodes
 {
@@ -9,7 +10,7 @@ namespace RayTraceVS.WPF.Models.Nodes
     /// 統合BSDFマテリアルノード
     /// Principled BSDFスタイルで、様々なマテリアルを1つのノードで表現
     /// </summary>
-    public partial class MaterialBSDFNode : Node
+    public partial class MaterialBSDFNode : Node, ISerializableNode
     {
         private Vector4 _baseColor = new Vector4(0.8f, 0.8f, 0.8f, 1.0f);
         private float _metallic = 0.0f;
@@ -169,5 +170,36 @@ namespace RayTraceVS.WPF.Models.Nodes
                 Absorption = absorption
             };
         }
+
+        #region ISerializableNode
+        public void SerializeProperties(IDictionary<string, object?> properties)
+        {
+            properties["BaseColor"] = BaseColor;
+            properties["Metallic"] = Metallic;
+            properties["Roughness"] = Roughness;
+            properties["Transmission"] = Transmission;
+            properties["IOR"] = IOR;
+            properties["Emission"] = Emission;
+            properties["Absorption"] = Absorption;
+        }
+
+        public void DeserializeProperties(IReadOnlyDictionary<string, object?> properties)
+        {
+            if (properties.TryGetValue("BaseColor", out var baseColor))
+                BaseColor = SerializationHelpers.ConvertToVector4(baseColor);
+            if (properties.TryGetValue("Metallic", out var metallic))
+                Metallic = Convert.ToSingle(metallic);
+            if (properties.TryGetValue("Roughness", out var roughness))
+                Roughness = Convert.ToSingle(roughness);
+            if (properties.TryGetValue("Transmission", out var transmission))
+                Transmission = Convert.ToSingle(transmission);
+            if (properties.TryGetValue("IOR", out var ior))
+                IOR = Convert.ToSingle(ior);
+            if (properties.TryGetValue("Emission", out var emission))
+                Emission = SerializationHelpers.ConvertToVector4(emission);
+            if (properties.TryGetValue("Absorption", out var absorption))
+                Absorption = SerializationHelpers.ConvertToVector3(absorption);
+        }
+        #endregion
     }
 }

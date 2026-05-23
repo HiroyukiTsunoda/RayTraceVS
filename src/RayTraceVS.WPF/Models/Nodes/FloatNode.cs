@@ -1,12 +1,14 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using System;
 using System.Collections.Generic;
+using RayTraceVS.WPF.Models.Serialization;
 
 namespace RayTraceVS.WPF.Models.Nodes
 {
     /// <summary>
     /// Floatノード（浮動小数点数）
     /// </summary>
-    public partial class FloatNode : Node
+    public partial class FloatNode : Node, ISerializableNode
     {
         private float _value = 0.0f;
         public float Value
@@ -38,5 +40,18 @@ namespace RayTraceVS.WPF.Models.Nodes
         {
             return Value;
         }
+
+        #region ISerializableNode
+        public void SerializeProperties(IDictionary<string, object?> properties)
+        {
+            properties["Value"] = Value;
+        }
+
+        public void DeserializeProperties(IReadOnlyDictionary<string, object?> properties)
+        {
+            if (properties.TryGetValue("Value", out var value))
+                Value = Convert.ToSingle(value);
+        }
+        #endregion
     }
 }

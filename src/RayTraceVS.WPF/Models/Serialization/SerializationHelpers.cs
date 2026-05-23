@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.Numerics;
 using Newtonsoft.Json.Linq;
 
@@ -8,6 +10,94 @@ namespace RayTraceVS.WPF.Models.Serialization
     /// </summary>
     public static class SerializationHelpers
     {
+        // ============================================================
+        // Dictionary から値を読み取るヘルパー（Newtonsoftデシリアライズ後の
+        // object? は JToken/JObject/JValue になっている前提）
+        // ============================================================
+
+        /// <summary>
+        /// object? を Vector3 に変換する
+        /// Newtonsoftデシリアライズ後は JObject (PascalCaseキー) になる
+        /// </summary>
+        public static Vector3 ConvertToVector3(object? obj)
+        {
+            if (obj == null)
+                return Vector3.Zero;
+
+            if (obj is Vector3 vec3)
+                return vec3;
+
+            if (obj is JObject jobj)
+            {
+                return new Vector3(
+                    jobj["X"]?.Value<float>() ?? 0,
+                    jobj["Y"]?.Value<float>() ?? 0,
+                    jobj["Z"]?.Value<float>() ?? 0
+                );
+            }
+
+            return Vector3.Zero;
+        }
+
+        /// <summary>
+        /// object? を Vector4 に変換する
+        /// </summary>
+        public static Vector4 ConvertToVector4(object? obj)
+        {
+            if (obj == null)
+                return Vector4.One;
+
+            if (obj is Vector4 vec4)
+                return vec4;
+
+            if (obj is JObject jobj)
+            {
+                return new Vector4(
+                    jobj["X"]?.Value<float>() ?? 0,
+                    jobj["Y"]?.Value<float>() ?? 0,
+                    jobj["Z"]?.Value<float>() ?? 0,
+                    jobj["W"]?.Value<float>() ?? 1
+                );
+            }
+
+            return Vector4.One;
+        }
+
+        /// <summary>
+        /// object? を Transform に変換する
+        /// </summary>
+        public static Transform ConvertToTransform(object? obj)
+        {
+            if (obj == null)
+                return Transform.Identity;
+
+            if (obj is Transform transform)
+                return transform;
+
+            if (obj is JObject jobj)
+            {
+                var position = ConvertToVector3(jobj["Position"]);
+                var rotationEuler = jobj["Rotation"] != null
+                    ? ConvertToVector3(jobj["Rotation"])
+                    : ConvertToVector3(jobj["EulerAngles"]);
+                var scale = ConvertToVector3(jobj["Scale"]);
+
+                var result = new Transform
+                {
+                    Position = position,
+                    Scale = scale
+                };
+                result.EulerAngles = rotationEuler;
+                return result;
+            }
+
+            return Transform.Identity;
+        }
+
+        // ============================================================
+        // JObject ベースのヘルパー（レガシー互換用に残置）
+        // ============================================================
+
         /// <summary>
         /// Vector3をJSONオブジェクトに変換する
         /// </summary>
@@ -68,7 +158,7 @@ namespace RayTraceVS.WPF.Models.Serialization
         public static Vector3 ToVector3(this JToken? token, Vector3 defaultValue = default)
         {
             if (token == null) return defaultValue;
-            
+
             return new Vector3(
                 token["x"]?.Value<float>() ?? defaultValue.X,
                 token["y"]?.Value<float>() ?? defaultValue.Y,
@@ -82,7 +172,7 @@ namespace RayTraceVS.WPF.Models.Serialization
         public static Vector4 ToVector4(this JToken? token, Vector4 defaultValue = default)
         {
             if (token == null) return defaultValue;
-            
+
             return new Vector4(
                 token["x"]?.Value<float>() ?? defaultValue.X,
                 token["y"]?.Value<float>() ?? defaultValue.Y,
@@ -97,7 +187,7 @@ namespace RayTraceVS.WPF.Models.Serialization
         public static Quaternion ToQuaternion(this JToken? token, Quaternion defaultValue = default)
         {
             if (token == null) return defaultValue;
-            
+
             return new Quaternion(
                 token["x"]?.Value<float>() ?? defaultValue.X,
                 token["y"]?.Value<float>() ?? defaultValue.Y,
@@ -112,7 +202,7 @@ namespace RayTraceVS.WPF.Models.Serialization
         public static Transform ToTransform(this JToken? token)
         {
             if (token == null) return Transform.Identity;
-            
+
             return new Transform
             {
                 Position = token["position"].ToVector3(),

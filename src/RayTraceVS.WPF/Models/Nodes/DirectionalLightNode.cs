@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using RayTraceVS.WPF.Models.Data;
+using RayTraceVS.WPF.Models.Serialization;
 
 namespace RayTraceVS.WPF.Models.Nodes
 {
@@ -11,7 +12,7 @@ namespace RayTraceVS.WPF.Models.Nodes
     /// 太陽光のように、無限遠から平行に照らす光源
     /// ソフトシャドウ用のAngular Radiusを設定可能
     /// </summary>
-    public partial class DirectionalLightNode : Node
+    public partial class DirectionalLightNode : Node, ISerializableNode
     {
         private Vector3 _direction = new Vector3(0, -1, 0);
         public Vector3 Direction
@@ -118,5 +119,24 @@ namespace RayTraceVS.WPF.Models.Nodes
                 SoftShadowSamples = System.Math.Clamp(samples, 1.0f, 16.0f)
             };
         }
+
+        #region ISerializableNode
+        public void SerializeProperties(IDictionary<string, object?> properties)
+        {
+            properties["Direction"] = Direction;
+            properties["Color"] = Color;
+            properties["Intensity"] = Intensity;
+        }
+
+        public void DeserializeProperties(IReadOnlyDictionary<string, object?> properties)
+        {
+            if (properties.TryGetValue("Direction", out var direction))
+                Direction = SerializationHelpers.ConvertToVector3(direction);
+            if (properties.TryGetValue("Color", out var dirColor))
+                Color = SerializationHelpers.ConvertToVector4(dirColor);
+            if (properties.TryGetValue("Intensity", out var dirIntensity))
+                Intensity = Convert.ToSingle(dirIntensity);
+        }
+        #endregion
     }
 }
