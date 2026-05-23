@@ -78,6 +78,12 @@
 ### Phase A 成果
 - 静的シーンで毎フレームのBLAS/TLAS構築（GPUで重い）を削減。リアルタイム時のFPS向上が期待。出力は不変。
 
+## Phase A-2（C++追加効率化）: dynamic_cast削減＋デバッグログ条件化 ← ✅完了
+- [x] UpdateSceneData(815-)とchecksum計算の dynamic_cast/dynamic_pointer_cast を `GetType()`+static_cast に置換（毎フレーム×オブジェクト数のRTTIオーバーヘッド削減）
+- [x] boxのデバッグログ（毎フレームsprintf_s×3を無条件実行していた）を `GetLogEnabled()` で条件化（ログ無効時はスキップ）
+- [x] 検証: レンダリングpクセル完全一致
+- P-2（ディスクリプタ毎フレーム再作成スキップ）/ P-4（バッファアップロードスキップ）は依存関係が複雑でリスク中のため見送り（必要なら別途慎重に）。
+
 ---
 
 ## Phase 4: 神クラスの分割（保守性向上）← 保留（ユーザー選択でC++効率化を優先）
