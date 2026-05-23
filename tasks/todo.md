@@ -46,10 +46,15 @@
 - 新ノード追加時は `NodeRegistry.Register` + `ISerializableNode` 実装だけで保存/読込/コピペ対応。
 - 出力・保存形式とも1ビットも変えずに達成（render一致 + resave一致で二重検証）。
 
-## Phase 2: SceneEvaluator の戻り値クラス化 ＋ 詰め替え重複の解消 ← 出力に直結、慎重に
-- [ ] `SceneEvaluator.EvaluateScene` の23要素タプルを `SceneEvaluationResult` クラスに置換
-- [ ] `RenderWindow` の `SceneParams` 詰め替え3重複（:124-134 / :313-323 / :666-677）を1メソッドに集約
-- [ ] 検証: エンジンへ渡る全パラメータが**完全一致**することを確認（最重要）。ヘッドレス出力一致。
+## Phase 2: SceneEvaluator の戻り値クラス化 ＋ 詰め替え重複の解消 ← ✅完了
+- [x] `SceneEvaluator.EvaluateScene` の23要素タプルを `SceneEvaluationResult` クラス（init専用プロパティ）に置換
+- [x] `RenderWindow` の `SceneParams` 詰め替え3重複を `BuildSceneParams()` 1メソッドに集約
+- [x] `HeadlessRenderer` のタプルアクセス（Item1-7）も名前付きプロパティに更新
+- [x] 検証: **レンダリングpクセル完全一致**（計算ロジック・エンジンへ渡す値とも不変）
+
+### Phase 2 成果
+- 23要素の無名タプル（可読性最悪）を名前付き結果クラスに。呼び出し側が `ev.Spheres` 等で明快に。
+- 詰め替え重複（3箇所×約12行）を解消。新パラメータ追加時の修正箇所が1→大幅減。
 
 ## Phase 3: TextBox編集ハンドラの共通化（約740行削減）
 - [ ] Float/Vector3/Vector4/Color の `PreviewTextInput`/`KeyDown`/`LostFocus`/`GotFocus`/`Apply*` を汎用ハンドラに統合
