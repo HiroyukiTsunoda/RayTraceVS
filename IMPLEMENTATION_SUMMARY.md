@@ -116,10 +116,11 @@
   - **シーン**: SceneNode
 
 #### 10. 保存/読み込み（polish）
-- ✅ SceneFileServiceクラス
+- ✅ SceneFileServiceクラス（保存/読み込みのオーケストレーション）
 - ✅ JSON形式でのシーン保存
 - ✅ シーン読み込み機能
-- ✅ ノードプロパティのシリアライズ
+- ✅ ノードプロパティのシリアライズ（各ノードが `ISerializableNode` を実装し `SerializeProperties`/`DeserializeProperties` に集約）
+- ✅ ノード生成を `NodeRegistry.CreateNodeByClassName` に統一
 - ✅ 接続情報の保存/復元
 
 ## 実装されたファイル一覧
@@ -166,7 +167,7 @@
 - `SceneData.h` - データ構造定義
 - `Marshalling.h/cpp` - データ変換
 
-### C# WPF Application (26ファイル)
+### C# WPF Application (主要ファイル)
 
 **アプリケーションコア:**
 - `App.xaml/cs` - アプリケーションエントリポイント
@@ -180,12 +181,17 @@
 - `NodeEditorView.xaml/cs` - ノードエディタ
 - `PropertyPanelView.xaml/cs` - プロパティパネル
 - `RenderWindow.xaml/cs` - レンダリングウィンドウ
+- `Handlers/TextBoxInputHandler.cs` - 数値テキスト入力ハンドラの共通化（Float/Vector3/Vector4/Color）
 
 **Models:**
 - `Node.cs` - ノード基底クラス
 - `NodeGraph.cs` - グラフ管理
 - `NodeConnection.cs` - ノード接続
 - `NodeSocket.cs` - ソケット
+- `ISocketValueNode.cs` - ソケット値アクセスの抽象化（Vector3/Vector4/Color）
+- `Serialization/ISerializableNode.cs` - ノード単位のシリアライズ（Dictionaryベース）
+- `Serialization/NodeRegistry.cs` - クラス名からのノード生成を集約
+- `Serialization/SerializationHelpers.cs` - シリアライズ共通処理
 
 **ノードタイプ:**
 - `Nodes/SphereNode.cs` - 球ノード（Transform/Material/Radius入力）
@@ -214,7 +220,11 @@
 **Services:**
 - `RenderService.cs` - レンダリングサービス
 - `SceneEvaluator.cs` - シーン評価
+- `SceneEvaluationResult.cs` - シーン評価結果（名前付きプロパティ）
 - `SceneFileService.cs` - ファイル保存/読み込み
+- `HeadlessRenderer.cs` - ヘッドレスレンダリング（CLI検証用）
+- `ImageComparer.cs` - 画像ピクセル比較（CLI検証用）
+- `SceneResaver.cs` - シーン再保存（シリアライズ往復検証用）
 
 ## 技術的な実装詳細
 
@@ -328,7 +338,7 @@
 - [x] ~~複数選択~~ ✅ 矩形選択、一括操作対応
 - [ ] ミニマップ
 - [ ] ノード検索
-- [ ] コピー＆ペースト
+- [x] ~~コピー＆ペースト~~ ✅ Ctrl+C / Ctrl+V 対応
 
 **エクスポート:**
 - [ ] 画像シーケンス出力
