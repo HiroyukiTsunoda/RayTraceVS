@@ -10,7 +10,7 @@ namespace RayTraceVS.WPF.Models.Nodes
     /// <summary>
     /// RGB/RGBAカラーを出力するノード
     /// </summary>
-    public partial class ColorNode : Node, ISerializableNode
+    public partial class ColorNode : Node, ISerializableNode, ISocketValueNode
     {
         private float _r = 0.8f;
         public float R

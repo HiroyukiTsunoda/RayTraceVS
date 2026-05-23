@@ -292,7 +292,7 @@ namespace RayTraceVS.WPF.Views
         public void RefreshNodeTextBoxValues()
         {
             // Vector3Node, Vector4Node, FloatNodeのTextBox値を更新
-            foreach (var textBox in FindVisualChildren<TextBox>(NodeCanvas))
+            foreach (var textBox in TextBoxInputHandler.FindVisualChildren<TextBox>(NodeCanvas))
             {
                 if (textBox.Tag is NodeSocket socket)
                 {
@@ -1846,751 +1846,136 @@ namespace RayTraceVS.WPF.Views
         }
 
         // ======================================================================
-        // FloatNode テキストボックス関連イベント
+        // TextBox編集ハンドラ（共通ロジックは _textBoxInputHandler に委譲）
         // ======================================================================
-        
-        /// <summary>
-        /// 浮動小数点数の入力のみ許可（数字、小数点、マイナス記号）
-        /// </summary>
+
+        // --- Float ---
+
         private void FloatTextBox_PreviewTextInput(object sender, TextCompositionEventArgs e)
         {
-            var textBox = sender as TextBox;
-            if (textBox == null) return;
+            if (sender is TextBox textBox)
+                _textBoxInputHandler.HandlePreviewTextInput(textBox, e);
+        }
 
-            // 入力される文字
-            string input = e.Text;
-            
-            // 現在のテキストと新しい入力後のテキストを作成
-            string currentText = textBox.Text;
-            int selectionStart = textBox.SelectionStart;
-            int selectionLength = textBox.SelectionLength;
-            string newText = currentText.Substring(0, selectionStart) + input + 
-                            currentText.Substring(selectionStart + selectionLength);
-            
-            // 有効なfloat形式かチェック
-            e.Handled = !IsValidFloatInput(newText);
-        }
-        
-        /// <summary>
-        /// 文字列が有効なfloat入力かどうかをチェック
-        /// </summary>
-        private bool IsValidFloatInput(string text)
-        {
-            if (string.IsNullOrEmpty(text))
-                return true;
-            
-            // 入力途中も許可するパターン（マイナス記号のみ、小数点で終わるなど）
-            // パターン: オプションのマイナス、数字、オプションの小数点、オプションの数字
-            var regex = new Regex(@"^-?(\d*\.?\d*)$");
-            return regex.IsMatch(text);
-        }
-        
-        /// <summary>
-        /// Enterキー/Tabキーで入力を確定
-        /// </summary>
         private void FloatTextBox_KeyDown(object sender, KeyEventArgs e)
         {
-            if (e.Key == Key.Enter || e.Key == Key.Tab)
-            {
-                var textBox = sender as TextBox;
-                if (textBox != null)
-                {
-                    // 変更前の値を取得
-                    float? oldValue = null;
-                    if (_textBoxOriginalValues.TryGetValue(textBox, out float originalValue))
-                    {
-                        oldValue = originalValue;
-                        _textBoxOriginalValues.Remove(textBox);
-                    }
-                    
-                    // バインディングを強制更新
-                    var bindingExpression = textBox.GetBindingExpression(TextBox.TextProperty);
-                    bindingExpression?.UpdateSource();
-                    
-                    // FloatNodeの場合、Undo/Redoコマンドを発行
-                    if (oldValue.HasValue && textBox.DataContext is FloatNode floatNode)
-                    {
-                        float newValue = floatNode.Value;
-                        if (oldValue.Value != newValue)
-                        {
-                            var viewModel = GetViewModel();
-                            viewModel?.CommandManager.RegisterExecuted(
-                                new ChangePropertyCommand<float>(floatNode, "Value", oldValue.Value, newValue, 
-                                    "Float値を変更"));
-                        }
-                    }
-                    
-                    // フォーカスを外す
-                    Keyboard.ClearFocus();
-                    NodeCanvas.Focus();
-                }
-                e.Handled = true;
-            }
-            else if (e.Key == Key.Escape)
-            {
-                var textBox = sender as TextBox;
-                if (textBox != null)
-                {
-                    // 変更を破棄（Undo用の値も削除）
-                    _textBoxOriginalValues.Remove(textBox);
-                    
-                    // バインディングをリセット（元の値に戻す）
-                    var bindingExpression = textBox.GetBindingExpression(TextBox.TextProperty);
-                    bindingExpression?.UpdateTarget();
-                    
-                    // フォーカスを外す
-                    Keyboard.ClearFocus();
-                    NodeCanvas.Focus();
-                }
-                e.Handled = true;
-            }
+            if (sender is TextBox textBox)
+                _textBoxInputHandler.HandleFloatTextBox_KeyDown(textBox, e);
         }
-        
-        /// <summary>
-        /// フォーカスを失ったときに入力を確定
-        /// </summary>
+
         private void FloatTextBox_LostFocus(object sender, RoutedEventArgs e)
         {
-            var textBox = sender as TextBox;
-            if (textBox != null)
-            {
-                ApplyFloatTextBoxValue(textBox);
-            }
+            if (sender is TextBox textBox)
+                _textBoxInputHandler.ApplyFloatTextBoxValue(textBox);
         }
 
-        private void ApplyFloatTextBoxValue(TextBox textBox)
-        {
-            // 空の場合は0に設定
-            if (string.IsNullOrWhiteSpace(textBox.Text) || textBox.Text == "-" || textBox.Text == ".")
-            {
-                textBox.Text = "0";
-            }
-            
-            // 変更前の値を取得
-            float? oldValue = null;
-            if (_textBoxOriginalValues.TryGetValue(textBox, out float originalValue))
-            {
-                oldValue = originalValue;
-                _textBoxOriginalValues.Remove(textBox);
-            }
-            
-            // バインディングを強制更新
-            var bindingExpression = textBox.GetBindingExpression(TextBox.TextProperty);
-            bindingExpression?.UpdateSource();
-            
-            // FloatNodeの場合、Undo/Redoコマンドを発行
-            if (oldValue.HasValue && textBox.DataContext is FloatNode floatNode)
-            {
-                float newValue = floatNode.Value;
-                if (oldValue.Value != newValue)
-                {
-                    var viewModel = GetViewModel();
-                    viewModel?.CommandManager.RegisterExecuted(
-                        new ChangePropertyCommand<float>(floatNode, "Value", oldValue.Value, newValue, 
-                            "Float値を変更"));
-                }
-            }
-        }
-        
-        /// <summary>
-        /// フォーカス取得時にテキストを全選択し、変更前の値を記録
-        /// </summary>
         private void FloatTextBox_GotFocus(object sender, RoutedEventArgs e)
         {
-            var textBox = sender as TextBox;
-            if (textBox != null)
-            {
-                // 変更前の値を記録（Undo用）
-                if (textBox.DataContext is FloatNode floatNode)
-                {
-                    _textBoxOriginalValues[textBox] = floatNode.Value;
-                }
-                
-                // Dispatcherを使って遅延実行（SelectAllが即座に動作しない場合があるため）
-                textBox.Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    textBox.SelectAll();
-                }), System.Windows.Threading.DispatcherPriority.Input);
-            }
-        }
-        
-        /// <summary>
-        /// ノード内の次の（または前の）TextBoxにフォーカスを移動する
-        /// </summary>
-        /// <param name="currentTextBox">現在のTextBox</param>
-        /// <param name="forward">trueで次へ、falseで前へ</param>
-        private void MoveToNextTextBoxInNode(TextBox currentTextBox, bool forward)
-        {
-            // 現在のTextBoxが属するノードのコンテナを探す
-            var nodeContainer = FindParentNodeContainer(currentTextBox);
-            if (nodeContainer == null)
-            {
-                Keyboard.ClearFocus();
-                NodeCanvas.Focus();
-                return;
-            }
-            
-            // ノードコンテナ内のすべての有効なTextBoxを取得
-            var textBoxes = FindVisualChildren<TextBox>(nodeContainer)
-                .Where(tb => tb.IsVisible && tb.IsEnabled)
-                .ToList();
-            
-            if (textBoxes.Count <= 1)
-            {
-                // 1つ以下なら移動先がないのでフォーカス解除
-                Keyboard.ClearFocus();
-                NodeCanvas.Focus();
-                return;
-            }
-            
-            // 現在のTextBoxのインデックスを取得
-            int currentIndex = textBoxes.IndexOf(currentTextBox);
-            if (currentIndex < 0)
-            {
-                Keyboard.ClearFocus();
-                NodeCanvas.Focus();
-                return;
-            }
-            
-            // 次（または前）のインデックスを計算（ループ）
-            int nextIndex;
-            if (forward)
-            {
-                nextIndex = (currentIndex + 1) % textBoxes.Count;
-            }
-            else
-            {
-                nextIndex = (currentIndex - 1 + textBoxes.Count) % textBoxes.Count;
-            }
-            
-            // 次のTextBoxにフォーカス
-            var nextTextBox = textBoxes[nextIndex];
-            nextTextBox.Focus();
-            nextTextBox.SelectAll();
-        }
-        
-        /// <summary>
-        /// 親のノードコンテナ（Border）を探す
-        /// </summary>
-        private FrameworkElement? FindParentNodeContainer(DependencyObject child)
-        {
-            DependencyObject parent = VisualTreeHelper.GetParent(child);
-            while (parent != null)
-            {
-                // ノードのコンテナはBorderでDataContextがNode
-                if (parent is Border border && border.DataContext is Node)
-                {
-                    return border;
-                }
-                parent = VisualTreeHelper.GetParent(parent);
-            }
-            return null;
-        }
-        
-        /// <summary>
-        /// ビジュアルツリーから指定された型の子要素をすべて取得
-        /// </summary>
-        private static IEnumerable<T> FindVisualChildren<T>(DependencyObject parent) where T : DependencyObject
-        {
-            if (parent == null) yield break;
-            
-            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
-            {
-                var child = VisualTreeHelper.GetChild(parent, i);
-                if (child is T typedChild)
-                {
-                    yield return typedChild;
-                }
-                
-                foreach (var descendant in FindVisualChildren<T>(child))
-                {
-                    yield return descendant;
-                }
-            }
+            if (sender is TextBox textBox)
+                _textBoxInputHandler.HandleFloatTextBox_GotFocus(textBox);
         }
 
-        // ======================================================================
-        // Vector3Node 入力テキストボックス関連イベント
-        // ======================================================================
-        
-        /// <summary>
-        /// Vector3テキストボックスがロードされたとき、初期値を設定
-        /// </summary>
+        // --- Vector3 ---
+
         private void Vector3TextBox_Loaded(object sender, RoutedEventArgs e)
         {
-            var textBox = sender as TextBox;
-            if (textBox?.Tag is NodeSocket socket && socket.ParentNode is Vector3Node vector3Node)
-            {
-                // 初期値を設定
-                float value = vector3Node.GetSocketValue(socket.Name);
-                textBox.Text = value.ToString("G");
-            }
+            if (sender is TextBox textBox)
+                _textBoxInputHandler.HandleSocketTextBox_Loaded(textBox);
         }
 
-        /// <summary>
-        /// 浮動小数点数の入力のみ許可
-        /// </summary>
         private void Vector3TextBox_PreviewTextInput(object sender, TextCompositionEventArgs e)
         {
-            var textBox = sender as TextBox;
-            if (textBox == null) return;
-
-            string input = e.Text;
-            string currentText = textBox.Text;
-            int selectionStart = textBox.SelectionStart;
-            int selectionLength = textBox.SelectionLength;
-            string newText = currentText.Substring(0, selectionStart) + input + 
-                            currentText.Substring(selectionStart + selectionLength);
-            
-            e.Handled = !IsValidFloatInput(newText);
+            if (sender is TextBox textBox)
+                _textBoxInputHandler.HandlePreviewTextInput(textBox, e);
         }
-        
-        /// <summary>
-        /// Enterキーで入力を確定
-        /// </summary>
+
         private void Vector3TextBox_KeyDown(object sender, KeyEventArgs e)
         {
-            if (e.Key == Key.Enter)
-            {
-                var textBox = sender as TextBox;
-                if (textBox != null)
-                {
-                    ApplyVector3TextBoxValue(textBox);
-                    Keyboard.ClearFocus();
-                    NodeCanvas.Focus();
-                }
-                e.Handled = true;
-            }
-            else if (e.Key == Key.Tab)
-            {
-                var textBox = sender as TextBox;
-                if (textBox != null)
-                {
-                    ApplyVector3TextBoxValue(textBox);
-                    MoveToNextTextBoxInNode(textBox, !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));
-                }
-                e.Handled = true;
-            }
-            else if (e.Key == Key.Escape)
-            {
-                var textBox = sender as TextBox;
-                if (textBox?.Tag is NodeSocket socket && socket.ParentNode is Vector3Node vector3Node)
-                {
-                    // 変更を破棄（Undo用の値も削除）
-                    _textBoxOriginalValues.Remove(textBox);
-                    
-                    // 元の値に戻す
-                    textBox.Text = vector3Node.GetSocketValue(socket.Name).ToString("G");
-                    Keyboard.ClearFocus();
-                    NodeCanvas.Focus();
-                }
-                e.Handled = true;
-            }
+            if (sender is TextBox textBox)
+                _textBoxInputHandler.HandleSocketTextBox_KeyDown(textBox, e, supportsUndo: true);
         }
-        
-        /// <summary>
-        /// フォーカスを失ったときに入力を確定
-        /// </summary>
+
         private void Vector3TextBox_LostFocus(object sender, RoutedEventArgs e)
         {
-            var textBox = sender as TextBox;
-            if (textBox != null)
-            {
-                ApplyVector3TextBoxValue(textBox);
-            }
+            if (sender is TextBox textBox)
+                _textBoxInputHandler.HandleSocketTextBox_LostFocus(textBox, supportsUndo: true);
         }
-        
-        /// <summary>
-        /// フォーカス取得時にテキストを全選択し、変更前の値を記録
-        /// </summary>
+
         private void Vector3TextBox_GotFocus(object sender, RoutedEventArgs e)
         {
-            var textBox = sender as TextBox;
-            if (textBox != null)
-            {
-                // 変更前の値を記録（Undo用）
-                if (textBox.Tag is NodeSocket socket && socket.ParentNode is Vector3Node vector3Node)
-                {
-                    _textBoxOriginalValues[textBox] = vector3Node.GetSocketValue(socket.Name);
-                }
-                
-                textBox.Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    textBox.SelectAll();
-                }), System.Windows.Threading.DispatcherPriority.Input);
-            }
-        }
-        
-        /// <summary>
-        /// テキストボックスの値をVector3Nodeに適用
-        /// </summary>
-        private void ApplyVector3TextBoxValue(TextBox textBox)
-        {
-            if (textBox.Tag is NodeSocket socket && socket.ParentNode is Vector3Node vector3Node)
-            {
-                // 空または無効な場合は現在の値を維持
-                if (string.IsNullOrWhiteSpace(textBox.Text) || textBox.Text == "-" || textBox.Text == ".")
-                {
-                    textBox.Text = vector3Node.GetSocketValue(socket.Name).ToString("G");
-                    _textBoxOriginalValues.Remove(textBox);
-                    return;
-                }
-                
-                if (float.TryParse(textBox.Text, out float newValue))
-                {
-                    // 変更前の値を取得
-                    float oldValue = vector3Node.GetSocketValue(socket.Name);
-                    if (_textBoxOriginalValues.TryGetValue(textBox, out float originalValue))
-                    {
-                        oldValue = originalValue;
-                        _textBoxOriginalValues.Remove(textBox);
-                    }
-                    
-                    // 値が変更された場合のみコマンドを発行
-                    if (oldValue != newValue)
-                    {
-                        var viewModel = GetViewModel();
-                        if (viewModel != null)
-                        {
-                            // 値を設定してからコマンドを登録（UIは既に適用済み）
-                            vector3Node.SetSocketValue(socket.Name, newValue);
-                            
-                            // プロパティ名を特定
-                            string propertyName = socket.Name switch
-                            {
-                                "X" => "X",
-                                "Y" => "Y",
-                                "Z" => "Z",
-                                _ => socket.Name
-                            };
-                            
-                            viewModel.CommandManager.RegisterExecuted(
-                                new ChangePropertyCommand<float>(vector3Node, propertyName, oldValue, newValue, 
-                                    $"Vector3.{propertyName} を変更"));
-                        }
-                        else
-                        {
-                            vector3Node.SetSocketValue(socket.Name, newValue);
-                        }
-                    }
-                    
-                    textBox.Text = newValue.ToString("G");
-                }
-                else
-                {
-                    // パース失敗時は現在の値に戻す
-                    textBox.Text = vector3Node.GetSocketValue(socket.Name).ToString("G");
-                    _textBoxOriginalValues.Remove(textBox);
-                }
-            }
+            if (sender is TextBox textBox)
+                _textBoxInputHandler.HandleSocketTextBox_GotFocus(textBox, supportsUndo: true);
         }
 
-        // ===== Vector4Node用のTextBox編集機能 =====
-        
-        /// <summary>
-        /// Vector4Node用のTextBoxがロードされたとき
-        /// </summary>
+        // --- Vector4 ---
+
         private void Vector4TextBox_Loaded(object sender, RoutedEventArgs e)
         {
-            var textBox = sender as TextBox;
-            if (textBox?.Tag is NodeSocket socket && socket.ParentNode is Vector4Node vector4Node)
-            {
-                // 初期値を設定
-                float value = vector4Node.GetSocketValue(socket.Name);
-                textBox.Text = value.ToString("G");
-            }
+            if (sender is TextBox textBox)
+                _textBoxInputHandler.HandleSocketTextBox_Loaded(textBox);
         }
 
-        /// <summary>
-        /// 浮動小数点数の入力のみ許可（Vector4用）
-        /// </summary>
         private void Vector4TextBox_PreviewTextInput(object sender, TextCompositionEventArgs e)
         {
-            var textBox = sender as TextBox;
-            if (textBox == null) return;
-
-            string input = e.Text;
-            string currentText = textBox.Text;
-            int selectionStart = textBox.SelectionStart;
-            int selectionLength = textBox.SelectionLength;
-            string newText = currentText.Substring(0, selectionStart) + input + 
-                            currentText.Substring(selectionStart + selectionLength);
-            
-            e.Handled = !IsValidFloatInput(newText);
+            if (sender is TextBox textBox)
+                _textBoxInputHandler.HandlePreviewTextInput(textBox, e);
         }
-        
-        /// <summary>
-        /// Enterキーで入力を確定（Vector4用）
-        /// </summary>
+
         private void Vector4TextBox_KeyDown(object sender, KeyEventArgs e)
         {
-            if (e.Key == Key.Enter)
-            {
-                var textBox = sender as TextBox;
-                if (textBox != null)
-                {
-                    ApplyVector4TextBoxValue(textBox);
-                    Keyboard.ClearFocus();
-                    NodeCanvas.Focus();
-                }
-                e.Handled = true;
-            }
-            else if (e.Key == Key.Tab)
-            {
-                var textBox = sender as TextBox;
-                if (textBox != null)
-                {
-                    ApplyVector4TextBoxValue(textBox);
-                    MoveToNextTextBoxInNode(textBox, !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));
-                }
-                e.Handled = true;
-            }
-            else if (e.Key == Key.Escape)
-            {
-                var textBox = sender as TextBox;
-                if (textBox?.Tag is NodeSocket socket && socket.ParentNode is Vector4Node vector4Node)
-                {
-                    // 変更を破棄（Undo用の値も削除）
-                    _textBoxOriginalValues.Remove(textBox);
-                    
-                    // 元の値に戻す
-                    textBox.Text = vector4Node.GetSocketValue(socket.Name).ToString("G");
-                    Keyboard.ClearFocus();
-                    NodeCanvas.Focus();
-                }
-                e.Handled = true;
-            }
+            if (sender is TextBox textBox)
+                _textBoxInputHandler.HandleSocketTextBox_KeyDown(textBox, e, supportsUndo: true);
         }
-        
-        /// <summary>
-        /// フォーカスを失ったときに入力を確定（Vector4用）
-        /// </summary>
+
         private void Vector4TextBox_LostFocus(object sender, RoutedEventArgs e)
         {
-            var textBox = sender as TextBox;
-            if (textBox != null)
-            {
-                ApplyVector4TextBoxValue(textBox);
-            }
+            if (sender is TextBox textBox)
+                _textBoxInputHandler.HandleSocketTextBox_LostFocus(textBox, supportsUndo: true);
         }
-        
-        /// <summary>
-        /// フォーカス取得時にテキストを全選択し、変更前の値を記録（Vector4用）
-        /// </summary>
+
         private void Vector4TextBox_GotFocus(object sender, RoutedEventArgs e)
         {
-            var textBox = sender as TextBox;
-            if (textBox != null)
-            {
-                // 変更前の値を記録（Undo用）
-                if (textBox.Tag is NodeSocket socket && socket.ParentNode is Vector4Node vector4Node)
-                {
-                    _textBoxOriginalValues[textBox] = vector4Node.GetSocketValue(socket.Name);
-                }
-                
-                textBox.Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    textBox.SelectAll();
-                }), System.Windows.Threading.DispatcherPriority.Input);
-            }
-        }
-        
-        /// <summary>
-        /// テキストボックスの値をVector4Nodeに適用
-        /// </summary>
-        private void ApplyVector4TextBoxValue(TextBox textBox)
-        {
-            if (textBox.Tag is NodeSocket socket && socket.ParentNode is Vector4Node vector4Node)
-            {
-                // 空または無効な場合は現在の値を維持
-                if (string.IsNullOrWhiteSpace(textBox.Text) || textBox.Text == "-" || textBox.Text == ".")
-                {
-                    textBox.Text = vector4Node.GetSocketValue(socket.Name).ToString("G");
-                    _textBoxOriginalValues.Remove(textBox);
-                    return;
-                }
-                
-                if (float.TryParse(textBox.Text, out float newValue))
-                {
-                    // 変更前の値を取得
-                    float oldValue = vector4Node.GetSocketValue(socket.Name);
-                    if (_textBoxOriginalValues.TryGetValue(textBox, out float originalValue))
-                    {
-                        oldValue = originalValue;
-                        _textBoxOriginalValues.Remove(textBox);
-                    }
-                    
-                    // 値が変更された場合のみコマンドを発行
-                    if (oldValue != newValue)
-                    {
-                        var viewModel = GetViewModel();
-                        if (viewModel != null)
-                        {
-                            // 値を設定してからコマンドを登録（UIは既に適用済み）
-                            vector4Node.SetSocketValue(socket.Name, newValue);
-                            
-                            // プロパティ名を特定
-                            string propertyName = socket.Name switch
-                            {
-                                "X" => "X",
-                                "Y" => "Y",
-                                "Z" => "Z",
-                                "W" => "W",
-                                _ => socket.Name
-                            };
-                            
-                            viewModel.CommandManager.RegisterExecuted(
-                                new ChangePropertyCommand<float>(vector4Node, propertyName, oldValue, newValue, 
-                                    $"Vector4.{propertyName} を変更"));
-                        }
-                        else
-                        {
-                            vector4Node.SetSocketValue(socket.Name, newValue);
-                        }
-                    }
-                    
-                    textBox.Text = newValue.ToString("G");
-                }
-                else
-                {
-                    // パース失敗時は現在の値に戻す
-                    textBox.Text = vector4Node.GetSocketValue(socket.Name).ToString("G");
-                    _textBoxOriginalValues.Remove(textBox);
-                }
-            }
+            if (sender is TextBox textBox)
+                _textBoxInputHandler.HandleSocketTextBox_GotFocus(textBox, supportsUndo: true);
         }
 
-        // ===== ColorNode用のTextBox編集機能 =====
-        
-        /// <summary>
-        /// ColorNode用のTextBoxがロードされたとき
-        /// </summary>
+        // --- Color ---
+
         private void ColorTextBox_Loaded(object sender, RoutedEventArgs e)
         {
-            var textBox = sender as TextBox;
-            if (textBox?.Tag is NodeSocket socket && socket.ParentNode is ColorNode colorNode)
-            {
-                // 初期値を設定
-                float value = colorNode.GetSocketValue(socket.Name);
-                textBox.Text = value.ToString("G");
-            }
+            if (sender is TextBox textBox)
+                _textBoxInputHandler.HandleSocketTextBox_Loaded(textBox);
         }
 
-        /// <summary>
-        /// 浮動小数点数の入力のみ許可（Color用）
-        /// </summary>
         private void ColorTextBox_PreviewTextInput(object sender, TextCompositionEventArgs e)
         {
-            var textBox = sender as TextBox;
-            if (textBox == null) return;
-
-            string input = e.Text;
-            string currentText = textBox.Text;
-            int selectionStart = textBox.SelectionStart;
-            int selectionLength = textBox.SelectionLength;
-            string newText = currentText.Substring(0, selectionStart) + input + 
-                            currentText.Substring(selectionStart + selectionLength);
-            
-            e.Handled = !IsValidFloatInput(newText);
+            if (sender is TextBox textBox)
+                _textBoxInputHandler.HandlePreviewTextInput(textBox, e);
         }
-        
-        /// <summary>
-        /// Enterキーで入力を確定（Color用）
-        /// </summary>
+
         private void ColorTextBox_KeyDown(object sender, KeyEventArgs e)
         {
-            if (e.Key == Key.Enter)
-            {
-                var textBox = sender as TextBox;
-                if (textBox != null)
-                {
-                    ApplyColorTextBoxValue(textBox);
-                    Keyboard.ClearFocus();
-                    NodeCanvas.Focus();
-                }
-                e.Handled = true;
-            }
-            else if (e.Key == Key.Tab)
-            {
-                var textBox = sender as TextBox;
-                if (textBox != null)
-                {
-                    ApplyColorTextBoxValue(textBox);
-                    MoveToNextTextBoxInNode(textBox, !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));
-                }
-                e.Handled = true;
-            }
-            else if (e.Key == Key.Escape)
-            {
-                var textBox = sender as TextBox;
-                if (textBox?.Tag is NodeSocket socket && socket.ParentNode is ColorNode colorNode)
-                {
-                    // 元の値に戻す
-                    textBox.Text = colorNode.GetSocketValue(socket.Name).ToString("G");
-                    Keyboard.ClearFocus();
-                    NodeCanvas.Focus();
-                }
-                e.Handled = true;
-            }
-        }
-        
-        /// <summary>
-        /// フォーカスを失ったときに入力を確定（Color用）
-        /// </summary>
-        private void ColorTextBox_LostFocus(object sender, RoutedEventArgs e)
-        {
-            var textBox = sender as TextBox;
-            if (textBox != null)
-            {
-                ApplyColorTextBoxValue(textBox);
-            }
-        }
-        
-        /// <summary>
-        /// フォーカス取得時にテキストを全選択（Color用）
-        /// </summary>
-        private void ColorTextBox_GotFocus(object sender, RoutedEventArgs e)
-        {
-            var textBox = sender as TextBox;
-            if (textBox != null)
-            {
-                textBox.Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    textBox.SelectAll();
-                }), System.Windows.Threading.DispatcherPriority.Input);
-            }
-        }
-        
-        /// <summary>
-        /// テキストボックスの値をColorNodeに適用
-        /// </summary>
-        private void ApplyColorTextBoxValue(TextBox textBox)
-        {
-            if (textBox.Tag is NodeSocket socket && socket.ParentNode is ColorNode colorNode)
-            {
-                // 空または無効な場合は現在の値を維持
-                if (string.IsNullOrWhiteSpace(textBox.Text) || textBox.Text == "-" || textBox.Text == ".")
-                {
-                    textBox.Text = colorNode.GetSocketValue(socket.Name).ToString("G");
-                    return;
-                }
-                
-                if (float.TryParse(textBox.Text, out float value))
-                {
-                    colorNode.SetSocketValue(socket.Name, value);
-                    textBox.Text = value.ToString("G");
-                }
-                else
-                {
-                    // パース失敗時は現在の値に戻す
-                    textBox.Text = colorNode.GetSocketValue(socket.Name).ToString("G");
-                }
-            }
+            if (sender is TextBox textBox)
+                _textBoxInputHandler.HandleSocketTextBox_KeyDown(textBox, e, supportsUndo: false);
         }
 
+        private void ColorTextBox_LostFocus(object sender, RoutedEventArgs e)
+        {
+            if (sender is TextBox textBox)
+                _textBoxInputHandler.HandleSocketTextBox_LostFocus(textBox, supportsUndo: false);
+        }
+
+        private void ColorTextBox_GotFocus(object sender, RoutedEventArgs e)
+        {
+            if (sender is TextBox textBox)
+                _textBoxInputHandler.HandleSocketTextBox_GotFocus(textBox, supportsUndo: false);
+        }
+
+        // --- 共通 ---
+
         /// <summary>
-        /// 現在フォーカスされている TextBox のバインディングを即座に更新
-        /// ノードエディター上をクリックした時に、プロパティパネルの入力値を確定させる
+        /// 現在フォーカスされている TextBox のバインディングを即座に更新。
+        /// ノードエディター上をクリックした時に、プロパティパネルの入力値を確定させる。
         /// </summary>
         private void UpdateFocusedTextBoxBinding()
         {
@@ -2599,29 +1984,20 @@ namespace RayTraceVS.WPF.Views
             {
                 if (focusedElement.Tag is NodeSocket socket)
                 {
-                    if (socket.ParentNode is Vector3Node)
-                    {
-                        ApplyVector3TextBoxValue(focusedElement);
-                    }
-                    else if (socket.ParentNode is Vector4Node)
-                    {
-                        ApplyVector4TextBoxValue(focusedElement);
-                    }
-                    else if (socket.ParentNode is ColorNode)
-                    {
-                        ApplyColorTextBoxValue(focusedElement);
-                    }
+                    // Vector3 / Vector4 は Undo あり、Color は Undo なし
+                    bool supportsUndo = !(socket.ParentNode is ColorNode);
+                    _textBoxInputHandler.ApplySocketTextBoxValue(focusedElement, supportsUndo);
                 }
                 else if (focusedElement.DataContext is FloatNode)
                 {
-                    ApplyFloatTextBoxValue(focusedElement);
+                    _textBoxInputHandler.ApplyFloatTextBoxValue(focusedElement);
                 }
                 else
                 {
                     var binding = BindingOperations.GetBindingExpression(focusedElement, TextBox.TextProperty);
                     binding?.UpdateSource();
                 }
-                
+
                 // フォーカスをクリア（別のノードをクリックしたときにテキストボックスのフォーカスが残らないようにする）
                 Keyboard.ClearFocus();
             }
