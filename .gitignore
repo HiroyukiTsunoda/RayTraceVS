@@ -72,3 +72,6 @@ artifacts/
 *.pdb
 *.cache
 *.log
+
+# Refactoring verification baselines (local only)
+baseline/
