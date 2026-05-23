@@ -2783,71 +2783,53 @@ namespace RayTraceVS::DXEngine
             }
         }
         
-        // Check if mesh instances exist - if so, always rebuild TLAS to reflect transform changes
-        bool hasMeshInstances = !scene->GetMeshInstances().empty();
-        
-        // Check if any primitive objects exist - they might have moved
-        // For simplicity, always rebuild if there are any objects (position may have changed)
-        bool hasPrimitives = !scene->GetObjects().empty();
-        
-        // Calculate scene content checksum to detect position/transform changes
-        // This is a simple FNV-1a style hash of object positions
+        // Calculate scene content checksum to detect geometry changes.
+        // Includes every element that affects the acceleration structure (shape + transform).
+        // Materials are irrelevant to the AS and are intentionally excluded.
+        // When this checksum is unchanged, the AS rebuild can be safely skipped.
         uint64_t currentChecksum = 0x811c9dc5ULL; // FNV offset basis
         const uint64_t fnvPrime = 0x01000193ULL;
-        
-        // Hash primitive object positions
+        auto hashFloat = [&](float f) {
+            currentChecksum ^= *reinterpret_cast<uint32_t*>(&f);
+            currentChecksum *= fnvPrime;
+        };
+        auto hashVec3 = [&](const XMFLOAT3& v) { hashFloat(v.x); hashFloat(v.y); hashFloat(v.z); };
+
+        // Hash primitive object geometry (shape + transform)
         const auto& objects = scene->GetObjects();
         for (const auto& obj : objects)
         {
             auto sphere = std::dynamic_pointer_cast<Sphere>(obj);
             auto plane = std::dynamic_pointer_cast<Plane>(obj);
             auto box = std::dynamic_pointer_cast<Box>(obj);
-            
+
             if (sphere)
             {
-                auto center = sphere->GetCenter();
-                currentChecksum ^= *reinterpret_cast<uint32_t*>(&center.x);
-                currentChecksum *= fnvPrime;
-                currentChecksum ^= *reinterpret_cast<uint32_t*>(&center.y);
-                currentChecksum *= fnvPrime;
-                currentChecksum ^= *reinterpret_cast<uint32_t*>(&center.z);
-                currentChecksum *= fnvPrime;
-                float radius = sphere->GetRadius();
-                currentChecksum ^= *reinterpret_cast<uint32_t*>(&radius);
-                currentChecksum *= fnvPrime;
+                hashVec3(sphere->GetCenter());
+                hashFloat(sphere->GetRadius());
             }
             else if (plane)
             {
-                auto pos = plane->GetPosition();
-                currentChecksum ^= *reinterpret_cast<uint32_t*>(&pos.x);
-                currentChecksum *= fnvPrime;
-                currentChecksum ^= *reinterpret_cast<uint32_t*>(&pos.y);
-                currentChecksum *= fnvPrime;
-                currentChecksum ^= *reinterpret_cast<uint32_t*>(&pos.z);
-                currentChecksum *= fnvPrime;
+                hashVec3(plane->GetPosition());
+                hashVec3(plane->GetNormal());
             }
             else if (box)
             {
-                auto center = box->GetCenter();
-                currentChecksum ^= *reinterpret_cast<uint32_t*>(&center.x);
-                currentChecksum *= fnvPrime;
-                currentChecksum ^= *reinterpret_cast<uint32_t*>(&center.y);
-                currentChecksum *= fnvPrime;
-                currentChecksum ^= *reinterpret_cast<uint32_t*>(&center.z);
-                currentChecksum *= fnvPrime;
+                hashVec3(box->GetCenter());
+                hashVec3(box->GetSize());
+                hashVec3(box->GetAxisX());
+                hashVec3(box->GetAxisY());
+                hashVec3(box->GetAxisZ());
             }
         }
-        
-        // Hash mesh instance transforms
+
+        // Hash mesh instance transforms (position + rotation + scale all affect the TLAS)
         const auto& meshInstances = scene->GetMeshInstances();
         for (const auto& inst : meshInstances)
         {
-            currentChecksum ^= *reinterpret_cast<const uint32_t*>(&inst.transform.position.x);
-            currentChecksum *= fnvPrime;
-            currentChecksum ^= *reinterpret_cast<const uint32_t*>(&inst.transform.position.y);
-            currentChecksum *= fnvPrime;
-            currentChecksum ^= *reinterpret_cast<const uint32_t*>(&inst.transform.position.z);
-            currentChecksum *= fnvPrime;
+            hashVec3(inst.transform.position);
+            hashVec3(inst.transform.rotation);
+            hashVec3(inst.transform.scale);
         }
         
         // Detect scene content change
@@ -2858,9 +2840,10 @@ namespace RayTraceVS::DXEngine
         }
         lastSceneChecksum = currentChecksum;
         
-        // Rebuild acceleration structures if needed
-        // Always rebuild if any objects exist (transform/position may have changed)
-        if (needsAccelerationStructureRebuild || scene != lastScene || hasMeshInstances || hasPrimitives)
+        // Rebuild acceleration structures only when geometry actually changed.
+        // Static scenes skip the rebuild from the 2nd frame onward (output unchanged),
+        // which reduces both GPU and CPU load.
+        if (needsAccelerationStructureRebuild || scene != lastScene || sceneContentChanged)
         {
             LOG_DEBUG("RenderWithDXR: building acceleration structures");
             if (!BuildAccelerationStructures(scene))
