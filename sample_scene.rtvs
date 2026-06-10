@@ -123,8 +123,8 @@
           "Light3",
           "Light4"
         ],
-        "SamplesPerPixel": 16,
-        "MaxBounces": 10,
+        "SamplesPerPixel": 32,
+        "MaxBounces": 16,
         "TraceRecursionDepth": 2,
         "Exposure": 1.0,
         "ToneMapOperator": 2,
@@ -1637,8 +1637,8 @@
     }
   ],
   "Viewport": {
-    "PanX": -694.2216651015233,
-    "PanY": -724.6408879839181,
+    "PanX": -700.8501543075613,
+    "PanY": -674.1165536045864,
     "Zoom": 0.8200000000000005,
     "IsLeftPanelVisible": true,
     "IsRightPanelVisible": true,
@@ -1651,7 +1651,7 @@
       "IsLightExpanded": true,
       "IsSceneExpanded": true
     },
-    "RenderWidth": 1920,
-    "RenderHeight": 1080
+    "RenderWidth": 2560,
+    "RenderHeight": 1440
   }
 }

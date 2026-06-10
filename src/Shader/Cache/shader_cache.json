@@ -1,58 +1,65 @@
 {
   "version": 1,
   "driverVersion": "10DE-2684-51001462-00A1",
-  "adapterLUID": 92084,
+  "adapterLUID": 105785,
   "shaders": {
     "RayGen": {
       "sourceHash": "3e354828bd68ba711345ea29a7183dfe7cad1b0ca977377881fc5770052f55a2",
-      "compiledAt": "2026-01-29T17:48:26",
+      "compiledAt": "2026-06-11T05:30:55",
       "dependencies": {
-        "Common.hlsli": "dea1c2af506b42d02e4c9cbc38857de24d1e0faf24e191ea2f590c405852a506",
+        "Common.hlsli": "e655a29b0f17ade4c650bcb5c7c765d8a94e0c8b6bb0898de25e8fdb511fdea1",
+        "SharedTypes.h": "dbad2c75103b01bc91bd0257847b752830188fc639e10241653426ee11807ffe",
         "NRDEncoding.hlsli": "a7fffb891c008a27a95c65f6d48068e0ef25269899882a8e500d0b23cf0aa8e1"
       }
     },
     "Miss": {
       "sourceHash": "6b0fcce9eba851d5b4d3b133bb8814ea322092c59ca6b74964a46a9e2623b510",
-      "compiledAt": "",
+      "compiledAt": "2026-06-11T05:30:55",
       "dependencies": {
-        "Common.hlsli": "dea1c2af506b42d02e4c9cbc38857de24d1e0faf24e191ea2f590c405852a506"
+        "Common.hlsli": "e655a29b0f17ade4c650bcb5c7c765d8a94e0c8b6bb0898de25e8fdb511fdea1",
+        "SharedTypes.h": "dbad2c75103b01bc91bd0257847b752830188fc639e10241653426ee11807ffe"
       }
     },
     "ClosestHit": {
       "sourceHash": "6b95eee4a934038e3f16a60f99e8bc62fdf8a695e9c339c9b3a089b7c405bceb",
-      "compiledAt": "",
+      "compiledAt": "2026-06-11T05:30:55",
       "dependencies": {
-        "Common.hlsli": "dea1c2af506b42d02e4c9cbc38857de24d1e0faf24e191ea2f590c405852a506",
+        "Common.hlsli": "e655a29b0f17ade4c650bcb5c7c765d8a94e0c8b6bb0898de25e8fdb511fdea1",
+        "SharedTypes.h": "dbad2c75103b01bc91bd0257847b752830188fc639e10241653426ee11807ffe",
         "NRDEncoding.hlsli": "a7fffb891c008a27a95c65f6d48068e0ef25269899882a8e500d0b23cf0aa8e1"
       }
     },
     "Intersection": {
       "sourceHash": "ab492563fedc40d675635404adcae7404f0c9af3d06b869d861d6790e23c7a35",
-      "compiledAt": "",
+      "compiledAt": "2026-06-11T05:30:56",
       "dependencies": {
-        "Common.hlsli": "dea1c2af506b42d02e4c9cbc38857de24d1e0faf24e191ea2f590c405852a506"
+        "Common.hlsli": "e655a29b0f17ade4c650bcb5c7c765d8a94e0c8b6bb0898de25e8fdb511fdea1",
+        "SharedTypes.h": "dbad2c75103b01bc91bd0257847b752830188fc639e10241653426ee11807ffe"
       }
     },
     "ClosestHit_Triangle": {
       "sourceHash": "40cff1786afb279af7cd247d52300a4858ed6f187a998f2b09680caad5e5bd89",
-      "compiledAt": "",
+      "compiledAt": "2026-06-11T05:30:56",
       "dependencies": {
-        "Common.hlsli": "dea1c2af506b42d02e4c9cbc38857de24d1e0faf24e191ea2f590c405852a506",
+        "Common.hlsli": "e655a29b0f17ade4c650bcb5c7c765d8a94e0c8b6bb0898de25e8fdb511fdea1",
+        "SharedTypes.h": "dbad2c75103b01bc91bd0257847b752830188fc639e10241653426ee11807ffe",
         "NRDEncoding.hlsli": "a7fffb891c008a27a95c65f6d48068e0ef25269899882a8e500d0b23cf0aa8e1"
       }
     },
     "AnyHit_Shadow": {
       "sourceHash": "e991ca3e55485fbe0c8e60847d9e1260fcac3871860900da7f999185893f5ddc",
-      "compiledAt": "",
+      "compiledAt": "2026-06-11T05:30:56",
       "dependencies": {
-        "Common.hlsli": "dea1c2af506b42d02e4c9cbc38857de24d1e0faf24e191ea2f590c405852a506"
+        "Common.hlsli": "e655a29b0f17ade4c650bcb5c7c765d8a94e0c8b6bb0898de25e8fdb511fdea1",
+        "SharedTypes.h": "dbad2c75103b01bc91bd0257847b752830188fc639e10241653426ee11807ffe"
       }
     },
     "AnyHit_SkipSelf": {
       "sourceHash": "739a89dfa23b70df9ab72b89c67ff2e3430d9e9e1883ae08b8f844cce4128c5c",
-      "compiledAt": "",
+      "compiledAt": "2026-06-11T05:30:56",
       "dependencies": {
-        "Common.hlsli": "dea1c2af506b42d02e4c9cbc38857de24d1e0faf24e191ea2f590c405852a506"
+        "Common.hlsli": "e655a29b0f17ade4c650bcb5c7c765d8a94e0c8b6bb0898de25e8fdb511fdea1",
+        "SharedTypes.h": "dbad2c75103b01bc91bd0257847b752830188fc639e10241653426ee11807ffe"
       }
     },
     "PhotonEmit": {
