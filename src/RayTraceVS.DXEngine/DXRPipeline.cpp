@@ -805,10 +805,15 @@ namespace RayTraceVS::DXEngine
         const auto& objects = scene->GetObjects();
         const auto& lights = scene->GetLights();
 
-        std::vector<GPUSphere> spheres;
-        std::vector<GPUPlane> planes;
-        std::vector<GPUBox> Boxes;
-        std::vector<GPULight> gpuLights;
+        // Reuse member staging vectors (capacity persists across frames)
+        auto& spheres = stagingSpheres;
+        auto& planes = stagingPlanes;
+        auto& Boxes = stagingBoxes;
+        auto& gpuLights = stagingLights;
+        spheres.clear();
+        planes.clear();
+        Boxes.clear();
+        gpuLights.clear();
 
         for (const auto& obj : objects)
         {
@@ -1107,10 +1112,15 @@ namespace RayTraceVS::DXEngine
         if (!meshCaches.empty() && !meshInstances.empty())
         {
             // Build combined vertex/index buffers and mesh info
-            std::vector<GPUMeshVertex> allVertices;
-            std::vector<uint32_t> allIndices;
-            std::vector<GPUMeshInfo> meshInfos;
-            std::map<std::string, UINT> meshTypeIndexMap;  // meshName -> index in meshInfos
+            // (reuse member staging containers to avoid per-frame allocation)
+            auto& allVertices = stagingMeshVertices;
+            auto& allIndices = stagingMeshIndices;
+            auto& meshInfos = stagingMeshInfos;
+            auto& meshTypeIndexMap = stagingMeshTypeIndexMap;  // meshName -> index in meshInfos
+            allVertices.clear();
+            allIndices.clear();
+            meshInfos.clear();
+            meshTypeIndexMap.clear();
             
             UINT vertexOffset = 0;
             UINT indexOffset = 0;
@@ -1145,8 +1155,10 @@ namespace RayTraceVS::DXEngine
             }
             
             // Build instance info and materials
-            std::vector<GPUMeshInstanceInfo> instanceInfos;
-            std::vector<GPUMeshMaterial> materials;
+            auto& instanceInfos = stagingMeshInstanceInfos;
+            auto& materials = stagingMeshMaterials;
+            instanceInfos.clear();
+            materials.clear();
             
             for (const auto& inst : meshInstances)
             {
