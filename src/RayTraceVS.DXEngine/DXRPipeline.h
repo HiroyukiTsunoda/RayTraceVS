@@ -532,6 +532,85 @@ namespace RayTraceVS::DXEngine
         // Scene content checksum for detecting position/transform changes
         uint64_t lastSceneChecksum = 0;
 
+        // P-2: snapshots of the resources referenced by each descriptor heap.
+        // Descriptor heap writes are skipped when the snapshot equals the previous
+        // one. Comparing the referenced resources directly (instead of scattered
+        // dirty flags) makes a stale-descriptor miss structurally impossible.
+        struct DxrDescriptorSnapshot
+        {
+            ID3D12Resource* output = nullptr;
+            D3D12_GPU_VIRTUAL_ADDRESS tlas = 0;
+            ID3D12Resource* constants = nullptr;
+            ID3D12Resource* spheres = nullptr;
+            ID3D12Resource* planes = nullptr;
+            ID3D12Resource* boxes = nullptr;
+            ID3D12Resource* lights = nullptr;
+            ID3D12Resource* photonMap = nullptr;
+            ID3D12Resource* photonCounter = nullptr;
+            ID3D12Resource* gbufferDiffuse = nullptr;
+            ID3D12Resource* gbufferSpecular = nullptr;
+            ID3D12Resource* gbufferNormalRoughness = nullptr;
+            ID3D12Resource* gbufferAlbedo = nullptr;
+            ID3D12Resource* gbufferMotionVectors = nullptr;
+            ID3D12Resource* gbufferViewZ = nullptr;
+            ID3D12Resource* gbufferShadowData = nullptr;
+            ID3D12Resource* gbufferShadowTranslucency = nullptr;
+            ID3D12Resource* photonHashTable = nullptr;
+            ID3D12Resource* workQueue = nullptr;
+            ID3D12Resource* workQueueCount = nullptr;
+            UINT64 workQueueCapacityElems = 0;
+            UINT64 workQueueCountCapacityElems = 0;
+            ID3D12Resource* meshVertices = nullptr;
+            ID3D12Resource* meshIndices = nullptr;
+            ID3D12Resource* meshMaterials = nullptr;
+            ID3D12Resource* meshInfoBuf = nullptr;
+            ID3D12Resource* meshInstanceInfoBuf = nullptr;
+            ID3D12Resource* blueNoise = nullptr;
+            UINT maxPhotonCount = 0;
+
+            bool operator==(const DxrDescriptorSnapshot&) const = default;
+        };
+        DxrDescriptorSnapshot lastDxrDescriptorSnapshot;
+        bool dxrDescriptorsValid = false;
+
+        struct PhotonDescriptorSnapshot
+        {
+            D3D12_GPU_VIRTUAL_ADDRESS tlas = 0;
+            ID3D12Resource* constants = nullptr;
+            ID3D12Resource* spheres = nullptr;
+            ID3D12Resource* planes = nullptr;
+            ID3D12Resource* boxes = nullptr;
+            ID3D12Resource* lights = nullptr;
+            ID3D12Resource* photonMap = nullptr;
+            ID3D12Resource* photonCounter = nullptr;
+            UINT maxPhotonCount = 0;
+
+            bool operator==(const PhotonDescriptorSnapshot&) const = default;
+        };
+        PhotonDescriptorSnapshot lastPhotonDescriptorSnapshot;
+        bool photonDescriptorsValid = false;
+
+        struct CompositeDescriptorSnapshot
+        {
+            ID3D12Resource* denoisedDiffuse = nullptr;
+            ID3D12Resource* denoisedSpecular = nullptr;
+            ID3D12Resource* albedo = nullptr;
+            ID3D12Resource* denoisedShadow = nullptr;
+            ID3D12Resource* rawDiffuseBackup = nullptr;
+            ID3D12Resource* specularIn = nullptr;
+            ID3D12Resource* normalRoughness = nullptr;
+            ID3D12Resource* viewZ = nullptr;
+            ID3D12Resource* motionVectors = nullptr;
+            ID3D12Resource* shadowData = nullptr;
+            ID3D12Resource* rawSpecularBackup = nullptr;
+            ID3D12Resource* preDenoise = nullptr;
+            ID3D12Resource* output = nullptr;
+
+            bool operator==(const CompositeDescriptorSnapshot&) const = default;
+        };
+        CompositeDescriptorSnapshot lastCompositeDescriptorSnapshot;
+        bool compositeDescriptorsValid = false;
+
         // P-4: per-buffer content checksums (FNV-1a 64-bit over the staged bytes).
         // When a buffer's staged content is identical to the previous upload,
         // the Map/memcpy/CopyResource (and barriers) for it are skipped.
