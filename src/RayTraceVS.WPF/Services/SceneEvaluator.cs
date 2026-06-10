@@ -80,6 +80,7 @@ namespace RayTraceVS.WPF.Services
                 // SceneNodeの評価結果を取得
                 if (results.TryGetValue(sceneNode.Id, out var sceneResult) && sceneResult is SceneData sceneData)
                 {
+#if DEBUG
                     // Debug: log SceneNode object socket connections
                     var sceneObjectSockets = sceneNode.InputSockets.Where(s => s.SocketType == SocketType.Object).ToList();
                     Debug.WriteLine($"[SceneEvaluator] SceneNode object sockets: {sceneObjectSockets.Count}");
@@ -96,7 +97,8 @@ namespace RayTraceVS.WPF.Services
                             Debug.WriteLine($"[SceneEvaluator] {socket.Name} <- (empty)");
                         }
                     }
-                    
+#endif
+
                     // カメラの設定（デフォルト値でなければ使用）
                     if (sceneData.Camera.FieldOfView > 0)
                     {
@@ -108,9 +110,11 @@ namespace RayTraceVS.WPF.Services
                     {
                         if (obj is SphereData sd && sd.Radius > 0)
                         {
+#if DEBUG
                             Debug.WriteLine($"[SceneEvaluator] Sphere Pos({sd.Position.X:F3}, {sd.Position.Y:F3}, {sd.Position.Z:F3}) R={sd.Radius:F3} " +
                                             $"Base({sd.Material.BaseColor.X:F3}, {sd.Material.BaseColor.Y:F3}, {sd.Material.BaseColor.Z:F3}, {sd.Material.BaseColor.W:F3}) " +
                                             $"M={sd.Material.Metallic:F3} Rgh={sd.Material.Roughness:F3} T={sd.Material.Transmission:F3} IOR={sd.Material.IOR:F3}");
+#endif
                             spheres.Add(ConvertSphereData(sd));
                         }
                         else if (obj is PlaneData pd)
@@ -148,8 +152,10 @@ namespace RayTraceVS.WPF.Services
                         lights.Add(ConvertLightData(light));
                     }
                     
+#if DEBUG
                     Debug.WriteLine($"[SceneEvaluator] Objects: spheres={spheres.Count}, planes={planes.Count}, boxes={boxes.Count}, meshInstances={meshInstances.Count}");
                     Debug.WriteLine($"[SceneEvaluator] Lights: {lights.Count}");
+#endif
                     
                     // レンダリング設定を取得
                     samplesPerPixel = sceneData.SamplesPerPixel > 0 ? sceneData.SamplesPerPixel : 1;

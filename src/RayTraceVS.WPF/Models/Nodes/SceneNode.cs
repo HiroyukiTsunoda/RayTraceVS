@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Newtonsoft.Json.Linq;
@@ -14,26 +13,15 @@ namespace RayTraceVS.WPF.Models.Nodes
         private int objectSocketCount = 0;
         private int lightSocketCount = 0;
 
-#if DEBUG
-        // Debug log path relative to the executable location
-        private static readonly string DebugLogPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "debug.log");
-#endif
-
         private int _samplesPerPixel = 2;
         public int SamplesPerPixel
         {
             get => _samplesPerPixel;
             set
             {
-#if DEBUG
-                try { File.AppendAllText(DebugLogPath, $"[SceneNode] SamplesPerPixel setter called with: {value}, current: {_samplesPerPixel}\n"); } catch { }
-#endif
                 if (SetProperty(ref _samplesPerPixel, value))
                 {
                     MarkDirty();
-#if DEBUG
-                    try { File.AppendAllText(DebugLogPath, $"[SceneNode] SamplesPerPixel changed to: {value}, MarkDirty called\n"); } catch { }
-#endif
                 }
             }
         }

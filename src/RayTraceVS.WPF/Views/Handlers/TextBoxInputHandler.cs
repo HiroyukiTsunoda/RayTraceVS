@@ -20,6 +20,9 @@ namespace RayTraceVS.WPF.Views.Handlers
     /// </summary>
     public class TextBoxInputHandler
     {
+        // パターン: オプションのマイナス、数字、オプションの小数点、オプションの数字
+        private static readonly Regex FloatInputRegex = new Regex(@"^-?(\d*\.?\d*)$", RegexOptions.Compiled);
+
         private readonly EditorInputState _state;
 
         /// <summary>
@@ -50,9 +53,7 @@ namespace RayTraceVS.WPF.Views.Handlers
             if (string.IsNullOrEmpty(text))
                 return true;
 
-            // パターン: オプションのマイナス、数字、オプションの小数点、オプションの数字
-            var regex = new Regex(@"^-?(\d*\.?\d*)$");
-            return regex.IsMatch(text);
+            return FloatInputRegex.IsMatch(text);
         }
 
         /// <summary>
