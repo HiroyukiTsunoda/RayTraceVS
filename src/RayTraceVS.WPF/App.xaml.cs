@@ -58,6 +58,9 @@ namespace RayTraceVS.WPF
             MeshCacheService = new MeshCacheService();
             await MeshCacheService.InitializeAsync();
 
+            // Model層（FBXMeshNode）へメッシュキャッシュを注入（App層への直接依存を断つ）
+            Models.Node.MeshCacheProvider = MeshCacheService;
+
             // シーン再保存モード（MeshCache初期化後＝LoadSceneがFBXキャッシュ判定に使う）
             if (SceneResaver.TryParseAndRun(e.Args, out int resaveExit))
             {

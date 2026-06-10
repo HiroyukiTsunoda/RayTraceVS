@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using Assimp;
 using Newtonsoft.Json;
+using RayTraceVS.WPF.Models;
 using RayTraceVS.WPF.Models.Data;
 
 namespace RayTraceVS.WPF.Services
@@ -18,7 +19,7 @@ namespace RayTraceVS.WPF.Services
     /// 起動時にFBXをスキャンし、必要に応じてキャッシュに変換する
     /// メッシュデータは遅延読み込み（Lazy Loading）で必要時に読み込む
     /// </summary>
-    public class MeshCacheService
+    public class MeshCacheService : IMeshCacheProvider
     {
         private const string CACHE_MAGIC = "RTVS";
         private const uint CACHE_VERSION = 1;

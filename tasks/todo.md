@@ -202,12 +202,12 @@ Releaseビルドの前後比較は全コミット後に git checkout で実施�
 ## マイルストーン2: Interop境界とC++エンジン
 - [x] Step 4 [Interop/C++]: RenderSettings構造体化（UpdateScene 24→8パラメータ、DXEngine/RenderSettings.hをScene/Bridge/Interopで共有し詰め替えなし）＋SanitizeMaterial共通化（30行×4回コピペ解消）
 - [x] Step 5 [C++/HLSL]: SharedTypes.h共有ヘッダ（src/Shader/に配置、9構造体をC++/HLSLで一元化、C++はSharedGpu名前空間＋GPU*エイリアス、static_assertサイズ検証）。検証: ①dxc -Pプリプロセス比較で全13シェーダー意味的同一 ②再コンパイル後ピクセル完全一致。**知見: .csoは-Zi埋め込みのためソース無変更でも再コンパイルでバイナリが変わるが、同一セッション内なら出力は決定的**（事前実験で確認→検証戦略に利用）
-- [ ] Step 6 [C++]: PhotonMappingPass抽出（約660行、P-2スナップショット比較を維持）
-- [ ] Step 7 [C++]: CompositePass抽出（約370行）
-- [ ] Step 8 [C++/オプション]: SceneBufferManager抽出（Step 6/7後に実施可否判断）
+- [~] Step 6 [C++]: PhotonMappingPass抽出 → **見送り**。実装調査で判明: ①フォトンは causticsEnabled=false で無効化された実験機能（リソース作成すらされず検証パスで実行されない＝抽出の正しさをピクセル検証で担保できない）②UpdatePhotonDescriptorsがシーンバッファ4種+TLAS+定数+ルートシグネチャ等12個の共有リソースに依存し、抽出すると注入コードで全体複雑度がむしろ増す。テスト不能なコードのリファクタリングは原則に反するため中止
+- [~] Step 7 [C++]: CompositePass抽出 → **見送り**。CompositeDescriptorSnapshot 13リソース+UIパラメータ群+denoiser連携の依存があり同様の判断。DXRPipelineの行数削減は可読性向上のみで拡張性への寄与が薄い
+- [~] Step 8 [C++/オプション]: SceneBufferManager抽出 → 見送り（計画時からリスク中〜高と評価、Step 6/7の判断に準ずる）
 
 ## マイルストーン3: UI/MVVM神クラス分割（最後にまとめてUI手動検証）
-- [ ] Step 9 [C#]: 空振りインターフェース3つ削除＋IMeshCacheProviderでレイヤー違反解消
+- [x] Step 9 [C#]: 空振りインターフェース3つ削除（IRenderService/ISceneFileService/ISettingsService、実装ゼロ・シグネチャ乖離のため）＋IMeshCacheProvider導入でFBXMeshNode→App層の直接依存を解消（FBXメッシュ2個入りシーンでピクセル一致確認）
 - [ ] Step 10 [C#]: 型互換チェック統合（2箇所不整合の解消）＋CreateConnectionのConnectionHandler移動
 - [ ] Step 11 [C#]: コピー/ペーストのEditCommandHandler移動
 - [ ] Step 12 [C#]: MainViewModelへのファイルI/O・ICommand移動（DIコンテナは導入しない）
