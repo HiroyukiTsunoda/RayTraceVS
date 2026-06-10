@@ -8,6 +8,7 @@
 #include <vector>
 #include <DirectXMath.h>
 #include <string>
+#include <unordered_map>
 
 using Microsoft::WRL::ComPtr;
 using namespace DirectX;
@@ -530,6 +531,20 @@ namespace RayTraceVS::DXEngine
         
         // Scene content checksum for detecting position/transform changes
         uint64_t lastSceneChecksum = 0;
+
+        // Reused CPU-side staging containers for UpdateSceneData.
+        // Members (instead of locals) to avoid re-allocating heap memory every frame;
+        // cleared at the start of each use so the retained capacity is reused.
+        std::vector<GPUSphere> stagingSpheres;
+        std::vector<GPUPlane> stagingPlanes;
+        std::vector<GPUBox> stagingBoxes;
+        std::vector<GPULight> stagingLights;
+        std::vector<GPUMeshVertex> stagingMeshVertices;
+        std::vector<uint32_t> stagingMeshIndices;
+        std::vector<GPUMeshInfo> stagingMeshInfos;
+        std::vector<GPUMeshInstanceInfo> stagingMeshInstanceInfos;
+        std::vector<GPUMeshMaterial> stagingMeshMaterials;
+        std::unordered_map<std::string, UINT> stagingMeshTypeIndexMap;
 
         // ============================================
         // Shader Cache System
