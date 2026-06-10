@@ -115,6 +115,7 @@ namespace RayTraceVS::Interop
     };
 
     // Render settings (managed side to native)
+    // Managed mirror of DXEngine RenderSettings (RenderSettings.h)
     [StructLayout(LayoutKind::Sequential)]
     public value struct RenderSettings
     {
@@ -125,6 +126,19 @@ namespace RayTraceVS::Interop
         int ToneMapOperator;
         float DenoiserStabilization;
         float ShadowStrength;
+        float ShadowAbsorptionScale;
+        bool EnableDenoiser;
+        float Gamma;
+        int PhotonDebugMode;
+        float PhotonDebugScale;
+
+        // P1 optimization settings
+        float LightAttenuationConstant;
+        float LightAttenuationLinear;
+        float LightAttenuationQuadratic;
+        int MaxShadowLights;
+        float NRDBypassDistance;
+        float NRDBypassBlendRange;
     };
 
     // Light type enumeration

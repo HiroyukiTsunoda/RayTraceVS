@@ -8,6 +8,7 @@
 #include "Camera.h"
 #include "Light.h"
 #include "Objects/RayTracingObject.h"
+#include "../RenderSettings.h"
 
 namespace RayTraceVS::DXEngine
 {
@@ -64,50 +65,30 @@ namespace RayTraceVS::DXEngine
         Camera& GetCamera() { return camera; }
         const Camera& GetCamera() const { return camera; }
 
-        void SetRenderSettings(int samples, int bounces, int traceRecursion, float exp = 1.0f, int tone = 2, float stab = 1.0f, float shadow = 1.0f, float shadowAbsorb = 4.0f, bool denoiser = true, float gam = 2.2f, int photonDebug = 0, float photonDebugScaleVal = 1.0f,
-                               float lightAttenConst = 1.0f, float lightAttenLinear = 0.0f, float lightAttenQuad = 0.01f, int maxShadowLights = 2,
-                               float nrdBypassDist = 8.0f, float nrdBypassRange = 2.0f)
-        {
-            samplesPerPixel = samples;
-            maxBounces = bounces;
-            traceRecursionDepth = traceRecursion;
-            exposure = exp;
-            toneMapOperator = tone;
-            denoiserStabilization = stab;
-            shadowStrength = shadow;
-            shadowAbsorptionScale = shadowAbsorb;
-            enableDenoiser = denoiser;
-            gamma = gam;
-            photonDebugMode = photonDebug;
-            photonDebugScale = photonDebugScaleVal;
-            // P1 optimization settings
-            lightAttenuationConstant = lightAttenConst;
-            lightAttenuationLinear = lightAttenLinear;
-            lightAttenuationQuadratic = lightAttenQuad;
-            this->maxShadowLights = maxShadowLights;
-            nrdBypassDistanceThreshold = nrdBypassDist;
-            nrdBypassBlendRange = nrdBypassRange;
-        }
-        int GetSamplesPerPixel() const { return samplesPerPixel; }
-        int GetMaxBounces() const { return maxBounces; }
-        int GetTraceRecursionDepth() const { return traceRecursionDepth; }
-        float GetExposure() const { return exposure; }
-        int GetToneMapOperator() const { return toneMapOperator; }
-        float GetDenoiserStabilization() const { return denoiserStabilization; }
-        float GetShadowStrength() const { return shadowStrength; }
-        float GetShadowAbsorptionScale() const { return shadowAbsorptionScale; }
-        bool GetEnableDenoiser() const { return enableDenoiser; }
-        float GetGamma() const { return gamma; }
-        int GetPhotonDebugMode() const { return photonDebugMode; }
-        float GetPhotonDebugScale() const { return photonDebugScale; }
-        
+        void SetRenderSettings(const RenderSettings& settings) { renderSettings = settings; }
+        const RenderSettings& GetRenderSettings() const { return renderSettings; }
+
+        // Individual getters kept so existing engine code (DXRPipeline etc.) is unchanged
+        int GetSamplesPerPixel() const { return renderSettings.samplesPerPixel; }
+        int GetMaxBounces() const { return renderSettings.maxBounces; }
+        int GetTraceRecursionDepth() const { return renderSettings.traceRecursionDepth; }
+        float GetExposure() const { return renderSettings.exposure; }
+        int GetToneMapOperator() const { return renderSettings.toneMapOperator; }
+        float GetDenoiserStabilization() const { return renderSettings.denoiserStabilization; }
+        float GetShadowStrength() const { return renderSettings.shadowStrength; }
+        float GetShadowAbsorptionScale() const { return renderSettings.shadowAbsorptionScale; }
+        bool GetEnableDenoiser() const { return renderSettings.enableDenoiser; }
+        float GetGamma() const { return renderSettings.gamma; }
+        int GetPhotonDebugMode() const { return renderSettings.photonDebugMode; }
+        float GetPhotonDebugScale() const { return renderSettings.photonDebugScale; }
+
         // P1 optimization getters
-        float GetLightAttenuationConstant() const { return lightAttenuationConstant; }
-        float GetLightAttenuationLinear() const { return lightAttenuationLinear; }
-        float GetLightAttenuationQuadratic() const { return lightAttenuationQuadratic; }
-        int GetMaxShadowLights() const { return maxShadowLights; }
-        float GetNRDBypassDistanceThreshold() const { return nrdBypassDistanceThreshold; }
-        float GetNRDBypassBlendRange() const { return nrdBypassBlendRange; }
+        float GetLightAttenuationConstant() const { return renderSettings.lightAttenuationConstant; }
+        float GetLightAttenuationLinear() const { return renderSettings.lightAttenuationLinear; }
+        float GetLightAttenuationQuadratic() const { return renderSettings.lightAttenuationQuadratic; }
+        int GetMaxShadowLights() const { return renderSettings.maxShadowLights; }
+        float GetNRDBypassDistanceThreshold() const { return renderSettings.nrdBypassDistanceThreshold; }
+        float GetNRDBypassBlendRange() const { return renderSettings.nrdBypassBlendRange; }
 
         void AddObject(std::shared_ptr<RayTracingObject> obj);
         void AddLight(const Light& light);
@@ -134,26 +115,7 @@ namespace RayTraceVS::DXEngine
         // Mesh data
         std::unordered_map<std::string, MeshCacheEntry> meshCaches;  // Shared mesh geometry by name
         std::vector<MeshInstance> meshInstances;  // Instances referencing mesh caches
-        
-        int samplesPerPixel = 1;
-        int maxBounces = 6;
-        int traceRecursionDepth = 2;
-        float exposure = 1.0f;
-        int toneMapOperator = 2;
-        float denoiserStabilization = 1.0f;
-        float shadowStrength = 1.0f;
-        float shadowAbsorptionScale = 4.0f;
-        bool enableDenoiser = true;
-        float gamma = 1.0f;
-        int photonDebugMode = 0;
-        float photonDebugScale = 1.0f;
-        
-        // P1 optimization settings
-        float lightAttenuationConstant = 1.0f;
-        float lightAttenuationLinear = 0.0f;
-        float lightAttenuationQuadratic = 0.01f;
-        int maxShadowLights = 2;
-        float nrdBypassDistanceThreshold = 8.0f;
-        float nrdBypassBlendRange = 2.0f;
+
+        RenderSettings renderSettings;
     };
 }

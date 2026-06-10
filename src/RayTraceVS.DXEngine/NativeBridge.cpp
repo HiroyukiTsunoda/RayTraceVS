@@ -121,11 +121,9 @@ namespace RayTraceVS::Interop::Bridge
         scene->SetCamera(nativeCamera);
     }
 
-    void SetRenderSettings(RayTraceVS::DXEngine::Scene* scene, int samplesPerPixel, int maxBounces, int traceRecursionDepth, float exposure, int toneMapOperator, float denoiserStabilization, float shadowStrength, float shadowAbsorptionScale, bool enableDenoiser, float gamma, int photonDebugMode, float photonDebugScale,
-        float lightAttenuationConstant, float lightAttenuationLinear, float lightAttenuationQuadratic, int maxShadowLights, float nrdBypassDistance, float nrdBypassBlendRange)
+    void SetRenderSettings(RayTraceVS::DXEngine::Scene* scene, const RayTraceVS::DXEngine::RenderSettings& settings)
     {
-        scene->SetRenderSettings(samplesPerPixel, maxBounces, traceRecursionDepth, exposure, toneMapOperator, denoiserStabilization, shadowStrength, shadowAbsorptionScale, enableDenoiser, gamma, photonDebugMode, photonDebugScale,
-            lightAttenuationConstant, lightAttenuationLinear, lightAttenuationQuadratic, maxShadowLights, nrdBypassDistance, nrdBypassBlendRange);
+        scene->SetRenderSettings(settings);
     }
 
     void AddSphere(RayTraceVS::DXEngine::Scene* scene, const SphereDataNative& sphere)

@@ -15,7 +15,8 @@ namespace RayTraceVS::Interop
         static Bridge::SphereDataNative ToNativeSphere(SphereData managedSphere);
         static Bridge::PlaneDataNative ToNativePlane(PlaneData managedPlane);
         static Bridge::BoxDataNative ToNativeBox(BoxData managedBox);
-        
+        static RayTraceVS::DXEngine::RenderSettings ToNativeRenderSettings(RenderSettings managedSettings);
+
         // Helper to convert managed string to native string
         static std::string ToNativeString(System::String^ managedString);
     };
