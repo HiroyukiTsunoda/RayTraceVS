@@ -127,49 +127,51 @@ namespace RayTraceVS::DXEngine
     void ShaderCache::RegisterShaders()
     {
         // DXR library shaders
+        // SharedTypes.h is included by Common.hlsli (GPU structs shared with C++),
+        // so it must be tracked as a dependency for cache invalidation.
         shaderDefinitions[L"RayGen"] = {
             L"RayGen", ShaderType::DXRLibrary, L"",
-            { L"Common.hlsli", L"NRDEncoding.hlsli" }
+            { L"Common.hlsli", L"SharedTypes.h", L"NRDEncoding.hlsli" }
         };
 
         shaderDefinitions[L"ClosestHit"] = {
             L"ClosestHit", ShaderType::DXRLibrary, L"",
-            { L"Common.hlsli", L"NRDEncoding.hlsli" }
+            { L"Common.hlsli", L"SharedTypes.h", L"NRDEncoding.hlsli" }
         };
 
         shaderDefinitions[L"ClosestHit_Triangle"] = {
             L"ClosestHit_Triangle", ShaderType::DXRLibrary, L"",
-            { L"Common.hlsli", L"NRDEncoding.hlsli" }
+            { L"Common.hlsli", L"SharedTypes.h", L"NRDEncoding.hlsli" }
         };
 
         shaderDefinitions[L"Miss"] = {
             L"Miss", ShaderType::DXRLibrary, L"",
-            { L"Common.hlsli" }
+            { L"Common.hlsli", L"SharedTypes.h" }
         };
 
         shaderDefinitions[L"Intersection"] = {
             L"Intersection", ShaderType::DXRLibrary, L"",
-            { L"Common.hlsli" }
+            { L"Common.hlsli", L"SharedTypes.h" }
         };
 
         shaderDefinitions[L"AnyHit_Shadow"] = {
             L"AnyHit_Shadow", ShaderType::DXRLibrary, L"",
-            { L"Common.hlsli" }
+            { L"Common.hlsli", L"SharedTypes.h" }
         };
 
         shaderDefinitions[L"AnyHit_SkipSelf"] = {
             L"AnyHit_SkipSelf", ShaderType::DXRLibrary, L"",
-            { L"Common.hlsli" }
+            { L"Common.hlsli", L"SharedTypes.h" }
         };
 
         shaderDefinitions[L"PhotonEmit"] = {
             L"PhotonEmit", ShaderType::DXRLibrary, L"",
-            { L"Common.hlsli" }
+            { L"Common.hlsli", L"SharedTypes.h" }
         };
 
         shaderDefinitions[L"PhotonTrace"] = {
             L"PhotonTrace", ShaderType::DXRLibrary, L"",
-            { L"Common.hlsli" }
+            { L"Common.hlsli", L"SharedTypes.h" }
         };
 
         // Photon hash table compute shaders (spatial hash for O(1) photon lookup)

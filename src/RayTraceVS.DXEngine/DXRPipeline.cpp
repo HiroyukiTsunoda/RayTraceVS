@@ -837,93 +837,93 @@ namespace RayTraceVS::DXEngine
             {
                 auto sphere = static_cast<Sphere*>(obj.get());
                 GPUSphere gs;
-                gs.Center = sphere->GetCenter();
-                gs.Radius = sphere->GetRadius();
+                gs.center = sphere->GetCenter();
+                gs.radius = sphere->GetRadius();
                 const Material& mat = sphere->GetMaterial();
-                gs.Color = mat.color;
-                gs.Metallic = mat.metallic;
-                gs.Roughness = mat.roughness;
-                gs.Transmission = mat.transmission;
-                gs.IOR = mat.ior;
-                gs.Specular = mat.specular;
-                gs.Padding1 = 0;
-                gs.Padding2 = 0;
-                gs.Padding3 = 0;
-                gs.Emission = mat.emission;
-                gs.Padding4 = 0;
-                gs.Absorption = mat.absorption;
-                gs.Padding5 = 0;
+                gs.color = mat.color;
+                gs.metallic = mat.metallic;
+                gs.roughness = mat.roughness;
+                gs.transmission = mat.transmission;
+                gs.ior = mat.ior;
+                gs.specular = mat.specular;
+                gs.padding1 = 0;
+                gs.padding2 = 0;
+                gs.padding3 = 0;
+                gs.emission = mat.emission;
+                gs.padding4 = 0;
+                gs.absorption = mat.absorption;
+                gs.padding5 = 0;
                 spheres.push_back(gs);
             }
             else if (obj->GetType() == ObjectType::Plane)
             {
                 auto plane = static_cast<Plane*>(obj.get());
                 GPUPlane gp;
-                gp.Position = plane->GetPosition();
-                gp.Normal = plane->GetNormal();
+                gp.position = plane->GetPosition();
+                gp.normal = plane->GetNormal();
                 const Material& mat = plane->GetMaterial();
-                gp.Color = mat.color;
-                gp.Metallic = mat.metallic;
-                gp.Roughness = mat.roughness;
-                gp.Transmission = mat.transmission;
-                gp.IOR = mat.ior;
-                gp.Specular = mat.specular;
-                gp.Padding1 = 0;
-                gp.Emission = mat.emission;
-                gp.Padding2 = 0;
-                gp.Absorption = mat.absorption;
-                gp.Padding3 = 0;
+                gp.color = mat.color;
+                gp.metallic = mat.metallic;
+                gp.roughness = mat.roughness;
+                gp.transmission = mat.transmission;
+                gp.ior = mat.ior;
+                gp.specular = mat.specular;
+                gp.padding1 = 0;
+                gp.emission = mat.emission;
+                gp.padding2 = 0;
+                gp.absorption = mat.absorption;
+                gp.padding3 = 0;
                 planes.push_back(gp);
             }
             else if (obj->GetType() == ObjectType::Box)
             {
                 auto box = static_cast<Box*>(obj.get());
                 GPUBox gb;
-                gb.Center = box->GetCenter();
-                gb.Padding1 = 0;
-                gb.Size = box->GetSize();
-                gb.Padding2 = 0;
+                gb.center = box->GetCenter();
+                gb.padding1 = 0;
+                gb.size = box->GetSize();
+                gb.padding2 = 0;
                 // OBB local axes
-                gb.AxisX = box->GetAxisX();
-                gb.Padding3 = 0;
-                gb.AxisY = box->GetAxisY();
-                gb.Padding4 = 0;
-                gb.AxisZ = box->GetAxisZ();
-                gb.Padding5 = 0;
+                gb.axisX = box->GetAxisX();
+                gb.padding3 = 0;
+                gb.axisY = box->GetAxisY();
+                gb.padding4 = 0;
+                gb.axisZ = box->GetAxisZ();
+                gb.padding5 = 0;
                 const Material& mat = box->GetMaterial();
-                gb.Color = mat.color;
-                gb.Metallic = mat.metallic;
-                gb.Roughness = mat.roughness;
-                gb.Transmission = mat.transmission;
-                gb.IOR = mat.ior;
-                gb.Specular = mat.specular;
-                gb.Padding6 = 0;
-                gb.Padding7 = 0;
-                gb.Padding8 = 0;
-                gb.Emission = mat.emission;
-                gb.Padding9 = 0;
-                gb.Absorption = mat.absorption;
-                gb.Padding10 = 0;
-                
+                gb.color = mat.color;
+                gb.metallic = mat.metallic;
+                gb.roughness = mat.roughness;
+                gb.transmission = mat.transmission;
+                gb.ior = mat.ior;
+                gb.specular = mat.specular;
+                gb.padding6 = 0;
+                gb.padding7 = 0;
+                gb.padding8 = 0;
+                gb.emission = mat.emission;
+                gb.padding9 = 0;
+                gb.absorption = mat.absorption;
+                gb.padding10 = 0;
+
                 // DEBUG: Log box axes orthonormality check.
                 // Guard with GetLogEnabled() to avoid per-frame sprintf_s cost when logging is off.
                 if (RayTraceVS::DXEngine::GetLogEnabled())
                 {
                     char debugBuf[512];
-                    float lenX = sqrtf(gb.AxisX.x * gb.AxisX.x + gb.AxisX.y * gb.AxisX.y + gb.AxisX.z * gb.AxisX.z);
-                    float lenY = sqrtf(gb.AxisY.x * gb.AxisY.x + gb.AxisY.y * gb.AxisY.y + gb.AxisY.z * gb.AxisY.z);
-                    float lenZ = sqrtf(gb.AxisZ.x * gb.AxisZ.x + gb.AxisZ.y * gb.AxisZ.y + gb.AxisZ.z * gb.AxisZ.z);
-                    float dotXY = gb.AxisX.x * gb.AxisY.x + gb.AxisX.y * gb.AxisY.y + gb.AxisX.z * gb.AxisY.z;
-                    float dotXZ = gb.AxisX.x * gb.AxisZ.x + gb.AxisX.y * gb.AxisZ.y + gb.AxisX.z * gb.AxisZ.z;
-                    float dotYZ = gb.AxisY.x * gb.AxisZ.x + gb.AxisY.y * gb.AxisZ.y + gb.AxisY.z * gb.AxisZ.z;
+                    float lenX = sqrtf(gb.axisX.x * gb.axisX.x + gb.axisX.y * gb.axisX.y + gb.axisX.z * gb.axisX.z);
+                    float lenY = sqrtf(gb.axisY.x * gb.axisY.x + gb.axisY.y * gb.axisY.y + gb.axisY.z * gb.axisY.z);
+                    float lenZ = sqrtf(gb.axisZ.x * gb.axisZ.x + gb.axisZ.y * gb.axisZ.y + gb.axisZ.z * gb.axisZ.z);
+                    float dotXY = gb.axisX.x * gb.axisY.x + gb.axisX.y * gb.axisY.y + gb.axisX.z * gb.axisY.z;
+                    float dotXZ = gb.axisX.x * gb.axisZ.x + gb.axisX.y * gb.axisZ.y + gb.axisX.z * gb.axisZ.z;
+                    float dotYZ = gb.axisY.x * gb.axisZ.x + gb.axisY.y * gb.axisZ.y + gb.axisY.z * gb.axisZ.z;
                     sprintf_s(debugBuf, "BOX[%zu] Axes: lenX=%.4f, lenY=%.4f, lenZ=%.4f, dotXY=%.4f, dotXZ=%.4f, dotYZ=%.4f",
                         Boxes.size(), lenX, lenY, lenZ, dotXY, dotXZ, dotYZ);
                     LOG_INFO(debugBuf);
                     sprintf_s(debugBuf, "BOX[%zu] AxisX=(%.4f,%.4f,%.4f) AxisY=(%.4f,%.4f,%.4f) AxisZ=(%.4f,%.4f,%.4f)",
-                        Boxes.size(), gb.AxisX.x, gb.AxisX.y, gb.AxisX.z, gb.AxisY.x, gb.AxisY.y, gb.AxisY.z, gb.AxisZ.x, gb.AxisZ.y, gb.AxisZ.z);
+                        Boxes.size(), gb.axisX.x, gb.axisX.y, gb.axisX.z, gb.axisY.x, gb.axisY.y, gb.axisY.z, gb.axisZ.x, gb.axisZ.y, gb.axisZ.z);
                     LOG_INFO(debugBuf);
                     sprintf_s(debugBuf, "BOX[%zu] Material: BaseColor=(%.3f,%.3f,%.3f) Metallic=%.3f Roughness=%.3f Transmission=%.3f IOR=%.3f Specular=%.3f",
-                        Boxes.size(), gb.Color.x, gb.Color.y, gb.Color.z, gb.Metallic, gb.Roughness, gb.Transmission, gb.IOR, gb.Specular);
+                        Boxes.size(), gb.color.x, gb.color.y, gb.color.z, gb.metallic, gb.roughness, gb.transmission, gb.ior, gb.specular);
                     LOG_INFO(debugBuf);
                 }
 
@@ -934,35 +934,35 @@ namespace RayTraceVS::DXEngine
         for (const auto& light : lights)
         {
             GPULight gl;
-            gl.Position = light.GetPosition();
-            gl.Intensity = light.GetIntensity();
-            gl.Color = light.GetColor();
-            
+            gl.position = light.GetPosition();
+            gl.intensity = light.GetIntensity();
+            gl.color = light.GetColor();
+
             // Convert light type
             switch (light.GetType())
             {
                 case LightType::Directional:
-                    gl.Type = GPULightType_Directional;
+                    gl.type = GPULightType_Directional;
                     break;
                 case LightType::Point:
-                    gl.Type = GPULightType_Point;
+                    gl.type = GPULightType_Point;
                     break;
                 default:
-                    gl.Type = GPULightType_Ambient;
+                    gl.type = GPULightType_Ambient;
                     break;
             }
-            gl.Radius = light.GetRadius();
+            gl.radius = light.GetRadius();
             // Temporary clamp to avoid TDR during heavy sampling (debug isolation)
-            gl.SoftShadowSamples = (std::min)(light.GetSoftShadowSamples(), 1.0f);
-            gl.Padding = 0.0f;
+            gl.softShadowSamples = (std::min)(light.GetSoftShadowSamples(), 1.0f);
+            gl.padding = 0.0f;
             gpuLights.push_back(gl);
 
             // Update main light from first non-ambient light
-            if (gl.Type == GPULightType_Point && mappedConstantData->LightIntensity == 1.5f)
+            if (gl.type == GPULightType_Point && mappedConstantData->LightIntensity == 1.5f)
             {
-                mappedConstantData->LightPosition = gl.Position;
-                mappedConstantData->LightIntensity = gl.Intensity;
-                mappedConstantData->LightColor = gl.Color;
+                mappedConstantData->LightPosition = gl.position;
+                mappedConstantData->LightIntensity = gl.intensity;
+                mappedConstantData->LightColor = gl.color;
             }
         }
 
@@ -1007,8 +1007,8 @@ namespace RayTraceVS::DXEngine
         if (photonDebugScale > 64.0f)
             photonDebugScale = 64.0f;
         mappedConstantData->PhotonDebugScale = photonDebugScale;
-        mappedConstantData->PhotonDebugPadding[0] = 0.0f;
-        mappedConstantData->PhotonDebugPadding[1] = 0.0f;
+        mappedConstantData->PhotonDebugPadding.x = 0.0f;
+        mappedConstantData->PhotonDebugPadding.y = 0.0f;
         
         if (!causticsEnabled)
         {
@@ -1168,30 +1168,30 @@ namespace RayTraceVS::DXEngine
             for (const auto& [name, cache] : meshCaches)
             {
                 GPUMeshInfo info = {};
-                info.VertexOffset = vertexOffset;
-                info.IndexOffset = indexOffset;
-                info.VertexCount = static_cast<UINT>(cache.vertices.size() / 8);  // 8 floats per vertex
-                info.IndexCount = static_cast<UINT>(cache.indices.size());
-                
+                info.vertexOffset = vertexOffset;
+                info.indexOffset = indexOffset;
+                info.vertexCount = static_cast<UINT>(cache.vertices.size() / 8);  // 8 floats per vertex
+                info.indexCount = static_cast<UINT>(cache.indices.size());
+
                 meshTypeIndexMap[name] = static_cast<UINT>(meshInfos.size());
                 meshInfos.push_back(info);
-                
+
                 // Copy vertices (already in GPUMeshVertex format: 8 floats = 32 bytes)
                 for (size_t i = 0; i < cache.vertices.size(); i += 8)
                 {
                     GPUMeshVertex v = {};
-                    v.Position = { cache.vertices[i], cache.vertices[i + 1], cache.vertices[i + 2] };
-                    v.Padding1 = 0;
-                    v.Normal = { cache.vertices[i + 4], cache.vertices[i + 5], cache.vertices[i + 6] };
-                    v.Padding2 = 0;
+                    v.position = { cache.vertices[i], cache.vertices[i + 1], cache.vertices[i + 2] };
+                    v.padding1 = 0;
+                    v.normal = { cache.vertices[i + 4], cache.vertices[i + 5], cache.vertices[i + 6] };
+                    v.padding2 = 0;
                     allVertices.push_back(v);
                 }
-                
+
                 // Copy indices
                 allIndices.insert(allIndices.end(), cache.indices.begin(), cache.indices.end());
-                
-                vertexOffset += info.VertexCount;
-                indexOffset += info.IndexCount;
+
+                vertexOffset += info.vertexCount;
+                indexOffset += info.indexCount;
             }
             
             // Build instance info and materials
@@ -1207,24 +1207,24 @@ namespace RayTraceVS::DXEngine
                     continue;  // Skip if mesh not found
                 
                 GPUMeshInstanceInfo instInfo = {};
-                instInfo.MeshTypeIndex = it->second;
-                instInfo.MaterialIndex = static_cast<UINT>(materials.size());
+                instInfo.meshTypeIndex = it->second;
+                instInfo.materialIndex = static_cast<UINT>(materials.size());
                 instanceInfos.push_back(instInfo);
-                
+
                 GPUMeshMaterial mat = {};
-                mat.Color = inst.material.color;
-                mat.Metallic = inst.material.metallic;
-                mat.Roughness = inst.material.roughness;
-                mat.Transmission = inst.material.transmission;
-                mat.IOR = inst.material.ior;
-                mat.Specular = inst.material.specular;
-                mat.Padding1 = 0;
-                mat.Padding2 = 0;
-                mat.Emission = inst.material.emission;
-                mat.Padding3 = 0;
-                mat.Padding4 = 0;
-                mat.Absorption = inst.material.absorption;
-                mat.Padding5 = 0;
+                mat.color = inst.material.color;
+                mat.metallic = inst.material.metallic;
+                mat.roughness = inst.material.roughness;
+                mat.transmission = inst.material.transmission;
+                mat.ior = inst.material.ior;
+                mat.specular = inst.material.specular;
+                mat.padding1 = 0;
+                mat.padding2 = 0;
+                mat.emission = inst.material.emission;
+                mat.padding3 = 0;
+                mat.padding4 = 0;
+                mat.absorption = inst.material.absorption;
+                mat.padding5 = 0;
                 materials.push_back(mat);
             }
             

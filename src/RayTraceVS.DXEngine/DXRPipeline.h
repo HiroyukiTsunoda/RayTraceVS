@@ -10,6 +10,10 @@
 #include <string>
 #include <unordered_map>
 
+// GPU structures shared with HLSL (SceneConstantBuffer=SceneConstants,
+// SphereData=GPUSphere, ... see the aliases at the end of SharedTypes.h)
+#include "../Shader/SharedTypes.h"
+
 using Microsoft::WRL::ComPtr;
 using namespace DirectX;
 
@@ -21,59 +25,6 @@ namespace RayTraceVS::DXEngine
     class RenderTarget;
     class NRDDenoiser;
     class ShaderCache;
-
-    // Scene constants for compute shader
-    struct alignas(256) SceneConstants
-    {
-        XMFLOAT3 CameraPosition;
-        float CameraPadding1;
-        XMFLOAT3 CameraForward;
-        float CameraPadding2;
-        XMFLOAT3 CameraRight;
-        float CameraPadding3;
-        XMFLOAT3 CameraUp;
-        float CameraPadding4;
-        XMFLOAT3 LightPosition;
-        float LightIntensity;
-        XMFLOAT4 LightColor;
-        UINT NumSpheres;
-        UINT NumPlanes;
-        UINT NumBoxes;
-        UINT NumLights;
-        UINT ScreenWidth;
-        UINT ScreenHeight;
-        float AspectRatio;
-        float TanHalfFov;
-        UINT SamplesPerPixel;
-        UINT MaxBounces;
-        // Photon mapping parameters
-        UINT NumPhotons;            // Number of photons to emit
-        UINT PhotonMapSize;         // Current photon map size
-        float PhotonRadius;         // Search radius for gathering
-        float CausticIntensity;     // Intensity multiplier
-        UINT PhotonDebugMode;       // 0 = off, 1+ = debug visualization
-        float PhotonDebugScale;     // Debug intensity scale
-        float PhotonDebugPadding[2];
-        // DoF (Depth of Field) parameters
-        float ApertureSize;         // 0.0 = DoF disabled, larger = stronger bokeh
-        float FocusDistance;        // Distance to the focal plane
-        // Shadow parameters
-        float ShadowStrength;       // 0.0 = no shadow, 1.0 = normal, >1.0 = darker
-        float ShadowAbsorptionScale; // Beer absorption scale for colored transparent shadows
-        UINT FrameIndex;            // Frame counter for temporal noise variation
-        UINT ShadowPadding;         // Padding for 16-byte alignment
-        // Light attenuation parameters (physical-based)
-        float LightAttenuationConstant;   // Constant term (usually 1.0)
-        float LightAttenuationLinear;     // Linear term (distance proportional)
-        float LightAttenuationQuadratic;  // Quadratic term (physical: 1.0, artistic: 0.01)
-        UINT MaxShadowLights;             // Maximum lights for shadow calculation (optimization)
-        // Mesh instance count
-        UINT NumMeshInstances;      // Number of FBX mesh instances
-        UINT MeshPadding[3];        // Padding for 16-byte alignment
-        // Matrices for motion vectors (column-major for HLSL)
-        XMFLOAT4X4 ViewProjection;
-        XMFLOAT4X4 PrevViewProjection;
-    };
 
     // Photon structure for caustics (must match HLSL)
     struct alignas(16) GPUPhoton
@@ -126,124 +77,8 @@ namespace RayTraceVS::DXEngine
         float Padding[2];
     };
 
-    // ============================================
-    // AoS (Array of Structures) - Original format for Compute Shader fallback
-    // ============================================
-    
-    // GPU sphere data (with PBR material) - 80 bytes, 16-byte aligned
-    struct alignas(16) GPUSphere
-    {
-        XMFLOAT3 Center;        // 12
-        float Radius;           // 4  -> 16
-        XMFLOAT4 Color;         // 16 -> 32
-        float Metallic;         // 4
-        float Roughness;        // 4
-        float Transmission;     // 4
-        float IOR;              // 4  -> 48
-        float Specular;         // 4
-        float Padding1;         // 4
-        float Padding2;         // 4
-        float Padding3;         // 4  -> 64
-        XMFLOAT3 Emission;      // 12
-        float Padding4;         // 4  -> 80
-        XMFLOAT3 Absorption;    // 12 (sigmaA)
-        float Padding5;         // 4  -> 96
-    };
-
-    // GPU plane data (with PBR material) - 80 bytes, 16-byte aligned
-    struct alignas(16) GPUPlane
-    {
-        XMFLOAT3 Position;      // 12
-        float Metallic;         // 4  -> 16
-        XMFLOAT3 Normal;        // 12
-        float Roughness;        // 4  -> 32
-        XMFLOAT4 Color;         // 16 -> 48
-        float Transmission;     // 4
-        float IOR;              // 4
-        float Specular;         // 4
-        float Padding1;         // 4  -> 64
-        XMFLOAT3 Emission;      // 12
-        float Padding2;         // 4  -> 80
-        XMFLOAT3 Absorption;    // 12 (sigmaA)
-        float Padding3;         // 4  -> 96
-    };
-
-    // GPU box data (with PBR material and rotation) - 144 bytes, 16-byte aligned
-    // OBB (Oriented Bounding Box) support via local axes
-    struct alignas(16) GPUBox
-    {
-        XMFLOAT3 Center;        // 12
-        float Padding1;         // 4  -> 16
-        XMFLOAT3 Size;          // 12 (half-extents)
-        float Padding2;         // 4  -> 32
-        // Local axes (rotation matrix columns) - for OBB
-        XMFLOAT3 AxisX;         // 12 (local X axis in world space)
-        float Padding3;         // 4  -> 48
-        XMFLOAT3 AxisY;         // 12 (local Y axis in world space)
-        float Padding4;         // 4  -> 64
-        XMFLOAT3 AxisZ;         // 12 (local Z axis in world space)
-        float Padding5;         // 4  -> 80
-        XMFLOAT4 Color;         // 16 -> 96
-        float Metallic;         // 4
-        float Roughness;        // 4
-        float Transmission;     // 4
-        float IOR;              // 4  -> 112
-        float Specular;         // 4
-        float Padding6;         // 4
-        float Padding7;         // 4
-        float Padding8;         // 4  -> 128
-        XMFLOAT3 Emission;      // 12
-        float Padding9;         // 4  -> 144
-        XMFLOAT3 Absorption;    // 12 (sigmaA)
-        float Padding10;        // 4  -> 160
-    };
-
-    // ============================================
-    // GPU Mesh Data Structures (for FBX triangle meshes)
-    // ============================================
-
-    // GPU mesh vertex - 32 bytes (matches cache format)
-    struct alignas(16) GPUMeshVertex
-    {
-        XMFLOAT3 Position;      // 12
-        float Padding1;         // 4  -> 16
-        XMFLOAT3 Normal;        // 12
-        float Padding2;         // 4  -> 32
-    };
-
-    // GPU mesh info - 16 bytes (offset info per mesh type)
-    struct alignas(16) GPUMeshInfo
-    {
-        UINT VertexOffset;      // 4 - offset in global vertex buffer
-        UINT IndexOffset;       // 4 - offset in global index buffer
-        UINT VertexCount;       // 4 - vertex count for this mesh type
-        UINT IndexCount;        // 4 - index count for this mesh type -> 16
-    };
-
-    // GPU mesh material - 64 bytes (per instance)
-    struct alignas(16) GPUMeshMaterial
-    {
-        XMFLOAT4 Color;         // 16 -> 16
-        float Metallic;         // 4
-        float Roughness;        // 4
-        float Transmission;     // 4
-        float IOR;              // 4  -> 32
-        float Specular;         // 4
-        XMFLOAT3 Emission;      // 12 -> 48
-        float Padding1;         // 4
-        float Padding2;         // 4
-        float Padding3;         // 4
-        float Padding4;         // 4  -> 64
-        XMFLOAT3 Absorption;    // 12 (sigmaA)
-        float Padding5;         // 4  -> 80
-    };
-
-    // GPU mesh instance info - 8 bytes (maps TLAS instance to mesh/material)
-    struct GPUMeshInstanceInfo
-    {
-        UINT MeshTypeIndex;     // 4 - index into MeshInfos (which mesh type)
-        UINT MaterialIndex;     // 4 - index into MeshMaterials -> 8
-    };
+    // GPUSphere / GPUPlane / GPUBox / GPUMesh* are defined in SharedTypes.h
+    // (shared with HLSL; the GPU* names are C++ aliases).
 
     // ============================================
     // SoA (Structure of Arrays) - Optimized for DXR intersection
@@ -283,24 +118,12 @@ namespace RayTraceVS::DXEngine
         float IOR;
     };
 
-    // Light type enum (must match shader)
+    // Light type enum (must match shader; GPULight itself is in SharedTypes.h)
     enum GPULightType : UINT
     {
         GPULightType_Ambient = 0,
         GPULightType_Point = 1,
         GPULightType_Directional = 2
-    };
-
-    // GPU light data
-    struct alignas(16) GPULight
-    {
-        XMFLOAT3 Position;    // Position (Point) or Direction (Directional)
-        float Intensity;
-        XMFLOAT4 Color;
-        UINT Type;            // 0=Ambient, 1=Point, 2=Directional
-        float Radius;         // Area light radius (0 = point light, hard shadows)
-        float SoftShadowSamples; // Number of shadow samples (1-16)
-        float Padding;
     };
 
     class DXRPipeline
