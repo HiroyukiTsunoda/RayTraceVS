@@ -560,21 +560,13 @@ namespace RayTraceVS.WPF.Views
                 else
                 {
                     // 何もない場所にドロップした場合、元接続を削除（Undo可能）
-                    var originalConnection = _connectionHandler.OriginalConnection;
-                    if (originalConnection != null)
-                    {
-                        var viewModel = GetViewModel();
-                        if (viewModel != null)
-                        {
-                            viewModel.CommandManager.Execute(new RemoveConnectionCommand(viewModel, originalConnection));
-                        }
-                    }
+                    _connectionHandler.RemoveOriginalConnection(GetViewModel());
                 }
-                
+
                 // 接続ドラッグを終了（ハンドラーに委譲）
                 _connectionHandler.CancelConnectionDrag();
             }
-            
+
             // ノードドラッグ終了時の処理（ハンドラーに委譲）
             if (_nodeDragHandler.IsDragging)
             {
@@ -1066,20 +1058,12 @@ namespace RayTraceVS.WPF.Views
                 else
                 {
                     // 何もない場所にドロップした場合、元接続を削除（Undo可能）
-                    var originalConnection = _connectionHandler.OriginalConnection;
-                    if (originalConnection != null)
-                    {
-                        var viewModel = GetViewModel();
-                        if (viewModel != null)
-                        {
-                            viewModel.CommandManager.Execute(new RemoveConnectionCommand(viewModel, originalConnection));
-                        }
-                    }
+                    _connectionHandler.RemoveOriginalConnection(GetViewModel());
                 }
-                
+
                 // 接続ドラッグを終了（ハンドラーに委譲）
                 _connectionHandler.CancelConnectionDrag();
-                
+
                 NodeCanvas.ReleaseMouseCapture();
                 e.Handled = true;
                 return;
@@ -1293,186 +1277,51 @@ namespace RayTraceVS.WPF.Views
             return (nearestElement, nearestSocket);
         }
 
-        // 接続を作成
+        // 接続を作成（方向判定・型互換・コマンド発行はConnectionHandlerに委譲、UI位置更新のみ担当）
         private void CreateConnection(NodeSocket source, NodeSocket target)
         {
             var viewModel = GetViewModel();
             if (viewModel == null) return;
-            
-            // 出力→入力の接続のみ許可
-            NodeSocket? outputSocket = null;
-            NodeSocket? inputSocket = null;
-            Ellipse? outputElement = null;
-            Ellipse? inputElement = null;
-            
-            if (!source.IsInput && target.IsInput)
-            {
-                outputSocket = source;
-                inputSocket = target;
-                outputElement = draggedSocketElement;
-            }
-            else if (source.IsInput && !target.IsInput)
-            {
-                outputSocket = target;
-                inputSocket = source;
-                inputElement = draggedSocketElement;
-            }
-            else
-            {
-                return; // 無効な接続
-            }
-            
-            // 同じノード間の接続は禁止
-            if (outputSocket.ParentNode == inputSocket.ParentNode)
-            {
-                return;
-            }
-            
-            // 型チェック: ソケットの型が互換性があるか確認
-            if (!AreSocketTypesCompatible(outputSocket.SocketType, inputSocket.SocketType))
-            {
-                return;
-            }
-            
-            // ターゲットソケットの要素を見つける
-            var mousePos = _coordTransformer.GetCurrentCanvasPosition();
-            var hitElement = NodeCanvas.InputHitTest(mousePos) as DependencyObject;
-            var targetElement = FindVisualParent<Ellipse>(hitElement);
-            
-            if (outputElement == null)
-                outputElement = targetElement;
-            if (inputElement == null)
-                inputElement = targetElement;
-            
-            // ソケット位置を設定
-            if (outputElement != null)
-            {
-                outputSocket.Position = GetSocketElementPosition(outputElement);
-            }
-            
-            if (inputElement != null)
-            {
-                inputSocket.Position = GetSocketElementPosition(inputElement);
-            }
-            
-            // レイアウト更新を強制
-            NodeCanvas.UpdateLayout();
-            
-            // 両端のノードのソケット位置をUIから更新
-            if (outputSocket.ParentNode != null)
-            {
-                UpdateAllSocketPositionsForNode(outputSocket.ParentNode);
-            }
-            if (inputSocket.ParentNode != null)
-            {
-                UpdateAllSocketPositionsForNode(inputSocket.ParentNode);
-            }
-            
-            // 新しい接続を作成（ソケット位置が設定された後なので正しく描画される）
-            var connection = new NodeConnection(outputSocket, inputSocket);
-            
-            // ドラッグ開始時の元接続を取得
-            var originalConnection = _connectionHandler.OriginalConnection;
-            
-            // 既存の接続を確認（入力ソケットには1つの接続のみ）
-            // ただし、ドラッグ開始時の元接続（OriginalConnection）は除外
-            var existingConnection = viewModel.Connections.FirstOrDefault(c => 
-                c.InputSocket == inputSocket && c != originalConnection);
-            
-            if (existingConnection != null)
-            {
-                // 既存接続がある場合は置換コマンドを使用
-                viewModel.CommandManager.Execute(new ReplaceConnectionCommand(viewModel, existingConnection, connection));
-                
-                // 元接続がある場合（別のソケットへの接続）は元接続も削除
-                if (originalConnection != null)
-                {
-                    viewModel.CommandManager.Execute(new RemoveConnectionCommand(viewModel, originalConnection));
-                }
-            }
-            else if (originalConnection != null && originalConnection.InputSocket == inputSocket)
-            {
-                // ドラッグ開始時の元接続と同じ入力ソケットへの再接続の場合は置換コマンドを使用
-                viewModel.CommandManager.Execute(new ReplaceConnectionCommand(viewModel, originalConnection, connection));
-            }
-            else if (originalConnection != null)
-            {
-                // ドラッグ開始時の元接続とは異なる入力ソケットへの接続
-                // 元接続を削除し、新接続を追加
-                viewModel.CommandManager.Execute(new RemoveConnectionCommand(viewModel, originalConnection));
-                viewModel.CommandManager.Execute(new AddConnectionCommand(viewModel, connection));
-            }
-            else
-            {
-                // 新規接続
-                viewModel.CommandManager.Execute(new AddConnectionCommand(viewModel, connection));
-            }
-            
-            // 明示的に接続線を描画
-            connection.UpdatePath();
-            
-            
-            // シーンノードの場合、自動的に次のソケットを追加
-            if (inputSocket.ParentNode is Models.Nodes.SceneNode sceneNode)
-            {
-                bool socketAdded = false;
-                if (inputSocket.SocketType == SocketType.Object)
-                {
-                    // 空のオブジェクトソケットがあるかチェック
-                    bool hasEmptyObjectSocket = sceneNode.InputSockets.Any(s => 
-                        s.SocketType == SocketType.Object && 
-                        !viewModel.Connections.Any(c => c.InputSocket == s));
-                    
-                    if (!hasEmptyObjectSocket)
-                    {
-                        sceneNode.AddObjectSocket();
-                        socketAdded = true;
-                    }
-                }
-                else if (inputSocket.SocketType == SocketType.Light)
-                {
-                    // 空のライトソケットがあるかチェック
-                    bool hasEmptyLightSocket = sceneNode.InputSockets.Any(s => 
-                        s.SocketType == SocketType.Light && 
-                        !viewModel.Connections.Any(c => c.InputSocket == s));
-                    
-                    if (!hasEmptyLightSocket)
-                    {
-                        sceneNode.AddLightSocket();
-                        socketAdded = true;
-                    }
-                }
 
-                if (socketAdded)
+            _connectionHandler.CreateConnectionFromDrag(
+                source, target, viewModel,
+                prepareSocketPositions: (outputSocket, inputSocket) =>
                 {
-                    RefreshSceneNodeSocketLayout(sceneNode);
-                }
-            }
-        }
-        
-        // ソケット型の互換性をチェック
-        private bool AreSocketTypesCompatible(SocketType outputType, SocketType inputType)
-        {
-            // 基本ルール: 同じ型同士は接続可能
-            if (outputType == inputType)
-                return true;
-            
-            // 特殊ルール: Objectタイプは他のオブジェクト型と互換性がある
-            // （例: Sphere、Plane、CylinderなどをObjectとして扱う場合）
-            if (inputType == SocketType.Object)
-            {
-                // Objectソケットは様々なオブジェクト型を受け入れる
-                // ただし、基本的なデータ型（Vector3、Float、Color）やシステム型（Camera、Light、Scene）は除外
-                return outputType != SocketType.Vector3 && 
-                       outputType != SocketType.Float && 
-                       outputType != SocketType.Color &&
-                       outputType != SocketType.Camera &&
-                       outputType != SocketType.Light &&
-                       outputType != SocketType.Scene;
-            }
-            
-            // 互換性がない
-            return false;
+                    // ドラッグした側の要素は記憶済み、もう一端はマウス位置のヒットテストから取得
+                    Ellipse? outputElement = !source.IsInput ? draggedSocketElement : null;
+                    Ellipse? inputElement = source.IsInput ? draggedSocketElement : null;
+
+                    var mousePos = _coordTransformer.GetCurrentCanvasPosition();
+                    var hitElement = NodeCanvas.InputHitTest(mousePos) as DependencyObject;
+                    var targetElement = FindVisualParent<Ellipse>(hitElement);
+
+                    if (outputElement == null)
+                        outputElement = targetElement;
+                    if (inputElement == null)
+                        inputElement = targetElement;
+
+                    // ソケット位置を設定
+                    if (outputElement != null)
+                    {
+                        outputSocket.Position = GetSocketElementPosition(outputElement);
+                    }
+                    if (inputElement != null)
+                    {
+                        inputSocket.Position = GetSocketElementPosition(inputElement);
+                    }
+
+                    // レイアウト更新を強制し、両端のノードのソケット位置をUIから更新
+                    NodeCanvas.UpdateLayout();
+                    if (outputSocket.ParentNode != null)
+                    {
+                        UpdateAllSocketPositionsForNode(outputSocket.ParentNode);
+                    }
+                    if (inputSocket.ParentNode != null)
+                    {
+                        UpdateAllSocketPositionsForNode(inputSocket.ParentNode);
+                    }
+                },
+                refreshSceneNodeLayout: RefreshSceneNodeSocketLayout);
         }
 
         // ノードの接続線を更新

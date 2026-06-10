@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -139,63 +140,6 @@ namespace RayTraceVS.WPF.Views.Handlers
         }
 
         /// <summary>
-        /// 接続ドラッグを終了し、接続を作成（コマンド発行なし、レガシー用）
-        /// </summary>
-        public void EndConnectionDrag(NodeSocket? targetSocket, MainViewModel? viewModel, Action<NodeConnection>? onConnectionCreated)
-        {
-            EndConnectionDragWithCommand(targetSocket, viewModel, null, onConnectionCreated);
-        }
-        
-        /// <summary>
-        /// 接続ドラッグを終了し、接続を作成（コマンド発行あり）
-        /// </summary>
-        /// <param name="targetSocket">接続先ソケット（nullの場合は接続削除）</param>
-        /// <param name="viewModel">ViewModel</param>
-        /// <param name="commandManager">コマンドマネージャ</param>
-        /// <param name="onConnectionCreated">接続作成時のコールバック</param>
-        /// <returns>接続が作成されたかどうか</returns>
-        public bool EndConnectionDragWithCommand(
-            NodeSocket? targetSocket, 
-            MainViewModel? viewModel, 
-            CommandManager? commandManager,
-            Action<NodeConnection>? onConnectionCreated)
-        {
-            if (!_state.IsDraggingConnection)
-                return false;
-
-            bool connectionCreated = false;
-            
-            if (targetSocket != null && _state.DraggedSocket != null && viewModel != null)
-            {
-                // 接続を作成
-                var connection = TryCreateConnectionWithCommand(
-                    _state.DraggedSocket, 
-                    targetSocket, 
-                    viewModel, 
-                    commandManager);
-                    
-                if (connection != null)
-                {
-                    connectionCreated = true;
-                    onConnectionCreated?.Invoke(connection);
-                }
-            }
-            else if (_originalConnection != null && viewModel != null)
-            {
-                // 何もない場所にドロップした場合、元接続を削除
-                CommitConnectionRemoval(viewModel, commandManager);
-            }
-
-            _state.IsDraggingConnection = false;
-            _state.DraggedSocket = null;
-            _state.DraggedSocketElement = null;
-            RemovePreviewLine();
-            ClearOriginalConnectionState();
-            
-            return connectionCreated;
-        }
-
-        /// <summary>
         /// 接続ドラッグをキャンセル（元接続は維持される）
         /// </summary>
         public void CancelConnectionDrag()
@@ -207,171 +151,171 @@ namespace RayTraceVS.WPF.Views.Handlers
             // 元接続は削除していないので復元不要、情報をクリアするだけ
             ClearOriginalConnectionState();
         }
-        
+
         /// <summary>
-        /// 何もない場所にドロップした場合、元接続を削除（コマンド発行）
+        /// 何もない場所にドロップした場合、ドラッグ元の既存接続を削除（Undo可能）
         /// </summary>
-        private void CommitConnectionRemoval(MainViewModel viewModel, CommandManager? commandManager)
+        public void RemoveOriginalConnection(MainViewModel? viewModel)
         {
-            if (_originalConnection == null) return;
-            
-            if (commandManager != null)
+            if (_originalConnection != null && viewModel != null)
             {
-                // コマンドとして実行（Undo可能）
-                commandManager.Execute(new RemoveConnectionCommand(viewModel, _originalConnection));
-            }
-            else
-            {
-                // コマンドなしで削除
-                viewModel.RemoveConnection(_originalConnection);
+                viewModel.CommandManager.Execute(new RemoveConnectionCommand(viewModel, _originalConnection));
             }
         }
 
         /// <summary>
-        /// 接続を作成（ソケットの互換性チェック付き、コマンドなし）
+        /// ドラッグ終了時の接続作成。方向判定・型互換チェック・既存/元接続の置換コマンド発行・
+        /// SceneNodeの動的ソケット自動追加までを行う（旧NodeEditorView.CreateConnectionのロジック部分）。
         /// </summary>
-        private NodeConnection? TryCreateConnection(NodeSocket source, NodeSocket target, MainViewModel viewModel)
-        {
-            return TryCreateConnectionWithCommand(source, target, viewModel, null);
-        }
-        
-        /// <summary>
-        /// 接続を作成（ソケットの互換性チェック付き、コマンド発行）
-        /// </summary>
-        private NodeConnection? TryCreateConnectionWithCommand(
-            NodeSocket source, 
-            NodeSocket target, 
+        /// <param name="source">ドラッグ元ソケット</param>
+        /// <param name="target">ドロップ先ソケット</param>
+        /// <param name="viewModel">ViewModel</param>
+        /// <param name="prepareSocketPositions">接続線の初期描画位置を整えるUI処理（output, inputの順で渡る）</param>
+        /// <param name="refreshSceneNodeLayout">SceneNodeへソケットを自動追加した際のUIレイアウト更新</param>
+        /// <returns>接続が作成されたかどうか</returns>
+        public bool CreateConnectionFromDrag(
+            NodeSocket source,
+            NodeSocket target,
             MainViewModel viewModel,
-            CommandManager? commandManager)
+            Action<NodeSocket, NodeSocket> prepareSocketPositions,
+            Action<SceneNode> refreshSceneNodeLayout)
         {
-            // 同じソケットには接続不可
-            if (source == target) return null;
-
-            // 同じノードには接続不可
-            if (source.ParentNode == target.ParentNode) return null;
-
-            // 入力/出力の方向チェック
+            // 出力→入力の接続のみ許可
             NodeSocket outputSocket, inputSocket;
-            if (source.IsInput && !target.IsInput)
-            {
-                outputSocket = target;
-                inputSocket = source;
-            }
-            else if (!source.IsInput && target.IsInput)
+            if (!source.IsInput && target.IsInput)
             {
                 outputSocket = source;
                 inputSocket = target;
             }
+            else if (source.IsInput && !target.IsInput)
+            {
+                outputSocket = target;
+                inputSocket = source;
+            }
             else
             {
-                // 同じ方向同士は接続不可
-                return null;
+                return false; // 無効な接続
             }
 
-            // 型互換性チェック
+            // 同じノード間の接続は禁止
+            if (outputSocket.ParentNode == inputSocket.ParentNode)
+                return false;
+
+            // 型チェック: ソケットの型が互換性があるか確認
             if (!AreSocketsCompatible(outputSocket, inputSocket))
-                return null;
+                return false;
 
-            // 接続を作成
+            // UI側でソケット位置を確定させる（接続線が正しい位置に描画されるように）
+            prepareSocketPositions(outputSocket, inputSocket);
+
+            // 新しい接続を作成（ソケット位置が設定された後なので正しく描画される）
             var connection = new NodeConnection(outputSocket, inputSocket);
-            
-            if (commandManager != null)
-            {
-                // 元接続がある場合は置換コマンドを使用
-                if (_originalConnection != null && _originalConnection.InputSocket == inputSocket)
-                {
-                    // 元接続と同じ入力ソケットへの再接続（置換）
-                    commandManager.Execute(new ReplaceConnectionCommand(viewModel, _originalConnection, connection));
-                }
-                else if (_originalConnection != null)
-                {
-                    // 元接続とは異なる入力ソケットへの接続
-                    // 元接続を削除し、新接続を追加（別々のコマンド）
-                    commandManager.Execute(new RemoveConnectionCommand(viewModel, _originalConnection));
-                    
-                    // 入力ソケットに既存接続があれば削除
-                    var existingConnection = FindExistingInputConnection(inputSocket, viewModel);
-                    if (existingConnection != null)
-                    {
-                        commandManager.Execute(new RemoveConnectionCommand(viewModel, existingConnection));
-                    }
-                    
-                    commandManager.Execute(new AddConnectionCommand(viewModel, connection));
-                }
-                else
-                {
-                    // 新規接続
-                    // 入力ソケットに既存接続があれば削除
-                    var existingConnection = FindExistingInputConnection(inputSocket, viewModel);
-                    if (existingConnection != null)
-                    {
-                        commandManager.Execute(new RemoveConnectionCommand(viewModel, existingConnection));
-                    }
-                    
-                    commandManager.Execute(new AddConnectionCommand(viewModel, connection));
-                }
-            }
-            else
-            {
-                // コマンドなしの場合（レガシー）
-                RemoveExistingInputConnection(inputSocket, viewModel);
-                viewModel.AddConnection(connection);
-            }
 
-            return connection;
-        }
-        
-        /// <summary>
-        /// 入力ソケットの既存接続を検索
-        /// </summary>
-        private NodeConnection? FindExistingInputConnection(NodeSocket inputSocket, MainViewModel viewModel)
-        {
-            foreach (var conn in viewModel.Connections)
-            {
-                if (conn.InputSocket == inputSocket)
-                {
-                    return conn;
-                }
-            }
-            return null;
-        }
+            // ドラッグ開始時の元接続を取得
+            var originalConnection = _originalConnection;
 
-        /// <summary>
-        /// ソケットの型互換性をチェック
-        /// </summary>
-        public bool AreSocketsCompatible(NodeSocket output, NodeSocket input)
-        {
-            // 同じ型は互換性あり
-            if (output.SocketType == input.SocketType)
-                return true;
-
-            // Color ↔ Vector3 は互換性あり（RGB部分）
-            if ((output.SocketType == SocketType.Color && input.SocketType == SocketType.Vector3) ||
-                (output.SocketType == SocketType.Vector3 && input.SocketType == SocketType.Color))
-                return true;
-
-            return false;
-        }
-
-        /// <summary>
-        /// 入力ソケットの既存接続を削除
-        /// </summary>
-        private void RemoveExistingInputConnection(NodeSocket inputSocket, MainViewModel viewModel)
-        {
-            NodeConnection? existingConnection = null;
-            foreach (var conn in viewModel.Connections)
-            {
-                if (conn.InputSocket == inputSocket)
-                {
-                    existingConnection = conn;
-                    break;
-                }
-            }
+            // 既存の接続を確認（入力ソケットには1つの接続のみ）
+            // ただし、ドラッグ開始時の元接続（OriginalConnection）は除外
+            var existingConnection = viewModel.Connections.FirstOrDefault(c =>
+                c.InputSocket == inputSocket && c != originalConnection);
 
             if (existingConnection != null)
             {
-                viewModel.RemoveConnection(existingConnection);
+                // 既存接続がある場合は置換コマンドを使用
+                viewModel.CommandManager.Execute(new ReplaceConnectionCommand(viewModel, existingConnection, connection));
+
+                // 元接続がある場合（別のソケットへの接続）は元接続も削除
+                if (originalConnection != null)
+                {
+                    viewModel.CommandManager.Execute(new RemoveConnectionCommand(viewModel, originalConnection));
+                }
             }
+            else if (originalConnection != null && originalConnection.InputSocket == inputSocket)
+            {
+                // ドラッグ開始時の元接続と同じ入力ソケットへの再接続の場合は置換コマンドを使用
+                viewModel.CommandManager.Execute(new ReplaceConnectionCommand(viewModel, originalConnection, connection));
+            }
+            else if (originalConnection != null)
+            {
+                // ドラッグ開始時の元接続とは異なる入力ソケットへの接続
+                // 元接続を削除し、新接続を追加
+                viewModel.CommandManager.Execute(new RemoveConnectionCommand(viewModel, originalConnection));
+                viewModel.CommandManager.Execute(new AddConnectionCommand(viewModel, connection));
+            }
+            else
+            {
+                // 新規接続
+                viewModel.CommandManager.Execute(new AddConnectionCommand(viewModel, connection));
+            }
+
+            // 明示的に接続線を描画
+            connection.UpdatePath();
+
+            // シーンノードの場合、空きソケットがなければ自動的に次のソケットを追加
+            if (inputSocket.ParentNode is SceneNode sceneNode)
+            {
+                bool socketAdded = false;
+                if (inputSocket.SocketType == SocketType.Object)
+                {
+                    bool hasEmptyObjectSocket = sceneNode.InputSockets.Any(s =>
+                        s.SocketType == SocketType.Object &&
+                        !viewModel.Connections.Any(c => c.InputSocket == s));
+
+                    if (!hasEmptyObjectSocket)
+                    {
+                        sceneNode.AddObjectSocket();
+                        socketAdded = true;
+                    }
+                }
+                else if (inputSocket.SocketType == SocketType.Light)
+                {
+                    bool hasEmptyLightSocket = sceneNode.InputSockets.Any(s =>
+                        s.SocketType == SocketType.Light &&
+                        !viewModel.Connections.Any(c => c.InputSocket == s));
+
+                    if (!hasEmptyLightSocket)
+                    {
+                        sceneNode.AddLightSocket();
+                        socketAdded = true;
+                    }
+                }
+
+                if (socketAdded)
+                {
+                    refreshSceneNodeLayout(sceneNode);
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// ソケットの型互換性をチェック。
+        /// 実際の接続作成（CreateConnectionFromDrag）とプレビュー線の色表示の両方で使われる唯一のルール。
+        /// </summary>
+        public bool AreSocketsCompatible(NodeSocket output, NodeSocket input)
+        {
+            var outputType = output.SocketType;
+            var inputType = input.SocketType;
+
+            // 基本ルール: 同じ型同士は接続可能
+            if (outputType == inputType)
+                return true;
+
+            // 特殊ルール: Object入力ソケットは様々なオブジェクト型を受け入れる
+            // ただし、基本的なデータ型（Vector3、Float、Color）やシステム型（Camera、Light、Scene）は除外
+            if (inputType == SocketType.Object)
+            {
+                return outputType != SocketType.Vector3 &&
+                       outputType != SocketType.Float &&
+                       outputType != SocketType.Color &&
+                       outputType != SocketType.Camera &&
+                       outputType != SocketType.Light &&
+                       outputType != SocketType.Scene;
+            }
+
+            // 互換性がない
+            return false;
         }
 
         /// <summary>
