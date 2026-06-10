@@ -706,6 +706,22 @@ namespace RayTraceVS::DXEngine
         return true;
     }
 
+    // FNV-1a 64-bit hash over a byte range.
+    // Used to detect that staged GPU upload data is unchanged from the previous
+    // frame so the upload can be skipped (P-4). All GPU structs zero-initialize
+    // their padding fields, so hashing raw bytes is deterministic.
+    static uint64_t ComputeBufferChecksum(const void* data, size_t byteSize)
+    {
+        uint64_t hash = 0xcbf29ce484222325ULL; // FNV-1a 64-bit offset basis
+        const uint8_t* bytes = static_cast<const uint8_t*>(data);
+        for (size_t i = 0; i < byteSize; ++i)
+        {
+            hash ^= bytes[i];
+            hash *= 0x100000001b3ULL; // FNV-1a 64-bit prime
+        }
+        return hash;
+    }
+
     void DXRPipeline::UpdateSceneData(Scene* scene, UINT width, UINT height)
     {
         if (!scene || !mappedConstantData)
@@ -1006,10 +1022,30 @@ namespace RayTraceVS::DXEngine
         // Barriers are batched: one flush for all COPY_DEST transitions, then all
         // copies, then one flush for all SRV transitions (2 ResourceBarrier calls
         // instead of 8). Command list order still guarantees copy/barrier safety.
-        const bool uploadSpheres = !spheres.empty() && sphereUploadBuffer;
-        const bool uploadPlanes = !planes.empty() && planeUploadBuffer;
-        const bool uploadBoxes = !Boxes.empty() && boxUploadBuffer;
-        const bool uploadLights = !gpuLights.empty() && lightUploadBuffer;
+        // P-4: each upload is skipped when the staged bytes are identical to the
+        // previous upload (the GPU buffer already holds this exact content).
+        const uint64_t sphereChecksum = spheres.empty() ? 0
+            : ComputeBufferChecksum(spheres.data(), sizeof(GPUSphere) * spheres.size());
+        const uint64_t planeChecksum = planes.empty() ? 0
+            : ComputeBufferChecksum(planes.data(), sizeof(GPUPlane) * planes.size());
+        const uint64_t boxChecksum = Boxes.empty() ? 0
+            : ComputeBufferChecksum(Boxes.data(), sizeof(GPUBox) * Boxes.size());
+        const uint64_t lightChecksum = gpuLights.empty() ? 0
+            : ComputeBufferChecksum(gpuLights.data(), sizeof(GPULight) * gpuLights.size());
+
+        const bool uploadSpheres = !spheres.empty() && sphereUploadBuffer
+            && sphereChecksum != lastSphereUploadChecksum;
+        const bool uploadPlanes = !planes.empty() && planeUploadBuffer
+            && planeChecksum != lastPlaneUploadChecksum;
+        const bool uploadBoxes = !Boxes.empty() && boxUploadBuffer
+            && boxChecksum != lastBoxUploadChecksum;
+        const bool uploadLights = !gpuLights.empty() && lightUploadBuffer
+            && lightChecksum != lastLightUploadChecksum;
+
+        if (uploadSpheres) lastSphereUploadChecksum = sphereChecksum;
+        if (uploadPlanes) lastPlaneUploadChecksum = planeChecksum;
+        if (uploadBoxes) lastBoxUploadChecksum = boxChecksum;
+        if (uploadLights) lastLightUploadChecksum = lightChecksum;
 
         if (uploadSpheres) TransitionForCopy(sphereBuffer.Get());
         if (uploadPlanes) TransitionForCopy(planeBuffer.Get());
@@ -1200,18 +1236,26 @@ namespace RayTraceVS::DXEngine
             {
                 UINT64 bufferSize = sizeof(GPUMeshVertex) * allVertices.size();
                 CD3DX12_RESOURCE_DESC bufDesc = CD3DX12_RESOURCE_DESC::Buffer(bufferSize);
-                
+
+                bool recreated = false;
                 if (!meshVertexBuffer || meshVertexBuffer->GetDesc().Width < bufferSize)
                 {
                     meshVertexBuffer.Reset();
                     device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &bufDesc,
                         D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&meshVertexBuffer));
+                    recreated = true;
                 }
-                
-                void* mapped = nullptr;
-                meshVertexBuffer->Map(0, nullptr, &mapped);
-                memcpy(mapped, allVertices.data(), bufferSize);
-                meshVertexBuffer->Unmap(0, nullptr);
+
+                // P-4: skip the copy when content is unchanged (mesh geometry is static)
+                const uint64_t checksum = ComputeBufferChecksum(allVertices.data(), bufferSize);
+                if (recreated || checksum != lastMeshVertexUploadChecksum)
+                {
+                    lastMeshVertexUploadChecksum = checksum;
+                    void* mapped = nullptr;
+                    meshVertexBuffer->Map(0, nullptr, &mapped);
+                    memcpy(mapped, allVertices.data(), bufferSize);
+                    meshVertexBuffer->Unmap(0, nullptr);
+                }
             }
             
             // Index buffer (t6)
@@ -1219,18 +1263,25 @@ namespace RayTraceVS::DXEngine
             {
                 UINT64 bufferSize = sizeof(uint32_t) * allIndices.size();
                 CD3DX12_RESOURCE_DESC bufDesc = CD3DX12_RESOURCE_DESC::Buffer(bufferSize);
-                
+
+                bool recreated = false;
                 if (!meshIndexBuffer || meshIndexBuffer->GetDesc().Width < bufferSize)
                 {
                     meshIndexBuffer.Reset();
                     device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &bufDesc,
                         D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&meshIndexBuffer));
+                    recreated = true;
                 }
-                
-                void* mapped = nullptr;
-                meshIndexBuffer->Map(0, nullptr, &mapped);
-                memcpy(mapped, allIndices.data(), bufferSize);
-                meshIndexBuffer->Unmap(0, nullptr);
+
+                const uint64_t checksum = ComputeBufferChecksum(allIndices.data(), bufferSize);
+                if (recreated || checksum != lastMeshIndexUploadChecksum)
+                {
+                    lastMeshIndexUploadChecksum = checksum;
+                    void* mapped = nullptr;
+                    meshIndexBuffer->Map(0, nullptr, &mapped);
+                    memcpy(mapped, allIndices.data(), bufferSize);
+                    meshIndexBuffer->Unmap(0, nullptr);
+                }
             }
             
             // Material buffer (t7)
@@ -1238,18 +1289,25 @@ namespace RayTraceVS::DXEngine
             {
                 UINT64 bufferSize = sizeof(GPUMeshMaterial) * materials.size();
                 CD3DX12_RESOURCE_DESC bufDesc = CD3DX12_RESOURCE_DESC::Buffer(bufferSize);
-                
+
+                bool recreated = false;
                 if (!meshMaterialBuffer || meshMaterialBuffer->GetDesc().Width < bufferSize)
                 {
                     meshMaterialBuffer.Reset();
                     device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &bufDesc,
                         D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&meshMaterialBuffer));
+                    recreated = true;
                 }
-                
-                void* mapped = nullptr;
-                meshMaterialBuffer->Map(0, nullptr, &mapped);
-                memcpy(mapped, materials.data(), bufferSize);
-                meshMaterialBuffer->Unmap(0, nullptr);
+
+                const uint64_t checksum = ComputeBufferChecksum(materials.data(), bufferSize);
+                if (recreated || checksum != lastMeshMaterialUploadChecksum)
+                {
+                    lastMeshMaterialUploadChecksum = checksum;
+                    void* mapped = nullptr;
+                    meshMaterialBuffer->Map(0, nullptr, &mapped);
+                    memcpy(mapped, materials.data(), bufferSize);
+                    meshMaterialBuffer->Unmap(0, nullptr);
+                }
             }
             
             // MeshInfo buffer (t8)
@@ -1257,18 +1315,25 @@ namespace RayTraceVS::DXEngine
             {
                 UINT64 bufferSize = sizeof(GPUMeshInfo) * meshInfos.size();
                 CD3DX12_RESOURCE_DESC bufDesc = CD3DX12_RESOURCE_DESC::Buffer(bufferSize);
-                
+
+                bool recreated = false;
                 if (!meshInfoBuffer || meshInfoBuffer->GetDesc().Width < bufferSize)
                 {
                     meshInfoBuffer.Reset();
                     device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &bufDesc,
                         D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&meshInfoBuffer));
+                    recreated = true;
                 }
-                
-                void* mapped = nullptr;
-                meshInfoBuffer->Map(0, nullptr, &mapped);
-                memcpy(mapped, meshInfos.data(), bufferSize);
-                meshInfoBuffer->Unmap(0, nullptr);
+
+                const uint64_t checksum = ComputeBufferChecksum(meshInfos.data(), bufferSize);
+                if (recreated || checksum != lastMeshInfoUploadChecksum)
+                {
+                    lastMeshInfoUploadChecksum = checksum;
+                    void* mapped = nullptr;
+                    meshInfoBuffer->Map(0, nullptr, &mapped);
+                    memcpy(mapped, meshInfos.data(), bufferSize);
+                    meshInfoBuffer->Unmap(0, nullptr);
+                }
             }
             
             // Instance info buffer (t9)
@@ -1276,18 +1341,25 @@ namespace RayTraceVS::DXEngine
             {
                 UINT64 bufferSize = sizeof(GPUMeshInstanceInfo) * instanceInfos.size();
                 CD3DX12_RESOURCE_DESC bufDesc = CD3DX12_RESOURCE_DESC::Buffer(bufferSize);
-                
+
+                bool recreated = false;
                 if (!meshInstanceBuffer || meshInstanceBuffer->GetDesc().Width < bufferSize)
                 {
                     meshInstanceBuffer.Reset();
                     device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &bufDesc,
                         D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&meshInstanceBuffer));
+                    recreated = true;
                 }
-                
-                void* mapped = nullptr;
-                meshInstanceBuffer->Map(0, nullptr, &mapped);
-                memcpy(mapped, instanceInfos.data(), bufferSize);
-                meshInstanceBuffer->Unmap(0, nullptr);
+
+                const uint64_t checksum = ComputeBufferChecksum(instanceInfos.data(), bufferSize);
+                if (recreated || checksum != lastMeshInstanceUploadChecksum)
+                {
+                    lastMeshInstanceUploadChecksum = checksum;
+                    void* mapped = nullptr;
+                    meshInstanceBuffer->Map(0, nullptr, &mapped);
+                    memcpy(mapped, instanceInfos.data(), bufferSize);
+                    meshInstanceBuffer->Unmap(0, nullptr);
+                }
             }
         }
     }

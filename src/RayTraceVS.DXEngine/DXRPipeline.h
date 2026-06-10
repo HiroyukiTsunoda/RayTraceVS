@@ -532,6 +532,20 @@ namespace RayTraceVS::DXEngine
         // Scene content checksum for detecting position/transform changes
         uint64_t lastSceneChecksum = 0;
 
+        // P-4: per-buffer content checksums (FNV-1a 64-bit over the staged bytes).
+        // When a buffer's staged content is identical to the previous upload,
+        // the Map/memcpy/CopyResource (and barriers) for it are skipped.
+        // Updated only when an upload actually happens.
+        uint64_t lastSphereUploadChecksum = 0;
+        uint64_t lastPlaneUploadChecksum = 0;
+        uint64_t lastBoxUploadChecksum = 0;
+        uint64_t lastLightUploadChecksum = 0;
+        uint64_t lastMeshVertexUploadChecksum = 0;
+        uint64_t lastMeshIndexUploadChecksum = 0;
+        uint64_t lastMeshMaterialUploadChecksum = 0;
+        uint64_t lastMeshInfoUploadChecksum = 0;
+        uint64_t lastMeshInstanceUploadChecksum = 0;
+
         // Reused CPU-side staging containers for UpdateSceneData.
         // Members (instead of locals) to avoid re-allocating heap memory every frame;
         // cleared at the start of each use so the retained capacity is reused.
