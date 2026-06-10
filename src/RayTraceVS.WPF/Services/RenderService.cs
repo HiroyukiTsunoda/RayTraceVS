@@ -25,44 +25,27 @@ namespace RayTraceVS.WPF.Services
             }
         }
 
-        public void UpdateScene(
-            SphereData[] spheres,
-            PlaneData[] planes,
-            BoxData[] boxes,
-            CameraData camera,
-            LightData[] lights,
-            MeshInstanceData[]? meshInstances = null,
-            MeshCacheData[]? meshCaches = null,
-            int samplesPerPixel = 1,
-            int maxBounces = 6,
-            int traceRecursionDepth = 2,
-            float exposure = 1.0f,
-            int toneMapOperator = 2,
-            float denoiserStabilization = 1.0f,
-            float shadowStrength = 1.0f,
-            float shadowAbsorptionScale = 4.0f,
-            bool enableDenoiser = true,
-            float gamma = 1.0f,
-            int photonDebugMode = 0,
-            float photonDebugScale = 1.0f,
-            // P1 optimization settings
-            float lightAttenuationConstant = 1.0f,
-            float lightAttenuationLinear = 0.0f,
-            float lightAttenuationQuadratic = 0.01f,
-            int maxShadowLights = 2,
-            float nrdBypassDistance = 8.0f,
-            float nrdBypassBlendRange = 2.0f)
+        /// <summary>
+        /// シーン評価結果をエンジンに反映する。
+        /// 新しいレンダリングパラメータの追加時は SceneEvaluationResult にプロパティを足し、
+        /// ここで EngineWrapper へ渡すだけでよい。
+        /// </summary>
+        public void UpdateScene(SceneEvaluationResult scene)
         {
             if (!isInitialized || engineWrapper == null)
                 return;
 
             try
             {
-                engineWrapper.UpdateScene(spheres, planes, boxes, camera, lights, 
-                    meshInstances ?? Array.Empty<MeshInstanceData>(), 
-                    meshCaches ?? Array.Empty<MeshCacheData>(),
-                    samplesPerPixel, maxBounces, traceRecursionDepth, exposure, toneMapOperator, denoiserStabilization, shadowStrength, shadowAbsorptionScale, enableDenoiser, gamma, photonDebugMode, photonDebugScale,
-                    lightAttenuationConstant, lightAttenuationLinear, lightAttenuationQuadratic, maxShadowLights, nrdBypassDistance, nrdBypassBlendRange);
+                engineWrapper.UpdateScene(scene.Spheres, scene.Planes, scene.Boxes, scene.Camera, scene.Lights,
+                    scene.MeshInstances, scene.MeshCaches,
+                    scene.SamplesPerPixel, scene.MaxBounces, scene.TraceRecursionDepth,
+                    scene.Exposure, scene.ToneMapOperator,
+                    scene.DenoiserStabilization, scene.ShadowStrength, scene.ShadowAbsorptionScale,
+                    scene.EnableDenoiser, scene.Gamma,
+                    scene.PhotonDebugMode, scene.PhotonDebugScale,
+                    scene.LightAttenuationConstant, scene.LightAttenuationLinear, scene.LightAttenuationQuadratic,
+                    scene.MaxShadowLights, scene.NRDBypassDistance, scene.NRDBypassBlendRange);
             }
             catch (Exception ex)
             {
