@@ -115,7 +115,8 @@ namespace RayTraceVS::DXEngine
         // Mesh support
         void AddMeshCache(const MeshCacheEntry& cache);
         void AddMeshInstance(const MeshInstance& instance);
-        
+        bool HasMeshCache(const std::string& name) const { return meshCaches.find(name) != meshCaches.end(); }
+
         const std::unordered_map<std::string, MeshCacheEntry>& GetMeshCaches() const { return meshCaches; }
         const std::vector<MeshInstance>& GetMeshInstances() const { return meshInstances; }
         size_t GetMeshInstanceCount() const { return meshInstances.size(); }

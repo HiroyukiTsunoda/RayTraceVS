@@ -35,7 +35,11 @@ namespace RayTraceVS::DXEngine
     {
         objects.clear();
         lights.clear();
-        meshCaches.clear();
+        // meshCaches is intentionally NOT cleared: mesh geometry is immutable at
+        // runtime (loaded once from the FBX cache, identified by name) and is
+        // re-added on every UpdateScene. Keeping it avoids re-copying the large
+        // vertex/index arrays each frame. Unused entries persist until app exit,
+        // which only costs a little memory.
         meshInstances.clear();
     }
 }

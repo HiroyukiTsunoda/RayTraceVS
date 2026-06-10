@@ -176,6 +176,12 @@ namespace RayTraceVS::Interop::Bridge
 
     void AddMeshCache(RayTraceVS::DXEngine::Scene* scene, const MeshCacheDataNative& meshCache)
     {
+        // Mesh geometry is immutable at runtime and identified by name, so skip
+        // the expensive vertex/index copies if this mesh is already cached
+        // (Scene::Clear keeps the cache across UpdateScene calls).
+        if (meshCache.name && scene->HasMeshCache(meshCache.name))
+            return;
+
         RayTraceVS::DXEngine::MeshCacheEntry entry;
         entry.name = meshCache.name ? meshCache.name : "";
         
