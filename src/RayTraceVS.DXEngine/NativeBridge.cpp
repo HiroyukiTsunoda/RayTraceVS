@@ -402,7 +402,8 @@ namespace RayTraceVS::Interop::Bridge
             ID3D12CommandList* commandLists[] = { commandList };
             commandQueue->ExecuteCommandLists(1, commandLists);
             
-            OutputDebugStringA("ExecuteCommandList: Success\n");
+            if (RayTraceVS::DXEngine::GetLogEnabled())
+                OutputDebugStringA("ExecuteCommandList: Success\n");
         }
         catch (const std::exception& ex)
         {
@@ -427,7 +428,8 @@ namespace RayTraceVS::Interop::Bridge
             }
             
             context->WaitForGPU();
-            OutputDebugStringA("WaitForGPU: Success\n");
+            if (RayTraceVS::DXEngine::GetLogEnabled())
+                OutputDebugStringA("WaitForGPU: Success\n");
         }
         catch (const std::exception& ex)
         {
