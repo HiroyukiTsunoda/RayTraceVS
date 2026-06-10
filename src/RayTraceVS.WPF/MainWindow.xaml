@@ -6,7 +6,7 @@
         xmlns:local="clr-namespace:RayTraceVS.WPF"
         xmlns:views="clr-namespace:RayTraceVS.WPF.Views"
         mc:Ignorable="d"
-        Title="RayTraceVS - DirectX12 DXR Visual Raytracing" 
+        Title="{Binding WindowTitle}"
         Height="900" Width="1600"
         MinWidth="800" MinHeight="600"
         ResizeMode="CanResizeWithGrip"

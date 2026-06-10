@@ -8,6 +8,7 @@ using System.Diagnostics;
 using System.Linq;
 using RayTraceVS.WPF.Commands;
 using RayTraceVS.WPF.Models;
+using RayTraceVS.WPF.Services;
 
 namespace RayTraceVS.WPF.ViewModels
 {
@@ -66,11 +67,116 @@ namespace RayTraceVS.WPF.ViewModels
             nodeGraph = new NodeGraph();
             nodes = new ObservableCollection<Node>();
             connections = new ObservableCollection<NodeConnection>();
-            
+
             // コレクション変更時にビューを更新
             connections.CollectionChanged += OnConnectionsCollectionChanged;
             nodes.CollectionChanged += OnNodesCollectionChanged;
+
+            // シーンの変更を監視して未保存フラグを更新
+            nodes.CollectionChanged += (s, e) => MarkSceneDirty();
+            connections.CollectionChanged += (s, e) => MarkSceneDirty();
+            nodeGraph.SceneChanged += (s, e) => MarkSceneDirty();
         }
+
+        #region シーンファイル状態管理
+
+        /// <summary>
+        /// 現在開いているシーンファイルのパス（新規シーンはnull）
+        /// </summary>
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(WindowTitle))]
+        private string? currentFilePath;
+
+        /// <summary>
+        /// 未保存の変更があるかどうか
+        /// </summary>
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(WindowTitle))]
+        private bool hasUnsavedChanges;
+
+        /// <summary>
+        /// ウィンドウタイトル（ファイル名＋未保存マーク）
+        /// </summary>
+        public string WindowTitle
+        {
+            get
+            {
+                string baseName = "RayTraceVS";
+                string fileName = string.IsNullOrEmpty(CurrentFilePath)
+                    ? "新規シーン"
+                    : System.IO.Path.GetFileName(CurrentFilePath);
+                return HasUnsavedChanges ? $"{baseName}* - {fileName}" : $"{baseName} - {fileName}";
+            }
+        }
+
+        private void MarkSceneDirty()
+        {
+            if (!HasUnsavedChanges)
+            {
+                HasUnsavedChanges = true;
+            }
+        }
+
+        /// <summary>
+        /// シーンファイルを読み込み、現在のグラフを置き換える。
+        /// ViewportStateの画面反映はView側の責務（ノード追加前に適用する必要があるためコールバックで渡す）。
+        /// </summary>
+        /// <param name="filePath">読み込むシーンファイル</param>
+        /// <param name="applyViewportStateBeforeNodes">ノード追加前にViewportStateをUIへ適用する処理（初期描画のズレ防止）</param>
+        /// <returns>読み込んだViewportStateと、キャッシュ欠落で除外されたノードの情報</returns>
+        public (ViewportState? ViewportState, List<string> RemovedNodeInfos) LoadScene(
+            string filePath, Action<ViewportState?> applyViewportStateBeforeNodes)
+        {
+            var sceneService = new SceneFileService();
+            var (loadedNodes, loadedConnections, viewportState) = sceneService.LoadScene(filePath);
+
+            Nodes.Clear();
+            Connections.Clear();
+
+            // ビューポートの状態を先に設定（ノード追加前に設定することで初期描画のズレを防ぐ）
+            applyViewportStateBeforeNodes(viewportState);
+
+            foreach (var node in loadedNodes)
+                AddNode(node);
+            foreach (var connection in loadedConnections)
+                AddConnection(connection);
+
+            CurrentFilePath = filePath;
+            HasUnsavedChanges = false;
+
+            // Undo/Redo履歴をクリア
+            CommandManager.Clear();
+
+            return (viewportState, sceneService.RemovedNodeInfos);
+        }
+
+        /// <summary>
+        /// シーンをファイルに保存する。ViewportState（パン/ズーム/パネル開閉等）はView側で構築して渡す。
+        /// </summary>
+        public void SaveScene(string filePath, ViewportState viewportState)
+        {
+            var sceneService = new SceneFileService();
+            sceneService.SaveScene(filePath, Nodes, Connections, viewportState);
+
+            CurrentFilePath = filePath;
+            HasUnsavedChanges = false;
+        }
+
+        /// <summary>
+        /// シーンを新規作成する（全ノード/接続のクリアと状態リセット）
+        /// </summary>
+        public void NewScene()
+        {
+            Nodes.Clear();
+            Connections.Clear();
+            CurrentFilePath = null;
+            HasUnsavedChanges = false;
+
+            // Undo/Redo履歴をクリア
+            CommandManager.Clear();
+        }
+
+        #endregion
         
         /// <summary>
         /// ノードコレクションが変更されたとき

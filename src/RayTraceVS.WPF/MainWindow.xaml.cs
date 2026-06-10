@@ -15,12 +15,10 @@ namespace RayTraceVS.WPF
     {
         private MainViewModel? viewModel;
         private RenderWindow? renderWindow;
-        private string? currentFilePath;
         private SettingsService settingsService;
-        private bool hasUnsavedChanges;
         private bool isRendering = false;
         private bool isSavingScreenshot = false;
-        
+
         // レンダリング解像度（デフォルトは1920x1080）
         private int renderWidth = 1920;
         private int renderHeight = 1080;
@@ -30,66 +28,24 @@ namespace RayTraceVS.WPF
             InitializeComponent();
             viewModel = new MainViewModel();
             DataContext = viewModel;
-            
+
             settingsService = new SettingsService();
-            
-            // ノードと接続の変更を監視
-            viewModel.Nodes.CollectionChanged += OnSceneChanged;
-            viewModel.Connections.CollectionChanged += OnSceneChanged;
-            
-            // ノードのプロパティ変更（パラメーター変更）を監視
-            viewModel.NodeGraph.SceneChanged += OnNodeGraphSceneChanged;
-            
+
             // ウィンドウの位置とサイズを復元
             RestoreWindowBounds();
-            
+
             // 起動時に前回開いていたファイルを読み込む
             LoadLastScene();
-            
+
             // シーンが読み込まれたら自動的にレンダリングを開始
             this.Loaded += MainWindow_Loaded;
-            
+
             // ウィンドウが閉じる際に設定を保存
             this.Closing += MainWindow_Closing;
 
             // グローバルなキー入力を最優先で捕捉
             System.Windows.Input.InputManager.Current.PreProcessInput += OnPreProcessInput;
             this.Closed += MainWindow_Closed;
-        }
-        
-        private void OnSceneChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
-        {
-            if (!hasUnsavedChanges)
-            {
-                hasUnsavedChanges = true;
-                UpdateTitle();
-            }
-        }
-        
-        private void OnNodeGraphSceneChanged(object? sender, EventArgs e)
-        {
-            if (!hasUnsavedChanges)
-            {
-                hasUnsavedChanges = true;
-                UpdateTitle();
-            }
-        }
-        
-        private void UpdateTitle()
-        {
-            string baseName = "RayTraceVS";
-            string fileName = string.IsNullOrEmpty(currentFilePath) 
-                ? "新規シーン" 
-                : System.IO.Path.GetFileName(currentFilePath);
-            
-            if (hasUnsavedChanges)
-            {
-                Title = $"{baseName}* - {fileName}";
-            }
-            else
-            {
-                Title = $"{baseName} - {fileName}";
-            }
         }
         
         private void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -131,9 +87,9 @@ namespace RayTraceVS.WPF
             SaveWindowBounds();
 
             // 現在のファイルパスを保存
-            if (!string.IsNullOrEmpty(currentFilePath))
+            if (!string.IsNullOrEmpty(viewModel?.CurrentFilePath))
             {
-                settingsService.LastOpenedFilePath = currentFilePath;
+                settingsService.LastOpenedFilePath = viewModel.CurrentFilePath;
             }
         }
 
@@ -428,55 +384,37 @@ namespace RayTraceVS.WPF
         {
             if (viewModel != null)
             {
-                var sceneService = new SceneFileService();
-                var (nodes, connections, viewportState) = sceneService.LoadScene(filePath);
-                
-                viewModel.Nodes.Clear();
-                viewModel.Connections.Clear();
-                
-                // ビューポートの状態を先に設定（ノード追加前に設定することで初期描画のズレを防ぐ）
-                NodeEditor.SetViewportState(viewportState);
-                
-                foreach (var node in nodes)
-                    viewModel.AddNode(node);
-                
-                foreach (var connection in connections)
-                    viewModel.AddConnection(connection);
-                
-                currentFilePath = filePath;
-                hasUnsavedChanges = false;
-                UpdateTitle();
-                
-                // Undo/Redo履歴をクリア
-                viewModel.CommandManager.Clear();
-                
+                // シーンデータの読み込み・置き換えはViewModelに委譲し、UI反映のみここで行う
+                var (viewportState, removedNodeInfos) = viewModel.LoadScene(filePath,
+                    applyViewportStateBeforeNodes: state => NodeEditor.SetViewportState(state));
+
                 // パネルの開閉状態を復元（シーンファイルから）
                 if (viewportState != null)
                 {
                     SetPanelVisibility(viewportState.IsLeftPanelVisible, viewportState.IsRightPanelVisible);
-                    
+
                     // Expanderの開閉状態を復元
                     ComponentPalette.SetExpanderStates(viewportState.ExpanderStates);
-                    
+
                     // レンダリング解像度を復元
                     renderWidth = viewportState.RenderWidth;
                     renderHeight = viewportState.RenderHeight;
                     SetResolutionComboBox(renderWidth, renderHeight);
                 }
-                
+
                 // UIのレンダリング完了後に接続線を更新
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
                     NodeEditor.RefreshConnectionLines();
                 }), System.Windows.Threading.DispatcherPriority.Loaded);
-                
+
                 // キャッシュにないFBXノードが除外された場合は警告を表示
-                if (sceneService.RemovedNodeInfos.Count > 0)
+                if (removedNodeInfos.Count > 0)
                 {
                     var message = "以下のノードはキャッシュにメッシュデータがないため除外されました：\n\n" +
-                                  string.Join("\n", sceneService.RemovedNodeInfos) +
+                                  string.Join("\n", removedNodeInfos) +
                                   "\n\nResource/Modelフォルダに対応するFBXファイルを配置して再起動してください。";
-                    
+
                     MessageBox.Show(message, "警告：ノードが除外されました",
                                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
@@ -492,26 +430,19 @@ namespace RayTraceVS.WPF
                 if (viewModel.Nodes.Count > 0)
                 {
                     var result = MessageBox.Show(
-                        "現在のシーンを破棄して新規作成しますか？\n\n未保存の変更は失われます。", 
-                        "新規シーン作成", 
-                        MessageBoxButton.YesNo, 
+                        "現在のシーンを破棄して新規作成しますか？\n\n未保存の変更は失われます。",
+                        "新規シーン作成",
+                        MessageBoxButton.YesNo,
                         MessageBoxImage.Warning);
-                    
+
                     if (result != MessageBoxResult.Yes)
                     {
                         return;
                     }
                 }
-                
-                viewModel.Nodes.Clear();
-                viewModel.Connections.Clear();
-                currentFilePath = null;
-                hasUnsavedChanges = false;
-                UpdateTitle();
-                
-                // Undo/Redo履歴をクリア
-                viewModel.CommandManager.Clear();
-                
+
+                viewModel.NewScene();
+
                 // 新規作成時は設定をクリア
                 settingsService.LastOpenedFilePath = null;
             }
@@ -532,9 +463,9 @@ namespace RayTraceVS.WPF
                 try
                 {
                     LoadSceneFromFile(dialog.FileName);
-                    
+
                     // 設定を更新
-                    settingsService.LastOpenedFilePath = currentFilePath;
+                    settingsService.LastOpenedFilePath = viewModel?.CurrentFilePath;
                     
                     var fileName = System.IO.Path.GetFileName(dialog.FileName);
                     var nodeCount = viewModel?.Nodes.Count ?? 0;
@@ -558,13 +489,13 @@ namespace RayTraceVS.WPF
         private void SaveScene_Click(object sender, RoutedEventArgs e)
         {
             // シーン保存
-            if (string.IsNullOrEmpty(currentFilePath))
+            if (string.IsNullOrEmpty(viewModel?.CurrentFilePath))
             {
                 SaveSceneAs_Click(sender, e);
                 return;
             }
 
-            SaveSceneToFile(currentFilePath);
+            SaveSceneToFile(viewModel.CurrentFilePath);
         }
 
         private void SaveSceneAs_Click(object sender, RoutedEventArgs e)
@@ -574,19 +505,18 @@ namespace RayTraceVS.WPF
             {
                 Filter = "RayTraceVSシーン|*.rtvs|すべてのファイル|*.*",
                 DefaultExt = "rtvs",
-                FileName = string.IsNullOrEmpty(currentFilePath) 
-                    ? "scene" 
-                    : System.IO.Path.GetFileNameWithoutExtension(currentFilePath),
+                FileName = string.IsNullOrEmpty(viewModel?.CurrentFilePath)
+                    ? "scene"
+                    : System.IO.Path.GetFileNameWithoutExtension(viewModel.CurrentFilePath),
                 Title = "名前を付けて保存"
             };
 
             if (dialog.ShowDialog() == true)
             {
-                currentFilePath = dialog.FileName;
                 SaveSceneToFile(dialog.FileName);
-                
+
                 // 設定を更新
-                settingsService.LastOpenedFilePath = currentFilePath;
+                settingsService.LastOpenedFilePath = viewModel?.CurrentFilePath;
             }
         }
 
@@ -596,32 +526,29 @@ namespace RayTraceVS.WPF
             {
                 if (viewModel != null)
                 {
-                    var sceneService = new SceneFileService();
+                    // ViewportState（UI状態）の構築はViewの責務
                     var viewportState = NodeEditor.GetViewportState();
-                    
+
                     // パネルの開閉状態も保存（シーンファイルに）
                     viewportState.IsLeftPanelVisible = LeftPanelBorder.Visibility == Visibility.Visible;
                     viewportState.IsRightPanelVisible = RightPanelBorder.Visibility == Visibility.Visible;
-                    
+
                     // Expanderの開閉状態も保存
                     viewportState.ExpanderStates = ComponentPalette.GetExpanderStates();
-                    
+
                     // レンダリング解像度も保存
                     viewportState.RenderWidth = renderWidth;
                     viewportState.RenderHeight = renderHeight;
-                    
-                    sceneService.SaveScene(filePath, viewModel.Nodes, viewModel.Connections, viewportState);
-                    
-                    // 保存成功：未保存フラグをリセットしてタイトル更新
-                    hasUnsavedChanges = false;
-                    UpdateTitle();
+
+                    // 保存処理と状態更新（CurrentFilePath/HasUnsavedChanges）はViewModelに委譲
+                    viewModel.SaveScene(filePath, viewportState);
                 }
             }
             catch (System.Exception ex)
             {
-                MessageBox.Show($"シーンの保存に失敗しました：\n\n{ex.Message}", 
-                              "エラー", 
-                              MessageBoxButton.OK, 
+                MessageBox.Show($"シーンの保存に失敗しました：\n\n{ex.Message}",
+                              "エラー",
+                              MessageBoxButton.OK,
                               MessageBoxImage.Error);
             }
         }
@@ -699,10 +626,9 @@ namespace RayTraceVS.WPF
                         
                         // レンダリング中の場合は既存のウィンドウを閉じて再起動が必要
                         // （ここでは変更をマークするだけ）
-                        if (!hasUnsavedChanges)
+                        if (viewModel != null)
                         {
-                            hasUnsavedChanges = true;
-                            UpdateTitle();
+                            viewModel.HasUnsavedChanges = true;
                         }
                     }
                 }
@@ -893,8 +819,9 @@ namespace RayTraceVS.WPF
                     }
 
                     // ステータスバーかタイトルで通知（MessageBoxは使わない）
+                    // 注: ローカル値の設定でWindowTitleバインディングが外れるため、戻すときに再設定する
                     Title = $"RayTraceVS - 保存完了: {fileName}";
-                    
+
                     // 3秒後にタイトルを戻す
                     var timer = new System.Windows.Threading.DispatcherTimer
                     {
@@ -903,7 +830,7 @@ namespace RayTraceVS.WPF
                     timer.Tick += (s, e) =>
                     {
                         timer.Stop();
-                        UpdateTitle();
+                        SetBinding(TitleProperty, new System.Windows.Data.Binding(nameof(MainViewModel.WindowTitle)));
                     };
                     timer.Start();
                 }
