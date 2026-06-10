@@ -407,7 +407,7 @@ namespace RayTraceVS.WPF
                 // 前回のファイルがない場合は、サンプルシーンを読み込む
                 else
                 {
-                    var sampleScenePath = @"c:\git\RayTraceVS\sample_scene.rtvs";
+                    var sampleScenePath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "sample_scene.rtvs");
                     if (System.IO.File.Exists(sampleScenePath))
                     {
                         LoadSceneFromFile(sampleScenePath);
