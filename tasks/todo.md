@@ -197,7 +197,7 @@ Releaseビルドの前後比較は全コミット後に git checkout で実施�
 - [x] Step 0: ベースライン再生成（.cso世代差で旧ベースラインNG→現状コードで再生成、決定性確認OK、resaveベースラインは有効のまま）
 - [x] Step 1 [C#]: NodeRegistryメタデータ化＋パレット自動生成（XAML静的ボタン15個＋個別ハンドラ→動的生成＋共通ハンドラ1個）→ 2a85609
 - [x] Step 2 [C#]: SceneEvaluatorのisチェーン解消（SceneCollector＋ディスパッチテーブル、2経路統一）。フォールバック経路の手動構築（Evaluateの劣化コピー: スケール無視・Direction非正規化等）を廃止しEvaluate結果に統一。SceneNodeなしテストシーンでも旧新ピクセル完全一致を確認
-- [ ] Step 3 [C#]: データフロー簡素化（SceneParams廃止、RenderService.UpdateScene 1引数化）
+- [x] Step 3 [C#]: データフロー簡素化（SceneParams廃止、RenderService.UpdateScene 1引数化、SceneEvaluationResultに既定値＋PhotonDebug設定を集約）
 
 ## マイルストーン2: Interop境界とC++エンジン
 - [ ] Step 4 [Interop/C++]: RenderSettings構造体化（UpdateScene 24→8パラメータ）＋SanitizeMaterial共通化

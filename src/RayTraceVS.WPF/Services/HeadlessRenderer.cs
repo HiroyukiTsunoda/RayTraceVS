@@ -140,6 +140,7 @@ namespace RayTraceVS.WPF.Services
                 }
 
                 // 5) シーン評価（ノードグラフ → エンジンへ渡すパラメータ）
+                //    PhotonDebugMode/Scale は既定値（0, 1.0f）＝デバッグ表示なし
                 var evaluator = new SceneEvaluator();
                 var ev = evaluator.EvaluateScene(viewModel.NodeGraph);
 
@@ -150,16 +151,7 @@ namespace RayTraceVS.WPF.Services
                 var sw = System.Diagnostics.Stopwatch.StartNew();
                 for (int i = 0; i < Passes; i++)
                 {
-                    renderService.UpdateScene(
-                        ev.Spheres, ev.Planes, ev.Boxes, ev.Camera, ev.Lights,
-                        ev.MeshInstances, ev.MeshCaches,
-                        ev.SamplesPerPixel, ev.MaxBounces, ev.TraceRecursionDepth,
-                        ev.Exposure, ev.ToneMapOperator,
-                        ev.DenoiserStabilization, ev.ShadowStrength, ev.ShadowAbsorptionScale,
-                        ev.EnableDenoiser, ev.Gamma,
-                        0, 1.0f, // photonDebugMode, photonDebugScale（デバッグ表示なし）
-                        ev.LightAttenuationConstant, ev.LightAttenuationLinear, ev.LightAttenuationQuadratic,
-                        ev.MaxShadowLights, ev.NRDBypassDistance, ev.NRDBypassBlendRange);
+                    renderService.UpdateScene(ev);
                     renderService.Render();
                 }
                 sw.Stop();

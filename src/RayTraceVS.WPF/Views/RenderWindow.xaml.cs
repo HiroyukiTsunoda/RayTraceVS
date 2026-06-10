@@ -12,37 +12,6 @@ using RayTraceVS.Interop;
 
 namespace RayTraceVS.WPF.Views
 {
-    /// <summary>
-    /// シーンパラメーターを保持するレコード（非同期レンダリング用）
-    /// </summary>
-    internal record SceneParams(
-        SphereData[] Spheres,
-        PlaneData[] Planes,
-        BoxData[] Boxes,
-        CameraData Camera,
-        LightData[] Lights,
-        MeshInstanceData[] MeshInstances,
-        MeshCacheData[] MeshCaches,
-        int SamplesPerPixel,
-        int MaxBounces,
-        int TraceRecursionDepth,
-        float Exposure,
-        int ToneMapOperator,
-        float DenoiserStabilization,
-        float ShadowStrength,
-        float ShadowAbsorptionScale,
-        bool EnableDenoiser,
-        float Gamma,
-        int PhotonDebugMode,
-        float PhotonDebugScale,
-        // P1 optimization settings
-        float LightAttenuationConstant,
-        float LightAttenuationLinear,
-        float LightAttenuationQuadratic,
-        int MaxShadowLights,
-        float NRDBypassDistance,
-        float NRDBypassBlendRange);
-
     public partial class RenderWindow : Window
     {
         private RenderService? renderService;
@@ -58,7 +27,7 @@ namespace RayTraceVS.WPF.Views
         
         // 非同期レンダリング用フィールド
         private bool _isRenderingInProgress = false;
-        private SceneParams? _pendingSceneParams = null;
+        private SceneEvaluationResult? _pendingSceneParams = null;
         private readonly object _renderLock = new object();
         
         // レンダリング時間計測用
@@ -120,7 +89,7 @@ namespace RayTraceVS.WPF.Views
                 return;
 
             // UIスレッドでシーン評価（パラメーター取得）を1回だけ実行
-            var sceneParams = BuildSceneParams();
+            var sceneParams = BuildSceneResult();
 
             lock (_renderLock)
             {
@@ -298,7 +267,7 @@ namespace RayTraceVS.WPF.Views
             UpdateInfo();
 
             // 初回レンダリング：シーン評価してパラメーター取得
-            var sceneParams = BuildSceneParams();
+            var sceneParams = BuildSceneResult();
 
             lock (_renderLock)
             {
@@ -322,13 +291,13 @@ namespace RayTraceVS.WPF.Views
         /// 指定されたパラメーターで非同期にレンダリングを実行する
         /// キューに保留中のパラメーターがあれば、完了後に再度レンダリングを実行する
         /// </summary>
-        private async Task RenderWithParamsAsync(SceneParams sceneParams)
+        private async Task RenderWithParamsAsync(SceneEvaluationResult sceneParams)
         {
             while (true)
             {
                 byte[]? finalPixelData = null;
                 double renderTimeMs = 0;
-                
+
                 try
                 {
                     // バックグラウンドスレッドで複数パスレンダリング
@@ -341,18 +310,8 @@ namespace RayTraceVS.WPF.Views
                                 return null;
 
                             // 同じパラメーターでシーン更新＆レンダリング
-                            renderService.UpdateScene(
-                                sceneParams.Spheres, sceneParams.Planes, sceneParams.Boxes,
-                                sceneParams.Camera, sceneParams.Lights,
-                                sceneParams.MeshInstances, sceneParams.MeshCaches,
-                                sceneParams.SamplesPerPixel, sceneParams.MaxBounces, sceneParams.TraceRecursionDepth,
-                                sceneParams.Exposure, sceneParams.ToneMapOperator,
-                                sceneParams.DenoiserStabilization, sceneParams.ShadowStrength, sceneParams.ShadowAbsorptionScale,
-                                sceneParams.EnableDenoiser, sceneParams.Gamma,
-                                sceneParams.PhotonDebugMode, sceneParams.PhotonDebugScale,
-                                sceneParams.LightAttenuationConstant, sceneParams.LightAttenuationLinear, sceneParams.LightAttenuationQuadratic,
-                                sceneParams.MaxShadowLights, sceneParams.NRDBypassDistance, sceneParams.NRDBypassBlendRange);
-                            
+                            renderService.UpdateScene(sceneParams);
+
                             // 空シーンはGPUを使わずスカイ色で即時更新
                             bool emptyScene = (sceneParams.Spheres.Length == 0 &&
                                                sceneParams.Planes.Length == 0 &&
@@ -551,17 +510,24 @@ namespace RayTraceVS.WPF.Views
                 };
                 
                 // ダミーシーンでレンダリング実行（シェーダーコンパイルを発生させる）
-                renderService.UpdateScene(
-                    new[] { dummySphere },
-                    Array.Empty<PlaneData>(),
-                    Array.Empty<BoxData>(),
-                    dummyCamera,
-                    new[] { dummyLight },
-                    Array.Empty<MeshInstanceData>(),
-                    Array.Empty<MeshCacheData>(),
-                    1, 1, 1,  // samplesPerPixel, maxBounces, traceRecursionDepth
-                    1.0f, 0, 1.0f, 1.0f, 1.0f, false, 1.0f, 0, 1.0f);  // 最小設定
-                
+                // 値は旧UpdateScene呼び出しの最小設定と同一（未指定はSceneEvaluationResultの既定値）
+                renderService.UpdateScene(new SceneEvaluationResult
+                {
+                    Spheres = new[] { dummySphere },
+                    Camera = dummyCamera,
+                    Lights = new[] { dummyLight },
+                    SamplesPerPixel = 1,
+                    MaxBounces = 1,
+                    TraceRecursionDepth = 1,
+                    Exposure = 1.0f,
+                    ToneMapOperator = 0,
+                    DenoiserStabilization = 1.0f,
+                    ShadowStrength = 1.0f,
+                    ShadowAbsorptionScale = 1.0f,
+                    EnableDenoiser = false,
+                    Gamma = 1.0f
+                });
+
                 renderService.Render();
                 
                 Debug.WriteLine("Warmup render completed - shaders compiled");
@@ -641,7 +607,7 @@ namespace RayTraceVS.WPF.Views
             if (!isRendering || renderService == null || nodeGraph == null || sceneEvaluator == null)
                 return;
 
-            var sceneParams = BuildSceneParams();
+            var sceneParams = BuildSceneResult();
 
             lock (_renderLock)
             {
@@ -658,22 +624,15 @@ namespace RayTraceVS.WPF.Views
         }
 
         /// <summary>
-        /// 現在のノードグラフを評価し、レンダリング用パラメータ(SceneParams)を構築する。
-        /// 評価結果(SceneEvaluationResult)に、その時点のフォトンデバッグ設定を加える。
+        /// 現在のノードグラフを評価し、その時点のフォトンデバッグ設定を加えた
+        /// レンダリング用パラメータ(SceneEvaluationResult)を構築する。
         /// </summary>
-        private SceneParams BuildSceneParams()
+        private SceneEvaluationResult BuildSceneResult()
         {
-            var ev = sceneEvaluator!.EvaluateScene(nodeGraph!);
-            return new SceneParams(
-                ev.Spheres, ev.Planes, ev.Boxes, ev.Camera, ev.Lights,
-                ev.MeshInstances, ev.MeshCaches,
-                ev.SamplesPerPixel, ev.MaxBounces, ev.TraceRecursionDepth,
-                ev.Exposure, ev.ToneMapOperator,
-                ev.DenoiserStabilization, ev.ShadowStrength, ev.ShadowAbsorptionScale,
-                ev.EnableDenoiser, ev.Gamma,
-                photonDebugMode, photonDebugScale,
-                ev.LightAttenuationConstant, ev.LightAttenuationLinear, ev.LightAttenuationQuadratic,
-                ev.MaxShadowLights, ev.NRDBypassDistance, ev.NRDBypassBlendRange);
+            var result = sceneEvaluator!.EvaluateScene(nodeGraph!);
+            result.PhotonDebugMode = photonDebugMode;
+            result.PhotonDebugScale = photonDebugScale;
+            return result;
         }
 
     }
