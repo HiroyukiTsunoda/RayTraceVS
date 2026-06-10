@@ -262,8 +262,8 @@ namespace RayTraceVS.WPF.Views
             // 接続インデックスを再構築（Undo/Redoで接続が変わっている可能性があるため）
             viewModel.RebuildNodeConnectionIndex();
 
-            // シーンノードのソケット数を調整
-            EnsureSceneNodeSocketCounts();
+            // シーンノードのソケット数を調整（ViewModelに委譲）
+            viewModel.EnsureSceneNodeSocketCounts();
             
             // レイアウト更新を強制
             NodeCanvas.UpdateLayout();
@@ -357,61 +357,6 @@ namespace RayTraceVS.WPF.Views
             double canvasY = (viewportCenterY - panTransform.Y) / currentZoom;
             
             return new Point(canvasX, canvasY);
-        }
-
-        /// <summary>
-        /// シーンノードのソケット数が「接続数+1」になるように調整
-        /// </summary>
-        private void EnsureSceneNodeSocketCounts()
-        {
-            var viewModel = GetViewModel();
-            if (viewModel == null) return;
-
-            foreach (var node in viewModel.Nodes)
-            {
-                if (node is Models.Nodes.SceneNode sceneNode)
-                {
-                    // オブジェクトソケットをチェック
-                    var objectSockets = sceneNode.InputSockets.Where(s => s.SocketType == SocketType.Object).ToList();
-                    var connectedObjectSockets = objectSockets.Count(s => viewModel.Connections.Any(c => c.InputSocket == s));
-                    var emptyObjectSockets = objectSockets.Count - connectedObjectSockets;
-
-                    // 空のソケットが0個なら1個追加
-                    if (emptyObjectSockets == 0)
-                    {
-                        sceneNode.AddObjectSocket();
-                    }
-                    // 空のソケットが2個以上なら余分を削除
-                    else if (emptyObjectSockets > 1)
-                    {
-                        var emptySockets = objectSockets.Where(s => !viewModel.Connections.Any(c => c.InputSocket == s)).Skip(1).ToList();
-                        foreach (var socket in emptySockets)
-                        {
-                            sceneNode.RemoveSocket(socket.Name);
-                        }
-                    }
-
-                    // ライトソケットをチェック
-                    var lightSockets = sceneNode.InputSockets.Where(s => s.SocketType == SocketType.Light).ToList();
-                    var connectedLightSockets = lightSockets.Count(s => viewModel.Connections.Any(c => c.InputSocket == s));
-                    var emptyLightSockets = lightSockets.Count - connectedLightSockets;
-
-                    // 空のソケットが0個なら1個追加
-                    if (emptyLightSockets == 0)
-                    {
-                        sceneNode.AddLightSocket();
-                    }
-                    // 空のソケットが2個以上なら余分を削除
-                    else if (emptyLightSockets > 1)
-                    {
-                        var emptySockets = lightSockets.Where(s => !viewModel.Connections.Any(c => c.InputSocket == s)).Skip(1).ToList();
-                        foreach (var socket in emptySockets)
-                        {
-                            sceneNode.RemoveSocket(socket.Name);
-                        }
-                    }
-                }
-            }
         }
 
         private MainViewModel? GetViewModel()

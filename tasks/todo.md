@@ -211,5 +211,46 @@ Releaseビルドの前後比較は全コミット後に git checkout で実施�
 - [x] Step 10 [C#]: 型互換チェック統合＋CreateConnectionのConnectionHandler移動。**発見したUXバグを修正**: プレビュー線の互換判定（Color↔Vector3のみ）と実接続判定（Object特例のみ）が別ルールだった→実接続ルール（同型+Object特例）に統一。実接続の挙動は完全不変、プレビュー線の色のみ正しい表示に（Object系接続: 赤→緑、Color↔Vector3: 緑→赤）。ハンドラ内デッドコード（EndConnectionDrag系約230行）も削除。空中ドロップの元接続削除2箇所重複をRemoveOriginalConnectionに集約。要GUI手動検証
 - [x] Step 11 [C#]: コピー/ペースト（HandleCopy/HandlePaste/ClipboardData 約200行）をEditCommandHandlerへ移動。PerformCopy/Pasteコールバック中継を廃止し実装をハンドラに一本化、座標取得はGetCurrentCanvasPositionコールバック注入。要GUI手動検証
 - [x] Step 12 [C#]: シーン状態管理（CurrentFilePath/HasUnsavedChanges/WindowTitle/LoadScene/SaveScene/NewScene）をMainViewModelへ移動。タイトルはXAMLバインディング化、未保存監視はVM内製化。UI部分（ダイアログ・ViewportState構築/適用・パネル復元）はViewに残置。**ICommand全面バインディング化は見送り**（既存Clickハンドラ＋ショートカットif-elseは動作しており、IME対応GetRealKey等の特殊処理をInputBindingで再現する利得がない）。要GUI手動検証
-- [ ] Step 13 [C#]: SceneNodeソケット管理の集約
-- [ ] 手動検証チェックリストをユーザーに提示
+- [x] Step 13 [C#]: EnsureSceneNodeSocketCounts（約50行）をNodeEditorViewからMainViewModelへ移動（グラフ正規化はVMの責務、既存CleanupSceneNodeSocketsと同居）
+- [x] 手動検証チェックリストをユーザーに提示（下記レビュー参照）
+
+## レビュー（第3弾総括）
+
+### 達成（9コミット、Step 0-5・9-13）
+- **新ノード追加コストの削減**:
+  - 算術/ライト/マテリアルノード: 4〜6箇所 → **2箇所**（ノードクラス1ファイル＋NodeRegistry登録1行。パレットは自動生成、SceneEvaluatorはディスパッチテーブルでデータ型を自動振り分け）
+  - 新ジオメトリ: C#+C+++HLSLで約18ファイル → 約13ファイル（GPU/HLSL構造体一元化・RenderSettings共有struct・SanitizeMaterial共通化・SceneParams廃止）
+- **二重定義・重複の解消**: GPU構造体のC++/HLSL二重定義（SharedTypes.h、9構造体）、型互換チェックの2重定義（プレビューと実接続の不整合バグ修正）、マテリアル検証4回コピペ、レンダリング設定の24引数リレー、空中ドロップ処理の2箇所重複、接続作成のハンドラ側デッドコード約230行
+- **責務の整理**: シーンファイル状態管理（CurrentFilePath/HasUnsavedChanges/タイトル/Load/Save/New）をMainViewModelへ、接続作成ロジックをConnectionHandlerへ、コピペをEditCommandHandlerへ、SceneNodeソケット正規化をViewModelへ。FBXMeshNode→App層のレイヤー違反をIMeshCacheProviderで解消。未実装インターフェース3つを削除
+- NodeEditorView.xaml.cs 2,018行→約1,550行、MainWindow.xaml.cs 1,051行→約960行
+
+### 検証
+- 全Stepで「ヘッドレスレンダリング ピクセル完全一致＋resave保存形式バイト一致」を独立確認。SceneNodeなしフォールバック経路も新旧コード出力直接比較で完全一致
+- **Step 5の検証で得た重要な知見**: .csoは`-Zi`デバッグ情報埋め込みのため**ソース無変更でも再コンパイルでバイナリが変わり、別セッション世代の.csoとは出力も変わる**（差分1.8%パターン）。ただし**同一セッション内の再コンパイルは出力決定的**（実験で確認）。これを利用し「①dxc -Pプリプロセス比較で意味的同一性を証明 → ②ベースラインを現世代で再生成 → ③変更後の再コンパイル出力と比較」で、HLSL構造変更の無害性をピクセルレベルで直接証明した
+
+### 見送り（理由つき）
+- Step 6/7/8（DXRPipeline内部のPhotonMappingPass/CompositePass/SceneBufferManagerクラス分割）: フォトンは無効化された実験機能で検証パスで実行されず（抽出の正しさを担保できない）、両パスとも10個超の共有リソース依存があり注入コードで複雑度が逆に増すため中止
+- ICommand全面バインディング化・DIコンテナ・InputBinding化・RenderWindowのService化: 実利が薄く過剰設計と判断（計画時の「やらないこと」通り）
+
+### 手動検証チェックリスト（GUI、ユーザー実施）
+**接続操作（Step 10）**
+- [ ] 各型の新規接続（Float/Vector3/Color/Transform/Material/Object/Light/Camera/Scene）
+- [ ] SceneNodeのObject/Lightソケットへ接続→空きソケットが自動追加される
+- [ ] 接続済み入力ソケットへの新規接続→置換される
+- [ ] 入力ソケットから既存接続をドラッグ→別ソケットへ再接続/空中ドロップで削除
+- [ ] プレビュー線の色: 互換=ソケット色の実線、非互換=赤点線。**Sphere→SceneNodeのObjectソケットで緑になること（従来は赤のまま接続できた）、Color→Vector3で赤になること（従来は緑なのに接続できなかった）**
+- [ ] 接続作成/削除のUndo/Redo
+**コピー＆ペースト（Step 11）**
+- [ ] 単一/複数ノード（接続含む）のCtrl+C→Ctrl+V（マウス位置中心に配置、ペースト後に選択状態）
+- [ ] ペーストのUndo/Redo、TextBoxフォーカス時のCtrl+C/Vがテキスト操作になること
+**ファイルI/O・タイトル（Step 12）**
+- [ ] Ctrl+S保存/Ctrl+Shift+S名前を付けて保存/Ctrl+O開く/Ctrl+N新規（確認ダイアログ）
+- [ ] タイトルバーの「*」（未保存マーク）がノード編集で付き、保存で消える
+- [ ] 起動時の前回ファイル自動読込、スクリーンショット保存後3秒でタイトルが戻る
+- [ ] パネル開閉状態・解像度・ビューポート（パン/ズーム）の保存/復元
+**SceneNodeソケット（Step 13）**
+- [ ] 接続切断時の空きソケット縮約、Undo/Redo後のソケット表示（RefreshConnectionLines経由）
+**パレット（Step 1）**
+- [ ] パレットの見た目が従来と同一（カテゴリ順・ボタン順・色）、各ボタンでノード追加、Expander開閉状態の保存/復元
+**FBX（Step 9）**
+- [ ] FBXメッシュノードのプロパティパネル表示（頂点数/三角形数/バウンズ）
