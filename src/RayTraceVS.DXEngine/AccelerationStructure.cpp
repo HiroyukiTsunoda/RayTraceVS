@@ -131,12 +131,21 @@ namespace RayTraceVS::DXEngine
 
         for (const auto& obj : objects)
         {
-            if (auto sphere = dynamic_cast<Sphere*>(obj.get()))
-                spheres.push_back(sphere);
-            else if (auto plane = dynamic_cast<Plane*>(obj.get()))
-                planes.push_back(plane);
-            else if (auto box = dynamic_cast<Box*>(obj.get()))
-                boxes.push_back(box);
+            // GetType() + static_cast avoids RTTI cost (same pattern as DXRPipeline::UpdateSceneData)
+            switch (obj->GetType())
+            {
+            case ObjectType::Sphere:
+                spheres.push_back(static_cast<Sphere*>(obj.get()));
+                break;
+            case ObjectType::Plane:
+                planes.push_back(static_cast<Plane*>(obj.get()));
+                break;
+            case ObjectType::Box:
+                boxes.push_back(static_cast<Box*>(obj.get()));
+                break;
+            default:
+                break;
+            }
         }
 
         for (auto sphere : spheres)
