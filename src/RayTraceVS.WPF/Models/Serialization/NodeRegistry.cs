@@ -5,8 +5,26 @@ using RayTraceVS.WPF.Models.Nodes;
 namespace RayTraceVS.WPF.Models.Serialization
 {
     /// <summary>
+    /// ノードタイプの登録メタデータ。シリアライズ名・パレット表示・ファクトリを一元管理する。
+    /// </summary>
+    /// <param name="TypeName">シリアライズ時の論理型名（例: "Sphere"）</param>
+    /// <param name="DisplayName">パレットのボタン表示名（例: "Universal PBR"）</param>
+    /// <param name="Category">パレットのカテゴリ</param>
+    /// <param name="SortOrder">カテゴリ内の表示順</param>
+    /// <param name="ShowInPalette">パレットに表示するか（FBXMesh等、別経路で生成するノードはfalse）</param>
+    /// <param name="Factory">ノード生成ファクトリ</param>
+    public record NodeRegistration(
+        string TypeName,
+        string DisplayName,
+        NodeCategory Category,
+        int SortOrder,
+        bool ShowInPalette,
+        Func<Node> Factory);
+
+    /// <summary>
     /// ノードタイプの登録と生成を管理するレジストリ
-    /// 新しいノードタイプを追加する際は、ここに登録するだけでシリアライズ/デシリアライズが可能になる
+    /// 新しいノードタイプを追加する際は、ここに登録するだけでシリアライズ/デシリアライズと
+    /// コンポーネントパレットへの表示が可能になる
     /// </summary>
     public static class NodeRegistry
     {
@@ -16,48 +34,55 @@ namespace RayTraceVS.WPF.Models.Serialization
         /// クラス名（GetType().Name）からノード生成するファクトリ（保存形式互換用）
         /// </summary>
         private static readonly Dictionary<string, Func<Node>> _classNameFactories = new();
+        /// <summary>
+        /// 登録メタデータの一覧（パレット自動生成用）
+        /// </summary>
+        private static readonly List<NodeRegistration> _registrations = new();
         private static bool _initialized = false;
 
         /// <summary>
         /// 組み込みノードタイプを登録する（アプリケーション起動時に一度だけ呼び出す）
+        /// SortOrderはカテゴリ内のパレット表示順
         /// </summary>
         public static void Initialize()
         {
             if (_initialized) return;
 
             // オブジェクトノード
-            Register<SphereNode>("Sphere");
-            Register<PlaneNode>("Plane");
-            Register<BoxNode>("Box");
-            Register<FBXMeshNode>("FBXMesh");
+            Register<SphereNode>("Sphere", "Sphere", NodeCategory.Object, 0);
+            Register<PlaneNode>("Plane", "Plane", NodeCategory.Object, 1);
+            Register<BoxNode>("Box", "Box", NodeCategory.Object, 2);
+            // FBXメッシュはメッシュキャッシュからパレットを動的生成するため通常ボタンは出さない
+            Register<FBXMeshNode>("FBXMesh", "FBXMesh", NodeCategory.Object, 99, showInPalette: false);
 
             // マテリアルノード
-            Register<EmissionMaterialNode>("Emission");
-            Register<MaterialBSDFNode>("MaterialBSDF");
-            Register<UniversalPBRNode>("UniversalPBR");
+            Register<UniversalPBRNode>("UniversalPBR", "Universal PBR", NodeCategory.Material, 0);
+            Register<MaterialBSDFNode>("MaterialBSDF", "BSDF", NodeCategory.Material, 1);
+            Register<EmissionMaterialNode>("Emission", "Emission", NodeCategory.Material, 2);
 
             // ライトノード
-            Register<PointLightNode>("PointLight");
-            Register<DirectionalLightNode>("DirectionalLight");
-            Register<AmbientLightNode>("AmbientLight");
+            Register<AmbientLightNode>("AmbientLight", "Ambient Light", NodeCategory.Light, 0);
+            Register<DirectionalLightNode>("DirectionalLight", "Directional Light", NodeCategory.Light, 1);
+            Register<PointLightNode>("PointLight", "Point Light", NodeCategory.Light, 2);
 
             // カメラ・シーンノード
-            Register<CameraNode>("Camera");
-            Register<SceneNode>("Scene");
+            Register<CameraNode>("Camera", "Camera", NodeCategory.Camera, 0);
+            Register<SceneNode>("Scene", "Scene", NodeCategory.Scene, 0);
 
             // 算術ノード
-            Register<FloatNode>("Float");
-            Register<Vector3Node>("Vector3");
-            Register<Vector4Node>("Vector4");
-            Register<ColorNode>("Color");
-            Register<AddNode>("Add");
-            Register<SubNode>("Sub");
-            Register<MulNode>("Mul");
-            Register<DivNode>("Div");
+            Register<FloatNode>("Float", "Float", NodeCategory.Math, 0);
+            Register<Vector3Node>("Vector3", "Vector3", NodeCategory.Math, 1);
+            Register<Vector4Node>("Vector4", "Vector4", NodeCategory.Math, 2);
+            Register<ColorNode>("Color", "Color", NodeCategory.Math, 3);
 
             // トランスフォームノード
-            Register<TransformNode>("Transform");
-            Register<CombineTransformNode>("CombineTransform");
+            Register<TransformNode>("Transform", "Transform", NodeCategory.Math, 4);
+            Register<CombineTransformNode>("CombineTransform", "Combine Transform", NodeCategory.Math, 5);
+
+            Register<AddNode>("Add", "Add", NodeCategory.Math, 6);
+            Register<SubNode>("Sub", "Sub", NodeCategory.Math, 7);
+            Register<MulNode>("Mul", "Mul", NodeCategory.Math, 8);
+            Register<DivNode>("Div", "Div", NodeCategory.Math, 9);
 
             // 後方互換性: 旧LightNodeはPointLightNodeとして読み込む
             _classNameFactories["LightNode"] = () => new PointLightNode();
@@ -70,12 +95,28 @@ namespace RayTraceVS.WPF.Models.Serialization
         /// </summary>
         /// <typeparam name="T">ノードの型</typeparam>
         /// <param name="typeName">シリアライズ時の型名</param>
-        public static void Register<T>(string typeName) where T : Node, new()
+        /// <param name="displayName">パレットのボタン表示名</param>
+        /// <param name="category">パレットのカテゴリ</param>
+        /// <param name="sortOrder">カテゴリ内の表示順</param>
+        /// <param name="showInPalette">パレットに表示するか</param>
+        public static void Register<T>(string typeName, string displayName, NodeCategory category,
+            int sortOrder, bool showInPalette = true) where T : Node, new()
         {
-            _nodeFactories[typeName] = () => new T();
+            Func<Node> factory = () => new T();
+            _nodeFactories[typeName] = factory;
             _typeToName[typeof(T)] = typeName;
             // クラス名でも引けるように登録
-            _classNameFactories[typeof(T).Name] = () => new T();
+            _classNameFactories[typeof(T).Name] = factory;
+            _registrations.Add(new NodeRegistration(typeName, displayName, category, sortOrder, showInPalette, factory));
+        }
+
+        /// <summary>
+        /// 登録されているすべてのノードメタデータを取得する（パレット自動生成用）
+        /// </summary>
+        public static IReadOnlyList<NodeRegistration> GetRegistrations()
+        {
+            EnsureInitialized();
+            return _registrations;
         }
 
         /// <summary>

@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -6,6 +8,7 @@ using RayTraceVS.WPF.Commands;
 using RayTraceVS.WPF.ViewModels;
 using RayTraceVS.WPF.Models;
 using RayTraceVS.WPF.Models.Nodes;
+using RayTraceVS.WPF.Models.Serialization;
 using RayTraceVS.WPF.Services;
 
 namespace RayTraceVS.WPF.Views
@@ -14,9 +17,27 @@ namespace RayTraceVS.WPF.Views
     {
         private Random random = new Random();
 
+        /// <summary>
+        /// カテゴリの表示順・ヘッダー・ボタン背景ブラシの定義
+        /// </summary>
+        private static readonly (NodeCategory Category, string Header, string BrushKey)[] CategoryDefinitions =
+        {
+            (NodeCategory.Object,   "◆ オブジェクト", "NodeObjectBrush"),
+            (NodeCategory.Material, "◆ マテリアル",   "NodeMaterialBrush"),
+            (NodeCategory.Math,     "◆ 数学",         "NodeMathBrush"),
+            (NodeCategory.Camera,   "◆ カメラ",       "NodeCameraBrush"),
+            (NodeCategory.Light,    "◆ ライト",       "NodeLightBrush"),
+            (NodeCategory.Scene,    "◆ シーン",       "NodeSceneBrush"),
+        };
+
+        private readonly Dictionary<NodeCategory, Expander> _categoryExpanders = new();
+        private Expander _fbxExpander = null!;
+        private StackPanel _fbxButtonsPanel = null!;
+
         public ComponentPaletteView()
         {
             InitializeComponent();
+            BuildPalette();
             Loaded += ComponentPaletteView_Loaded;
         }
 
@@ -27,12 +48,85 @@ namespace RayTraceVS.WPF.Views
         }
 
         /// <summary>
+        /// NodeRegistryの登録情報からパレットUI（カテゴリExpanderとノードボタン）を動的生成する。
+        /// 新ノードはNodeRegistryへの登録だけでパレットに表示される。
+        /// </summary>
+        private void BuildPalette()
+        {
+            var registrationsByCategory = NodeRegistry.GetRegistrations()
+                .Where(r => r.ShowInPalette)
+                .GroupBy(r => r.Category)
+                .ToDictionary(g => g.Key, g => g.OrderBy(r => r.SortOrder).ToList());
+
+            bool isFirst = true;
+            foreach (var (category, header, brushKey) in CategoryDefinitions)
+            {
+                var buttonsPanel = new StackPanel { Margin = new Thickness(10, 5, 10, 5) };
+                if (registrationsByCategory.TryGetValue(category, out var registrations))
+                {
+                    foreach (var registration in registrations)
+                    {
+                        var button = new Button
+                        {
+                            Content = registration.DisplayName,
+                            Tag = registration,
+                            Margin = new Thickness(0, 2, 0, 2),
+                            HorizontalAlignment = HorizontalAlignment.Stretch,
+                            Background = FindResource(brushKey) as Brush
+                        };
+                        button.Click += AddNodeFromPalette_Click;
+                        buttonsPanel.Children.Add(button);
+                    }
+                }
+
+                var expander = CreateCategoryExpander(header, isFirst);
+                expander.Content = buttonsPanel;
+                _categoryExpanders[category] = expander;
+                CategoriesPanel.Children.Add(expander);
+
+                // FBXオブジェクトカテゴリ（メッシュキャッシュから動的生成）はオブジェクトの直後に配置
+                if (category == NodeCategory.Object)
+                {
+                    _fbxButtonsPanel = new StackPanel { Margin = new Thickness(10, 5, 10, 5) };
+                    _fbxExpander = CreateCategoryExpander("◆ FBXオブジェクト", isFirstCategory: false);
+                    _fbxExpander.Content = _fbxButtonsPanel;
+                    CategoriesPanel.Children.Add(_fbxExpander);
+                }
+
+                isFirst = false;
+            }
+        }
+
+        private Expander CreateCategoryExpander(string header, bool isFirstCategory)
+        {
+            return new Expander
+            {
+                Header = header,
+                IsExpanded = isFirstCategory,
+                Margin = isFirstCategory ? new Thickness(0) : new Thickness(0, 5, 0, 5),
+                Foreground = FindResource("TextBrush") as Brush,
+                Background = FindResource("PanelBrush") as Brush
+            };
+        }
+
+        /// <summary>
+        /// パレットボタン共通のクリックハンドラ（Tagに登録メタデータを保持）
+        /// </summary>
+        private void AddNodeFromPalette_Click(object sender, RoutedEventArgs e)
+        {
+            if ((sender as Button)?.Tag is NodeRegistration registration)
+            {
+                AddNodeWithCommand(registration.Factory());
+            }
+        }
+
+        /// <summary>
         /// FBXオブジェクトリストを更新
         /// </summary>
         public void RefreshFBXList()
         {
-            FBXButtonsPanel.Children.Clear();
-            
+            _fbxButtonsPanel.Children.Clear();
+
             var meshCacheService = App.MeshCacheService;
             if (meshCacheService == null) return;
 
@@ -47,7 +141,7 @@ namespace RayTraceVS.WPF.Views
                     Background = FindResource("NodeObjectBrush") as Brush
                 };
                 button.Click += AddFBXMesh_Click;
-                FBXButtonsPanel.Children.Add(button);
+                _fbxButtonsPanel.Children.Add(button);
             }
 
             // メッシュがない場合はメッセージを表示
@@ -60,7 +154,7 @@ namespace RayTraceVS.WPF.Views
                     FontSize = 10,
                     TextWrapping = TextWrapping.Wrap
                 };
-                FBXButtonsPanel.Children.Add(textBlock);
+                _fbxButtonsPanel.Children.Add(textBlock);
             }
         }
 
@@ -82,7 +176,7 @@ namespace RayTraceVS.WPF.Views
         {
             return Window.GetWindow(this)?.DataContext as MainViewModel;
         }
-        
+
         /// <summary>
         /// NodeEditorViewを取得
         /// </summary>
@@ -91,7 +185,7 @@ namespace RayTraceVS.WPF.Views
             var mainWindow = Window.GetWindow(this) as MainWindow;
             return mainWindow?.FindName("NodeEditor") as NodeEditorView;
         }
-        
+
         /// <summary>
         /// Expanderの開閉状態を取得
         /// </summary>
@@ -99,30 +193,30 @@ namespace RayTraceVS.WPF.Views
         {
             return new ExpanderStates
             {
-                IsObjectExpanded = ObjectExpander.IsExpanded,
-                IsFBXObjectExpanded = FBXObjectExpander.IsExpanded,
-                IsMaterialExpanded = MaterialExpander.IsExpanded,
-                IsMathExpanded = MathExpander.IsExpanded,
-                IsCameraExpanded = CameraExpander.IsExpanded,
-                IsLightExpanded = LightExpander.IsExpanded,
-                IsSceneExpanded = SceneExpander.IsExpanded
+                IsObjectExpanded = _categoryExpanders[NodeCategory.Object].IsExpanded,
+                IsFBXObjectExpanded = _fbxExpander.IsExpanded,
+                IsMaterialExpanded = _categoryExpanders[NodeCategory.Material].IsExpanded,
+                IsMathExpanded = _categoryExpanders[NodeCategory.Math].IsExpanded,
+                IsCameraExpanded = _categoryExpanders[NodeCategory.Camera].IsExpanded,
+                IsLightExpanded = _categoryExpanders[NodeCategory.Light].IsExpanded,
+                IsSceneExpanded = _categoryExpanders[NodeCategory.Scene].IsExpanded
             };
         }
-        
+
         /// <summary>
         /// Expanderの開閉状態を設定
         /// </summary>
         public void SetExpanderStates(ExpanderStates? states)
         {
             if (states == null) return;
-            
-            ObjectExpander.IsExpanded = states.IsObjectExpanded;
-            FBXObjectExpander.IsExpanded = states.IsFBXObjectExpanded;
-            MaterialExpander.IsExpanded = states.IsMaterialExpanded;
-            MathExpander.IsExpanded = states.IsMathExpanded;
-            CameraExpander.IsExpanded = states.IsCameraExpanded;
-            LightExpander.IsExpanded = states.IsLightExpanded;
-            SceneExpander.IsExpanded = states.IsSceneExpanded;
+
+            _categoryExpanders[NodeCategory.Object].IsExpanded = states.IsObjectExpanded;
+            _fbxExpander.IsExpanded = states.IsFBXObjectExpanded;
+            _categoryExpanders[NodeCategory.Material].IsExpanded = states.IsMaterialExpanded;
+            _categoryExpanders[NodeCategory.Math].IsExpanded = states.IsMathExpanded;
+            _categoryExpanders[NodeCategory.Camera].IsExpanded = states.IsCameraExpanded;
+            _categoryExpanders[NodeCategory.Light].IsExpanded = states.IsLightExpanded;
+            _categoryExpanders[NodeCategory.Scene].IsExpanded = states.IsSceneExpanded;
         }
 
         private Point GetViewportCenterPosition()
@@ -137,7 +231,7 @@ namespace RayTraceVS.WPF.Views
                     center.Y + random.Next(-50, 50)
                 );
             }
-            
+
             // フォールバック: デフォルト位置
             return new Point(
                 400 + random.Next(-100, 100),
@@ -156,112 +250,6 @@ namespace RayTraceVS.WPF.Views
                 node.Position = GetViewportCenterPosition();
                 viewModel.CommandManager.Execute(new AddNodeCommand(viewModel, node));
             }
-        }
-
-        private void AddSphere_Click(object sender, RoutedEventArgs e)
-        {
-            AddNodeWithCommand(new SphereNode());
-        }
-
-        private void AddPlane_Click(object sender, RoutedEventArgs e)
-        {
-            AddNodeWithCommand(new PlaneNode());
-        }
-
-        private void AddBox_Click(object sender, RoutedEventArgs e)
-        {
-            AddNodeWithCommand(new BoxNode());
-        }
-
-        // マテリアルノード追加ハンドラ
-        private void AddColor_Click(object sender, RoutedEventArgs e)
-        {
-            AddNodeWithCommand(new ColorNode());
-        }
-
-        private void AddEmission_Click(object sender, RoutedEventArgs e)
-        {
-            AddNodeWithCommand(new EmissionMaterialNode());
-        }
-
-        private void AddMaterialBSDF_Click(object sender, RoutedEventArgs e)
-        {
-            AddNodeWithCommand(new MaterialBSDFNode());
-        }
-
-        private void AddUniversalPBR_Click(object sender, RoutedEventArgs e)
-        {
-            AddNodeWithCommand(new UniversalPBRNode());
-        }
-
-        private void AddFloat_Click(object sender, RoutedEventArgs e)
-        {
-            AddNodeWithCommand(new FloatNode());
-        }
-
-        private void AddVector3_Click(object sender, RoutedEventArgs e)
-        {
-            AddNodeWithCommand(new Vector3Node());
-        }
-
-        private void AddVector4_Click(object sender, RoutedEventArgs e)
-        {
-            AddNodeWithCommand(new Vector4Node());
-        }
-
-        private void AddMath_Click(object sender, RoutedEventArgs e)
-        {
-            AddNodeWithCommand(new AddNode());
-        }
-
-        private void AddSub_Click(object sender, RoutedEventArgs e)
-        {
-            AddNodeWithCommand(new SubNode());
-        }
-
-        private void AddMultiply_Click(object sender, RoutedEventArgs e)
-        {
-            AddNodeWithCommand(new MulNode());
-        }
-
-        private void AddDiv_Click(object sender, RoutedEventArgs e)
-        {
-            AddNodeWithCommand(new DivNode());
-        }
-
-        private void AddTransform_Click(object sender, RoutedEventArgs e)
-        {
-            AddNodeWithCommand(new TransformNode());
-        }
-
-        private void AddCombineTransform_Click(object sender, RoutedEventArgs e)
-        {
-            AddNodeWithCommand(new CombineTransformNode());
-        }
-
-        private void AddCamera_Click(object sender, RoutedEventArgs e)
-        {
-            AddNodeWithCommand(new CameraNode());
-        }
-
-        private void AddAmbientLight_Click(object sender, RoutedEventArgs e)
-        {
-            AddNodeWithCommand(new AmbientLightNode());
-        }
-
-        private void AddDirectionalLight_Click(object sender, RoutedEventArgs e)
-        {
-            AddNodeWithCommand(new DirectionalLightNode());
-        }
-
-        private void AddLight_Click(object sender, RoutedEventArgs e)
-        {
-            AddNodeWithCommand(new PointLightNode());
-        }
-
-        private void AddScene_Click(object sender, RoutedEventArgs e)
-        {
-            AddNodeWithCommand(new SceneNode());
         }
     }
 }

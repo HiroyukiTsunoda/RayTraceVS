@@ -183,3 +183,33 @@ Debugビルド（D3D12 Debug Layer + GPU-Based Validation有効）、ヘッド�
 
 **所見**: 解像度を16倍変えてもパスあたり時間がほぼ不変 → GPUレイトレ時間ではなく**パスあたり固定コスト（CPU処理・GPU同期・GBV検証）が支配的**。今回の最適化（アップロードスキップ・同期削減・ログ除去）のターゲットと一致。
 Releaseビルドの前後比較は全コミット後に git checkout で実施（Step 12）。
+
+---
+
+# 第3弾: 拡張性向上リファクタリング（2026-06-11開始）
+
+方針（ユーザー確認済み）: 新ノード追加・レンダリング機能強化・UI拡張のすべてを見据え、C#+Interop+C++/HLSL全層を対象。神クラス分割（旧Phase 4）も含む。UI手動検証は最後にまとめて実施。
+計画詳細: `C:\Users\HT\.claude\plans\snuggly-nibbling-clover.md`
+
+検証（全Step共通）: `.\build.ps1 -NoPackage` → `.\tools\verify_render.ps1`（ピクセル一致）＋ resave（保存形式一致）→ コミット。C++新規コメントは英語。
+
+## マイルストーン1: ノード拡張性（C#層）
+- [x] Step 0: ベースライン再生成（.cso世代差で旧ベースラインNG→現状コードで再生成、決定性確認OK、resaveベースラインは有効のまま）
+- [ ] Step 1 [C#]: NodeRegistryメタデータ化＋パレット自動生成（XAML静的ボタン15個＋個別ハンドラ→動的生成＋共通ハンドラ1個）
+- [ ] Step 2 [C#]: SceneEvaluatorのisチェーン解消（SceneCollector＋ディスパッチテーブル、2経路統一）
+- [ ] Step 3 [C#]: データフロー簡素化（SceneParams廃止、RenderService.UpdateScene 1引数化）
+
+## マイルストーン2: Interop境界とC++エンジン
+- [ ] Step 4 [Interop/C++]: RenderSettings構造体化（UpdateScene 24→8パラメータ）＋SanitizeMaterial共通化
+- [ ] Step 5 [C++/HLSL]: SharedTypes.h共有ヘッダ（GPU/HLSL構造体一元化、static_assert検証、.csoバイト比較で検証）
+- [ ] Step 6 [C++]: PhotonMappingPass抽出（約660行、P-2スナップショット比較を維持）
+- [ ] Step 7 [C++]: CompositePass抽出（約370行）
+- [ ] Step 8 [C++/オプション]: SceneBufferManager抽出（Step 6/7後に実施可否判断）
+
+## マイルストーン3: UI/MVVM神クラス分割（最後にまとめてUI手動検証）
+- [ ] Step 9 [C#]: 空振りインターフェース3つ削除＋IMeshCacheProviderでレイヤー違反解消
+- [ ] Step 10 [C#]: 型互換チェック統合（2箇所不整合の解消）＋CreateConnectionのConnectionHandler移動
+- [ ] Step 11 [C#]: コピー/ペーストのEditCommandHandler移動
+- [ ] Step 12 [C#]: MainViewModelへのファイルI/O・ICommand移動（DIコンテナは導入しない）
+- [ ] Step 13 [C#]: SceneNodeソケット管理の集約
+- [ ] 手動検証チェックリストをユーザーに提示
