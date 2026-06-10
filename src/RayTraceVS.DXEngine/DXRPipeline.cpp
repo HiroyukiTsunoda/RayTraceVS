@@ -1002,39 +1002,43 @@ namespace RayTraceVS::DXEngine
             mappedConstantData->CausticIntensity = 0.0f;
         }
         
-        // Upload object data to GPU buffers
-        if (!spheres.empty() && sphereUploadBuffer)
+        // Upload object data to GPU buffers.
+        // Barriers are batched: one flush for all COPY_DEST transitions, then all
+        // copies, then one flush for all SRV transitions (2 ResourceBarrier calls
+        // instead of 8). Command list order still guarantees copy/barrier safety.
+        const bool uploadSpheres = !spheres.empty() && sphereUploadBuffer;
+        const bool uploadPlanes = !planes.empty() && planeUploadBuffer;
+        const bool uploadBoxes = !Boxes.empty() && boxUploadBuffer;
+        const bool uploadLights = !gpuLights.empty() && lightUploadBuffer;
+
+        if (uploadSpheres) TransitionForCopy(sphereBuffer.Get());
+        if (uploadPlanes) TransitionForCopy(planeBuffer.Get());
+        if (uploadBoxes) TransitionForCopy(boxBuffer.Get());
+        if (uploadLights) TransitionForCopy(lightBuffer.Get());
+        resourceStateTracker.Flush(commandList);
+
+        if (uploadSpheres)
         {
-            TransitionForCopy(sphereBuffer.Get());
-            resourceStateTracker.Flush(commandList);
             void* mapped = nullptr;
             sphereUploadBuffer->Map(0, nullptr, &mapped);
             memcpy(mapped, spheres.data(), sizeof(GPUSphere) * spheres.size());
             sphereUploadBuffer->Unmap(0, nullptr);
 
             commandList->CopyResource(sphereBuffer.Get(), sphereUploadBuffer.Get());
-            TransitionToSrv(sphereBuffer.Get());
-            resourceStateTracker.Flush(commandList);
         }
 
-        if (!planes.empty() && planeUploadBuffer)
+        if (uploadPlanes)
         {
-            TransitionForCopy(planeBuffer.Get());
-            resourceStateTracker.Flush(commandList);
             void* mapped = nullptr;
             planeUploadBuffer->Map(0, nullptr, &mapped);
             memcpy(mapped, planes.data(), sizeof(GPUPlane) * planes.size());
             planeUploadBuffer->Unmap(0, nullptr);
 
             commandList->CopyResource(planeBuffer.Get(), planeUploadBuffer.Get());
-            TransitionToSrv(planeBuffer.Get());
-            resourceStateTracker.Flush(commandList);
         }
 
-        if (!Boxes.empty() && boxUploadBuffer)
+        if (uploadBoxes)
         {
-            TransitionForCopy(boxBuffer.Get());
-            resourceStateTracker.Flush(commandList);
             void* mapped = nullptr;
             HRESULT hr = boxUploadBuffer->Map(0, nullptr, &mapped);
             if (FAILED(hr) || mapped == nullptr)
@@ -1058,14 +1062,10 @@ namespace RayTraceVS::DXEngine
             }
 
             commandList->CopyResource(boxBuffer.Get(), boxUploadBuffer.Get());
-            TransitionToSrv(boxBuffer.Get());
-            resourceStateTracker.Flush(commandList);
         }
 
-        if (!gpuLights.empty() && lightUploadBuffer)
+        if (uploadLights)
         {
-            TransitionForCopy(lightBuffer.Get());
-            resourceStateTracker.Flush(commandList);
             void* mapped = nullptr;
             HRESULT hr = lightUploadBuffer->Map(0, nullptr, &mapped);
             if (FAILED(hr) || mapped == nullptr)
@@ -1089,9 +1089,13 @@ namespace RayTraceVS::DXEngine
             }
 
             commandList->CopyResource(lightBuffer.Get(), lightUploadBuffer.Get());
-            TransitionToSrv(lightBuffer.Get());
-            resourceStateTracker.Flush(commandList);
         }
+
+        if (uploadSpheres) TransitionToSrv(sphereBuffer.Get());
+        if (uploadPlanes) TransitionToSrv(planeBuffer.Get());
+        if (uploadBoxes) TransitionToSrv(boxBuffer.Get());
+        if (uploadLights) TransitionToSrv(lightBuffer.Get());
+        resourceStateTracker.Flush(commandList);
         
         // ============================================
         // Mesh Buffer Processing (FBX Support)
