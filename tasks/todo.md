@@ -200,7 +200,7 @@ Releaseビルドの前後比較は全コミット後に git checkout で実施�
 - [x] Step 3 [C#]: データフロー簡素化（SceneParams廃止、RenderService.UpdateScene 1引数化、SceneEvaluationResultに既定値＋PhotonDebug設定を集約）
 
 ## マイルストーン2: Interop境界とC++エンジン
-- [ ] Step 4 [Interop/C++]: RenderSettings構造体化（UpdateScene 24→8パラメータ）＋SanitizeMaterial共通化
+- [x] Step 4 [Interop/C++]: RenderSettings構造体化（UpdateScene 24→8パラメータ、DXEngine/RenderSettings.hをScene/Bridge/Interopで共有し詰め替えなし）＋SanitizeMaterial共通化（30行×4回コピペ解消）
 - [ ] Step 5 [C++/HLSL]: SharedTypes.h共有ヘッダ（GPU/HLSL構造体一元化、static_assert検証、.csoバイト比較で検証）
 - [ ] Step 6 [C++]: PhotonMappingPass抽出（約660行、P-2スナップショット比較を維持）
 - [ ] Step 7 [C++]: CompositePass抽出（約370行）

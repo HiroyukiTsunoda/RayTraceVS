@@ -28,25 +28,7 @@ namespace RayTraceVS::Interop
             array<LightData>^ lights,
             array<MeshInstanceData>^ meshInstances,
             array<MeshCacheData^>^ meshCaches,
-            int samplesPerPixel,
-            int maxBounces,
-            int traceRecursionDepth,
-            float exposure,
-            int toneMapOperator,
-            float denoiserStabilization,
-            float shadowStrength,
-            float shadowAbsorptionScale,
-            bool enableDenoiser,
-            float gamma,
-            int photonDebugMode,
-            float photonDebugScale,
-            // P1 optimization settings
-            float lightAttenuationConstant,
-            float lightAttenuationLinear,
-            float lightAttenuationQuadratic,
-            int maxShadowLights,
-            float nrdBypassDistance,
-            float nrdBypassBlendRange);
+            RenderSettings settings);
 
         // Rendering
         void Render();

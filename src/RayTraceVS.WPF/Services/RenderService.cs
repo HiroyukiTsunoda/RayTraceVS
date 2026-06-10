@@ -37,15 +37,29 @@ namespace RayTraceVS.WPF.Services
 
             try
             {
+                var settings = new RenderSettings
+                {
+                    SamplesPerPixel = scene.SamplesPerPixel,
+                    MaxBounces = scene.MaxBounces,
+                    TraceRecursionDepth = scene.TraceRecursionDepth,
+                    Exposure = scene.Exposure,
+                    ToneMapOperator = scene.ToneMapOperator,
+                    DenoiserStabilization = scene.DenoiserStabilization,
+                    ShadowStrength = scene.ShadowStrength,
+                    ShadowAbsorptionScale = scene.ShadowAbsorptionScale,
+                    EnableDenoiser = scene.EnableDenoiser,
+                    Gamma = scene.Gamma,
+                    PhotonDebugMode = scene.PhotonDebugMode,
+                    PhotonDebugScale = scene.PhotonDebugScale,
+                    LightAttenuationConstant = scene.LightAttenuationConstant,
+                    LightAttenuationLinear = scene.LightAttenuationLinear,
+                    LightAttenuationQuadratic = scene.LightAttenuationQuadratic,
+                    MaxShadowLights = scene.MaxShadowLights,
+                    NRDBypassDistance = scene.NRDBypassDistance,
+                    NRDBypassBlendRange = scene.NRDBypassBlendRange
+                };
                 engineWrapper.UpdateScene(scene.Spheres, scene.Planes, scene.Boxes, scene.Camera, scene.Lights,
-                    scene.MeshInstances, scene.MeshCaches,
-                    scene.SamplesPerPixel, scene.MaxBounces, scene.TraceRecursionDepth,
-                    scene.Exposure, scene.ToneMapOperator,
-                    scene.DenoiserStabilization, scene.ShadowStrength, scene.ShadowAbsorptionScale,
-                    scene.EnableDenoiser, scene.Gamma,
-                    scene.PhotonDebugMode, scene.PhotonDebugScale,
-                    scene.LightAttenuationConstant, scene.LightAttenuationLinear, scene.LightAttenuationQuadratic,
-                    scene.MaxShadowLights, scene.NRDBypassDistance, scene.NRDBypassBlendRange);
+                    scene.MeshInstances, scene.MeshCaches, settings);
             }
             catch (Exception ex)
             {

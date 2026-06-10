@@ -89,4 +89,28 @@ namespace RayTraceVS::Interop
         native.material.absorption = { managedBox.Absorption.X, managedBox.Absorption.Y, managedBox.Absorption.Z };
         return native;
     }
+
+    RayTraceVS::DXEngine::RenderSettings Marshalling::ToNativeRenderSettings(RenderSettings managedSettings)
+    {
+        RayTraceVS::DXEngine::RenderSettings native;
+        native.samplesPerPixel = managedSettings.SamplesPerPixel;
+        native.maxBounces = managedSettings.MaxBounces;
+        native.traceRecursionDepth = managedSettings.TraceRecursionDepth;
+        native.exposure = managedSettings.Exposure;
+        native.toneMapOperator = managedSettings.ToneMapOperator;
+        native.denoiserStabilization = managedSettings.DenoiserStabilization;
+        native.shadowStrength = managedSettings.ShadowStrength;
+        native.shadowAbsorptionScale = managedSettings.ShadowAbsorptionScale;
+        native.enableDenoiser = managedSettings.EnableDenoiser;
+        native.gamma = managedSettings.Gamma;
+        native.photonDebugMode = managedSettings.PhotonDebugMode;
+        native.photonDebugScale = managedSettings.PhotonDebugScale;
+        native.lightAttenuationConstant = managedSettings.LightAttenuationConstant;
+        native.lightAttenuationLinear = managedSettings.LightAttenuationLinear;
+        native.lightAttenuationQuadratic = managedSettings.LightAttenuationQuadratic;
+        native.maxShadowLights = managedSettings.MaxShadowLights;
+        native.nrdBypassDistanceThreshold = managedSettings.NRDBypassDistance;
+        native.nrdBypassBlendRange = managedSettings.NRDBypassBlendRange;
+        return native;
+    }
 }
