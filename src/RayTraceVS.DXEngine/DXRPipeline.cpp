@@ -2498,6 +2498,50 @@ namespace RayTraceVS::DXEngine
             }
             workQueueCountCapacity = requiredWorkCounts;
         }
+
+        // P-2: rewrite the 26 descriptors only when a referenced resource changed.
+        {
+            DxrDescriptorSnapshot snap;
+            snap.output = renderTarget->GetResource();
+            snap.tlas = accelerationStructure->GetTLAS()->GetGPUVirtualAddress();
+            snap.constants = constantBuffer.Get();
+            snap.spheres = sphereBuffer.Get();
+            snap.planes = planeBuffer.Get();
+            snap.boxes = boxBuffer.Get();
+            snap.lights = lightBuffer.Get();
+            snap.photonMap = photonMapBuffer.Get();
+            snap.photonCounter = photonCounterBuffer.Get();
+            if (denoiser && denoiser->IsReady())
+            {
+                auto& gBuffer = denoiser->GetGBuffer();
+                snap.gbufferDiffuse = gBuffer.DiffuseRadianceHitDist.Get();
+                snap.gbufferSpecular = gBuffer.SpecularRadianceHitDist.Get();
+                snap.gbufferNormalRoughness = gBuffer.NormalRoughness.Get();
+                snap.gbufferAlbedo = gBuffer.Albedo.Get();
+                snap.gbufferMotionVectors = gBuffer.MotionVectors.Get();
+                snap.gbufferViewZ = gBuffer.ViewZ.Get();
+                snap.gbufferShadowData = gBuffer.ShadowData.Get();
+                snap.gbufferShadowTranslucency = gBuffer.ShadowTranslucency.Get();
+            }
+            snap.photonHashTable = photonHashTableBuffer.Get();
+            snap.workQueue = workQueueBuffer.Get();
+            snap.workQueueCount = workQueueCountBuffer.Get();
+            snap.workQueueCapacityElems = workQueueCapacity;
+            snap.workQueueCountCapacityElems = workQueueCountCapacity;
+            snap.meshVertices = meshVertexBuffer.Get();
+            snap.meshIndices = meshIndexBuffer.Get();
+            snap.meshMaterials = meshMaterialBuffer.Get();
+            snap.meshInfoBuf = meshInfoBuffer.Get();
+            snap.meshInstanceInfoBuf = meshInstanceBuffer.Get();
+            snap.blueNoise = blueNoiseTexture.Get();
+            snap.maxPhotonCount = maxPhotons;
+
+            if (dxrDescriptorsValid && snap == lastDxrDescriptorSnapshot)
+                return;
+            lastDxrDescriptorSnapshot = snap;
+            dxrDescriptorsValid = true;
+        }
+
         CD3DX12_CPU_DESCRIPTOR_HANDLE cpuHandle(dxrSrvUavHeap->GetCPUDescriptorHandleForHeapStart());
         
         // [0] UAV for output texture
@@ -3519,6 +3563,25 @@ namespace RayTraceVS::DXEngine
 
     void DXRPipeline::UpdatePhotonDescriptors()
     {
+        // P-2: rewrite the photon descriptors only when a referenced resource changed.
+        {
+            PhotonDescriptorSnapshot snap;
+            snap.tlas = accelerationStructure->GetTLAS()->GetGPUVirtualAddress();
+            snap.constants = constantBuffer.Get();
+            snap.spheres = sphereBuffer.Get();
+            snap.planes = planeBuffer.Get();
+            snap.boxes = boxBuffer.Get();
+            snap.lights = lightBuffer.Get();
+            snap.photonMap = photonMapBuffer.Get();
+            snap.photonCounter = photonCounterBuffer.Get();
+            snap.maxPhotonCount = maxPhotons;
+
+            if (photonDescriptorsValid && snap == lastPhotonDescriptorSnapshot)
+                return;
+            lastPhotonDescriptorSnapshot = snap;
+            photonDescriptorsValid = true;
+        }
+
         auto device = dxContext->GetDevice();
         CD3DX12_CPU_DESCRIPTOR_HANDLE cpuHandle(photonSrvUavHeap->GetCPUDescriptorHandleForHeapStart());
         
@@ -4230,9 +4293,6 @@ namespace RayTraceVS::DXEngine
         UINT descriptorSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
         
         // Set up descriptors
-        CD3DX12_CPU_DESCRIPTOR_HANDLE cpuHandle(compositeDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
-        CD3DX12_GPU_DESCRIPTOR_HANDLE gpuHandle(compositeDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
-        
         auto& gBuffer = denoiser->GetGBuffer();
         auto& output = denoiser->GetOutput();
 
@@ -4250,61 +4310,81 @@ namespace RayTraceVS::DXEngine
         denoiser->EnsureResourceState(commandList, gBuffer.RawSpecularBackup.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         denoiser->EnsureResourceState(commandList, gBuffer.ShadowTranslucency.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         
-        // Create SRVs for all input textures
-        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        srvDesc.Texture2D.MipLevels = 1;
-        
-        struct CompositeSrvBinding
-        {
-            ID3D12Resource* resource;
-            DXGI_FORMAT format;
-        };
+        // P-2: rewrite the descriptor heap only when a referenced resource changed.
+        CompositeDescriptorSnapshot snap;
+        snap.denoisedDiffuse = output.DiffuseRadiance.Get();
+        snap.denoisedSpecular = output.SpecularRadiance.Get();
+        snap.albedo = gBuffer.Albedo.Get();
+        snap.denoisedShadow = output.DenoisedShadow.Get();
+        snap.rawDiffuseBackup = gBuffer.RawDiffuseBackup.Get();
+        snap.specularIn = gBuffer.SpecularRadianceHitDist.Get();
+        snap.normalRoughness = gBuffer.NormalRoughness.Get();
+        snap.viewZ = gBuffer.ViewZ.Get();
+        snap.motionVectors = gBuffer.MotionVectors.Get();
+        snap.shadowData = gBuffer.ShadowData.Get();
+        snap.rawSpecularBackup = gBuffer.RawSpecularBackup.Get();
+        snap.preDenoise = preDenoiseColor.Get();
+        snap.output = renderTarget->GetResource();
 
-        // t0-t11: Match Composite.hlsl SRV expectations (t2 = GBuffer_Albedo, t11 = PreDenoiseColor)
-        CompositeSrvBinding srvs[] = {
-            { output.DiffuseRadiance.Get(),        DXGI_FORMAT_R16G16B16A16_FLOAT }, // t0 DenoisedDiffuse
-            { output.SpecularRadiance.Get(),       DXGI_FORMAT_R16G16B16A16_FLOAT }, // t1 DenoisedSpecular
-            { gBuffer.Albedo.Get(),                DXGI_FORMAT_R8G8B8A8_UNORM },     // t2 GBuffer_Albedo
-            { output.DenoisedShadow.Get(),         DXGI_FORMAT_R16G16B16A16_FLOAT }, // t3 DenoisedShadow (SIGMA output - RGBA16F required)
-            { gBuffer.RawDiffuseBackup.Get(),      DXGI_FORMAT_R16G16B16A16_FLOAT }, // t4 GBuffer_DiffuseIn (copy before NRD to preserve point lights)
-            { gBuffer.SpecularRadianceHitDist.Get(),DXGI_FORMAT_R16G16B16A16_FLOAT },// t5 GBuffer_SpecularIn (corrupted by NRD)
-            { gBuffer.NormalRoughness.Get(),       DXGI_FORMAT_R8G8B8A8_UNORM },     // t6 GBuffer_NormalRoughness
-            { gBuffer.ViewZ.Get(),                 DXGI_FORMAT_R32_FLOAT },          // t7 GBuffer_ViewZ
-            { gBuffer.MotionVectors.Get(),         DXGI_FORMAT_R16G16_FLOAT },       // t8 GBuffer_MotionVectors
-            { gBuffer.ShadowData.Get(),            DXGI_FORMAT_R16G16_FLOAT },       // t9 GBuffer_ShadowData
-            { gBuffer.RawSpecularBackup.Get(),     DXGI_FORMAT_R16G16B16A16_FLOAT }, // t10 RawSpecularBackup (copy before NRD)
-            { preDenoiseColor.Get(),               DXGI_FORMAT_R8G8B8A8_UNORM }      // t11 PreDenoiseColor (copy of RayGen output)
-        };
-
-        for (const auto& srv : srvs)
+        if (!compositeDescriptorsValid || !(snap == lastCompositeDescriptorSnapshot))
         {
-            srvDesc.Format = srv.format;
-            device->CreateShaderResourceView(srv.resource, &srvDesc, cpuHandle);
-            cpuHandle.Offset(descriptorSize);
+            lastCompositeDescriptorSnapshot = snap;
+            compositeDescriptorsValid = true;
+
+            CD3DX12_CPU_DESCRIPTOR_HANDLE cpuHandle(compositeDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
+
+            // Create SRVs for all input textures
+            D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+            srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+            srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+            srvDesc.Texture2D.MipLevels = 1;
+
+            struct CompositeSrvBinding
+            {
+                ID3D12Resource* resource;
+                DXGI_FORMAT format;
+            };
+
+            // t0-t11: Match Composite.hlsl SRV expectations (t2 = GBuffer_Albedo, t11 = PreDenoiseColor)
+            CompositeSrvBinding srvs[] = {
+                { output.DiffuseRadiance.Get(),        DXGI_FORMAT_R16G16B16A16_FLOAT }, // t0 DenoisedDiffuse
+                { output.SpecularRadiance.Get(),       DXGI_FORMAT_R16G16B16A16_FLOAT }, // t1 DenoisedSpecular
+                { gBuffer.Albedo.Get(),                DXGI_FORMAT_R8G8B8A8_UNORM },     // t2 GBuffer_Albedo
+                { output.DenoisedShadow.Get(),         DXGI_FORMAT_R16G16B16A16_FLOAT }, // t3 DenoisedShadow (SIGMA output - RGBA16F required)
+                { gBuffer.RawDiffuseBackup.Get(),      DXGI_FORMAT_R16G16B16A16_FLOAT }, // t4 GBuffer_DiffuseIn (copy before NRD to preserve point lights)
+                { gBuffer.SpecularRadianceHitDist.Get(),DXGI_FORMAT_R16G16B16A16_FLOAT },// t5 GBuffer_SpecularIn (corrupted by NRD)
+                { gBuffer.NormalRoughness.Get(),       DXGI_FORMAT_R8G8B8A8_UNORM },     // t6 GBuffer_NormalRoughness
+                { gBuffer.ViewZ.Get(),                 DXGI_FORMAT_R32_FLOAT },          // t7 GBuffer_ViewZ
+                { gBuffer.MotionVectors.Get(),         DXGI_FORMAT_R16G16_FLOAT },       // t8 GBuffer_MotionVectors
+                { gBuffer.ShadowData.Get(),            DXGI_FORMAT_R16G16_FLOAT },       // t9 GBuffer_ShadowData
+                { gBuffer.RawSpecularBackup.Get(),     DXGI_FORMAT_R16G16B16A16_FLOAT }, // t10 RawSpecularBackup (copy before NRD)
+                { preDenoiseColor.Get(),               DXGI_FORMAT_R8G8B8A8_UNORM }      // t11 PreDenoiseColor (copy of RayGen output)
+            };
+
+            for (const auto& srv : srvs)
+            {
+                srvDesc.Format = srv.format;
+                device->CreateShaderResourceView(srv.resource, &srvDesc, cpuHandle);
+                cpuHandle.Offset(descriptorSize);
+            }
+
+            // u0: Output UAV at heap index 12 (cpuHandle is already there after 12 SRVs)
+            D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+            uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+            uavDesc.Texture2D.MipSlice = 0;
+            uavDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; // Render target format
+            device->CreateUnorderedAccessView(renderTarget->GetResource(), nullptr, &uavDesc, cpuHandle);
+
+            // CPU-only copy for ClearUnorderedAccessViewFloat
+            device->CreateUnorderedAccessView(renderTarget->GetResource(), nullptr, &uavDesc,
+                compositeUavCpuHeap->GetCPUDescriptorHandleForHeapStart());
         }
-        
-        // Store SRV table GPU handle
-        CD3DX12_GPU_DESCRIPTOR_HANDLE srvTableHandle = gpuHandle;
-        gpuHandle.Offset(12, descriptorSize); // Move past 12 SRVs (t0-t11)
-        cpuHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(compositeDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
-        cpuHandle.Offset(12, descriptorSize); // UAV is at index 12, after 12 SRVs (t0-t11)
-        
-        // u0: Output UAV (render target)
-        D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
-        uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-        uavDesc.Texture2D.MipSlice = 0;
-        uavDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; // Render target format
-        D3D12_CPU_DESCRIPTOR_HANDLE uavCpuHandle = cpuHandle;
-        device->CreateUnorderedAccessView(renderTarget->GetResource(), nullptr, &uavDesc, uavCpuHandle);
-        
-        // CPU-only handle for ClearUnorderedAccessViewFloat
-        D3D12_CPU_DESCRIPTOR_HANDLE uavCpuClearHandle = compositeUavCpuHeap->GetCPUDescriptorHandleForHeapStart();
-        device->CreateUnorderedAccessView(renderTarget->GetResource(), nullptr, &uavDesc, uavCpuClearHandle);
-        
+
+        // Table handles are fixed offsets from the heap start (independent of the rewrite)
+        CD3DX12_GPU_DESCRIPTOR_HANDLE srvTableHandle(compositeDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
         CD3DX12_GPU_DESCRIPTOR_HANDLE uavTableHandle(compositeDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
         uavTableHandle.Offset(12, descriptorSize);
+        D3D12_CPU_DESCRIPTOR_HANDLE uavCpuClearHandle = compositeUavCpuHeap->GetCPUDescriptorHandleForHeapStart();
         
         // Set descriptor heap (also needed for ClearUnorderedAccessViewFloat)
         ID3D12DescriptorHeap* heaps[] = { compositeDescriptorHeap.Get() };
