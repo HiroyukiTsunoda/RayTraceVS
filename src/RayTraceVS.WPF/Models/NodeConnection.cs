@@ -43,9 +43,17 @@ namespace RayTraceVS.WPF.Models
         private System.ComponentModel.PropertyChangedEventHandler? _inputNodeSelectionHandler;
 
         private bool _disposed;
-        
+
         // ダーティフラグ（遅延更新用）
         private bool _isDirty;
+
+        // UpdatePathの入力キャッシュ（前回と同一入力なら再計算をスキップ）
+        // 線の形状は両端ソケット位置と両端ノード境界のみで決まる
+        private Point _lastPathStart;
+        private Point _lastPathEnd;
+        private Rect _lastStartNodeBounds;
+        private Rect _lastEndNodeBounds;
+        private bool _pathComputed;
 
         // デフォルトの接続線の色（キャッシュ済み）
         private static readonly Brush DefaultConnectionColor = BrushCache.Get(0x00, 0x7A, 0xCC);
@@ -165,6 +173,22 @@ namespace RayTraceVS.WPF.Models
             {
                 endPoint = CalculateSocketPosition(inputSocket, true);
             }
+
+            // 入力（両端位置＋両端ノード境界）が前回と同一なら形状も同一のためスキップ
+            // （ノードドラッグ中はPositionChanged経由と明示呼び出しで重複実行されるため）
+            var startNodeBounds = GetNodeBounds(outputSocket.ParentNode);
+            var endNodeBounds = GetNodeBounds(inputSocket.ParentNode);
+            if (_pathComputed &&
+                startPoint == _lastPathStart && endPoint == _lastPathEnd &&
+                startNodeBounds == _lastStartNodeBounds && endNodeBounds == _lastEndNodeBounds)
+            {
+                return;
+            }
+            _lastPathStart = startPoint;
+            _lastPathEnd = endPoint;
+            _lastStartNodeBounds = startNodeBounds;
+            _lastEndNodeBounds = endNodeBounds;
+            _pathComputed = true;
 
             // ベジェ曲線のコントロールポイントを計算
             double distance = Math.Abs(endPoint.X - startPoint.X);

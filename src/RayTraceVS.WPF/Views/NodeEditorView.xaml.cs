@@ -149,7 +149,7 @@ namespace RayTraceVS.WPF.Views
         {
             // 実際のUI要素から位置を取得して更新
             // （固定値計算ではUIとずれる可能性があるため）
-            UpdateAllSocketPositionsForNode(node);
+            // UpdateNodeConnectionsがソケット位置の更新＋接続線更新を行う
             UpdateNodeConnections(node);
         }
         
@@ -1183,7 +1183,6 @@ namespace RayTraceVS.WPF.Views
             {
                 NodeCanvas.UpdateLayout();
                 sceneNode.RenumberSceneSockets();
-                UpdateAllSocketPositionsForNode(sceneNode);
                 UpdateNodeConnections(sceneNode);
                 GetViewModel()?.RefreshConnectionViews();
             }), DispatcherPriority.Loaded);
@@ -1203,7 +1202,6 @@ namespace RayTraceVS.WPF.Views
                 foreach (var sceneNode in viewModel.Nodes.OfType<SceneNode>())
                 {
                     sceneNode.RenumberSceneSockets();
-                    UpdateAllSocketPositionsForNode(sceneNode);
                     UpdateNodeConnections(sceneNode);
                 }
                 viewModel.RefreshConnectionViews();
@@ -1233,10 +1231,23 @@ namespace RayTraceVS.WPF.Views
 
             Ellipse? nearestElement = null;
             NodeSocket? nearestSocket = null;
-            double nearestDistance = double.MaxValue;
+            double maxDistanceSq = maxDistance * maxDistance;
+            double nearestDistanceSq = double.MaxValue;
+            // 粗カリング用マージン: NodeWidth/NodeHeightは概算値のため、
+            // ソケットのはみ出し＋概算誤差を吸収できる十分大きな値にする
+            double cullMargin = maxDistance + 50.0;
 
             foreach (var node in viewModel.Nodes)
             {
+                // 粗カリング: ノード矩形から十分遠いノードはソケット探索をスキップ
+                if (mousePos.X < node.Position.X - cullMargin ||
+                    mousePos.X > node.Position.X + node.NodeWidth + cullMargin ||
+                    mousePos.Y < node.Position.Y - cullMargin ||
+                    mousePos.Y > node.Position.Y + node.NodeHeight + cullMargin)
+                {
+                    continue;
+                }
+
                 var nodeContainer = FindNodeContainer(node);
                 if (nodeContainer == null) continue;
 
@@ -1247,13 +1258,13 @@ namespace RayTraceVS.WPF.Views
                     if (ellipse == null) continue;
 
                     var socketCenter = GetSocketElementPosition(ellipse);
-                    double distance = Math.Sqrt(
-                        Math.Pow(mousePos.X - socketCenter.X, 2) + 
-                        Math.Pow(mousePos.Y - socketCenter.Y, 2));
+                    double dx = mousePos.X - socketCenter.X;
+                    double dy = mousePos.Y - socketCenter.Y;
+                    double distanceSq = dx * dx + dy * dy;
 
-                    if (distance < nearestDistance && distance <= maxDistance)
+                    if (distanceSq < nearestDistanceSq && distanceSq <= maxDistanceSq)
                     {
-                        nearestDistance = distance;
+                        nearestDistanceSq = distanceSq;
                         nearestElement = ellipse;
                         nearestSocket = socket;
                     }
@@ -1266,13 +1277,13 @@ namespace RayTraceVS.WPF.Views
                     if (ellipse == null) continue;
 
                     var socketCenter = GetSocketElementPosition(ellipse);
-                    double distance = Math.Sqrt(
-                        Math.Pow(mousePos.X - socketCenter.X, 2) + 
-                        Math.Pow(mousePos.Y - socketCenter.Y, 2));
+                    double dx = mousePos.X - socketCenter.X;
+                    double dy = mousePos.Y - socketCenter.Y;
+                    double distanceSq = dx * dx + dy * dy;
 
-                    if (distance < nearestDistance && distance <= maxDistance)
+                    if (distanceSq < nearestDistanceSq && distanceSq <= maxDistanceSq)
                     {
-                        nearestDistance = distance;
+                        nearestDistanceSq = distanceSq;
                         nearestElement = ellipse;
                         nearestSocket = socket;
                     }
