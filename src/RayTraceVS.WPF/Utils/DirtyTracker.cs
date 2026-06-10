@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using RayTraceVS.WPF.Models;
 
 namespace RayTraceVS.WPF.Utils
@@ -51,10 +50,8 @@ namespace RayTraceVS.WPF.Utils
                 // ノードのキャッシュを無効化（イベント発火なし）
                 current.InvalidateCacheOnly();
 
-                // 下流ノードをキューに追加
-                var downstreamNodes = _getDownstreamNodes(current).ToList();
-                
-                foreach (var downstream in downstreamNodes)
+                // 下流ノードをキューに追加（_dirtyNodesのみ変更するため直接列挙で安全）
+                foreach (var downstream in _getDownstreamNodes(current))
                 {
                     if (!_dirtyNodes.Contains(downstream.Id))
                     {
