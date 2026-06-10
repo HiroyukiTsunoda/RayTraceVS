@@ -245,138 +245,10 @@ struct SphereAttributes
     float3 normal;
 };
 
-// シーン定数バッファ (must match C++ SceneConstants)
-struct SceneConstantBuffer
-{
-    float3 CameraPosition;
-    float CameraPadding1;
-    float3 CameraForward;
-    float CameraPadding2;
-    float3 CameraRight;
-    float CameraPadding3;
-    float3 CameraUp;
-    float CameraPadding4;
-    float3 LightPosition;
-    float LightIntensity;
-    float4 LightColor;
-    uint NumSpheres;
-    uint NumPlanes;
-    uint NumBoxes;
-    uint NumLights;
-    uint ScreenWidth;
-    uint ScreenHeight;
-    float AspectRatio;
-    float TanHalfFov;
-    uint SamplesPerPixel;
-    uint MaxBounces;
-    // Photon mapping parameters
-    uint NumPhotons;            // Number of photons to emit
-    uint PhotonMapSize;         // Current photon map size
-    float PhotonRadius;         // Search radius for gathering
-    float CausticIntensity;     // Intensity multiplier
-    uint PhotonDebugMode;       // 0 = off, 1+ = debug visualization
-    float PhotonDebugScale;     // Debug intensity scale
-    float2 PhotonDebugPadding;
-    // DoF (Depth of Field) parameters
-    float ApertureSize;         // 0.0 = DoF disabled, larger = stronger bokeh
-    float FocusDistance;        // Distance to the focal plane
-    // Shadow parameters
-    float ShadowStrength;       // 0.0 = no shadow, 1.0 = normal, >1.0 = darker
-    float ShadowAbsorptionScale; // Beer absorption scale for colored transparent shadows
-    uint FrameIndex;            // Frame counter for temporal noise variation
-    uint ShadowPadding;         // Padding for 16-byte alignment
-    // Light attenuation parameters (physical-based)
-    float LightAttenuationConstant;   // Constant term (usually 1.0)
-    float LightAttenuationLinear;     // Linear term (distance proportional)
-    float LightAttenuationQuadratic;  // Quadratic term (physical: 1.0, artistic: 0.01)
-    uint MaxShadowLights;             // Maximum lights for shadow calculation (optimization)
-    // Mesh instance count
-    uint NumMeshInstances;            // Number of FBX mesh instances
-    uint3 MeshPadding;                // Padding for 16-byte alignment
-    // Matrices for motion vectors
-    float4x4 ViewProjection;
-    float4x4 PrevViewProjection;
-};
-
-// 球データ (with PBR material, must match C++ GPUSphere) - 80 bytes
-struct SphereData
-{
-    float3 center;      // 12
-    float radius;       // 4  -> 16
-    float4 color;       // 16 -> 32
-    float metallic;     // 4
-    float roughness;    // 4
-    float transmission; // 4
-    float ior;          // 4  -> 48
-    float specular;     // 4
-    float padding1;     // 4
-    float padding2;     // 4
-    float padding3;     // 4  -> 64
-    float3 emission;    // 12
-    float padding4;     // 4  -> 80
-    float3 absorption;  // 12 (sigmaA)
-    float padding5;     // 4  -> 96
-};
-
-// 平面データ (with PBR material, must match C++ GPUPlane) - 80 bytes
-struct PlaneData
-{
-    float3 position;    // 12
-    float metallic;     // 4  -> 16
-    float3 normal;      // 12
-    float roughness;    // 4  -> 32
-    float4 color;       // 16 -> 48
-    float transmission; // 4
-    float ior;          // 4
-    float specular;     // 4
-    float padding1;     // 4  -> 64
-    float3 emission;    // 12
-    float padding2;     // 4  -> 80
-    float3 absorption;  // 12 (sigmaA)
-    float padding3;     // 4  -> 96
-};
-
-// ボックスデータ (with PBR material and rotation, must match C++ GPUBox) - 144 bytes
-// OBB (Oriented Bounding Box) support via local axes
-struct BoxData
-{
-    float3 center;      // 12
-    float padding1;     // 4  -> 16
-    float3 size;        // 12 (half-extents)
-    float padding2;     // 4  -> 32
-    // Local axes (rotation matrix columns) - for OBB
-    float3 axisX;       // 12 (local X axis in world space)
-    float padding3;     // 4  -> 48
-    float3 axisY;       // 12 (local Y axis in world space)
-    float padding4;     // 4  -> 64
-    float3 axisZ;       // 12 (local Z axis in world space)
-    float padding5;     // 4  -> 80
-    float4 color;       // 16 -> 96
-    float metallic;     // 4
-    float roughness;    // 4
-    float transmission; // 4
-    float ior;          // 4  -> 112
-    float specular;     // 4
-    float padding6;     // 4
-    float padding7;     // 4
-    float padding8;     // 4  -> 128
-    float3 emission;    // 12
-    float padding9;     // 4  -> 144
-    float3 absorption;  // 12 (sigmaA)
-    float padding10;    // 4  -> 160
-};
-
-// ライトデータ (must match C++ GPULight)
-struct LightData
-{
-    float3 position;    // Position (Point) or Direction (Directional)
-    float intensity;
-    float4 color;
-    uint type;          // LIGHT_TYPE_*
-    float radius;       // Area light radius (0 = point light, hard shadows)
-    float softShadowSamples; // Number of shadow samples (1-16)
-    float padding;
-};
+// シーン定数バッファ / ジオメトリ / ライト / メッシュ構造体は C++ と共有
+// (SceneConstantBuffer, SphereData, PlaneData, BoxData, LightData,
+//  MeshVertex, MeshInfo, MeshMaterial, MeshInstanceInfo)
+#include "SharedTypes.h"
 
 // ============================================
 // Photon Structure for Caustics
@@ -468,50 +340,8 @@ StructuredBuffer<LightData> Lights : register(t4);
 
 // ============================================
 // Mesh Data Buffers (for FBX triangle meshes)
+// 構造体定義 (MeshVertex 等) は SharedTypes.h を参照
 // ============================================
-
-// メッシュ頂点データ（Position + Normal インターリーブ）- 32 bytes
-struct MeshVertex
-{
-    float3 position;    // 12 bytes
-    float padding1;     // 4 bytes -> 16
-    float3 normal;      // 12 bytes
-    float padding2;     // 4 bytes -> 32
-};
-
-// メッシュ情報（各メッシュ種類の頂点/インデックスオフセット）- 16 bytes
-struct MeshInfo
-{
-    uint vertexOffset;  // MeshVertices内の開始インデックス
-    uint indexOffset;   // MeshIndices内の開始インデックス
-    uint vertexCount;   // このメッシュの頂点数
-    uint indexCount;    // このメッシュのインデックス数
-};
-
-// メッシュマテリアル（インスタンスごと）- 64 bytes
-struct MeshMaterial
-{
-    float4 color;       // 16 bytes -> 16
-    float metallic;     // 4
-    float roughness;    // 4
-    float transmission; // 4
-    float ior;          // 4 -> 32
-    float specular;     // 4
-    float3 emission;    // 12 -> 48
-    float padding1;     // 4
-    float padding2;     // 4
-    float padding3;     // 4
-    float padding4;     // 4 -> 64
-    float3 absorption;  // 12 (sigmaA)
-    float padding5;     // 4 -> 80
-};
-
-// メッシュインスタンス情報（TLASインスタンスごと）- 8 bytes
-struct MeshInstanceInfo
-{
-    uint meshTypeIndex;     // MeshInfos内のインデックス（どのメッシュ種類か）
-    uint materialIndex;     // MeshMaterials内のインデックス
-};
 
 // Mesh buffers (SRV)
 StructuredBuffer<MeshVertex> MeshVertices : register(t5);           // 全メッシュの頂点を統合

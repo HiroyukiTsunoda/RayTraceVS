@@ -201,7 +201,7 @@ Releaseビルドの前後比較は全コミット後に git checkout で実施�
 
 ## マイルストーン2: Interop境界とC++エンジン
 - [x] Step 4 [Interop/C++]: RenderSettings構造体化（UpdateScene 24→8パラメータ、DXEngine/RenderSettings.hをScene/Bridge/Interopで共有し詰め替えなし）＋SanitizeMaterial共通化（30行×4回コピペ解消）
-- [ ] Step 5 [C++/HLSL]: SharedTypes.h共有ヘッダ（GPU/HLSL構造体一元化、static_assert検証、.csoバイト比較で検証）
+- [x] Step 5 [C++/HLSL]: SharedTypes.h共有ヘッダ（src/Shader/に配置、9構造体をC++/HLSLで一元化、C++はSharedGpu名前空間＋GPU*エイリアス、static_assertサイズ検証）。検証: ①dxc -Pプリプロセス比較で全13シェーダー意味的同一 ②再コンパイル後ピクセル完全一致。**知見: .csoは-Zi埋め込みのためソース無変更でも再コンパイルでバイナリが変わるが、同一セッション内なら出力は決定的**（事前実験で確認→検証戦略に利用）
 - [ ] Step 6 [C++]: PhotonMappingPass抽出（約660行、P-2スナップショット比較を維持）
 - [ ] Step 7 [C++]: CompositePass抽出（約370行）
 - [ ] Step 8 [C++/オプション]: SceneBufferManager抽出（Step 6/7後に実施可否判断）
