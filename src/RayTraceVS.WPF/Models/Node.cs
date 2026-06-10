@@ -20,6 +20,12 @@ namespace RayTraceVS.WPF.Models
 
     public abstract partial class Node : ObservableObject
     {
+        /// <summary>
+        /// メッシュキャッシュへのアクセス手段（App.OnStartupで注入）。
+        /// FBXMeshNode等のModel層からサービスへ直接依存しないためのインジェクションポイント。
+        /// </summary>
+        public static IMeshCacheProvider? MeshCacheProvider { get; set; }
+
         [ObservableProperty]
         private Guid id;
 

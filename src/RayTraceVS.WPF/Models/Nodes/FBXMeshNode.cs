@@ -59,12 +59,12 @@ namespace RayTraceVS.WPF.Models.Nodes
         /// <summary>
         /// 頂点数
         /// </summary>
-        public int VertexCount => App.MeshCacheService?.GetMesh(MeshName)?.VertexCount ?? 0;
+        public int VertexCount => MeshCacheProvider?.GetMesh(MeshName)?.VertexCount ?? 0;
 
         /// <summary>
         /// 三角形数
         /// </summary>
-        public int TriangleCount => App.MeshCacheService?.GetMesh(MeshName)?.TriangleCount ?? 0;
+        public int TriangleCount => MeshCacheProvider?.GetMesh(MeshName)?.TriangleCount ?? 0;
 
         /// <summary>
         /// バウンディングボックスサイズ（表示用テキスト）
@@ -73,7 +73,7 @@ namespace RayTraceVS.WPF.Models.Nodes
         {
             get
             {
-                var mesh = App.MeshCacheService?.GetMesh(MeshName);
+                var mesh = MeshCacheProvider?.GetMesh(MeshName);
                 if (mesh == null) return "N/A";
                 var size = mesh.BoundsSize;
                 return $"({size.X:F2}, {size.Y:F2}, {size.Z:F2})";
@@ -112,7 +112,7 @@ namespace RayTraceVS.WPF.Models.Nodes
         public override object? Evaluate(Dictionary<Guid, object?> inputValues)
         {
             // キャッシュからメッシュデータを取得
-            var meshData = App.MeshCacheService?.GetMesh(MeshName);
+            var meshData = MeshCacheProvider?.GetMesh(MeshName);
             if (meshData == null) return null;  // キャッシュにない場合はnull
 
             // Transform入力を取得（未接続の場合は内部プロパティを使用）
