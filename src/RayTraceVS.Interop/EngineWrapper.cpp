@@ -457,28 +457,25 @@ namespace RayTraceVS::Interop
             // Wait for previous GPU work to complete before resetting command allocator
             LogDebug("[EngineWrapper::Render] WaitForGPU (before reset)...\n");
             Bridge::WaitForGPU(nativeContext);
-            
+
             // Reset command list
             LogDebug("[EngineWrapper::Render] ResetCommandList...\n");
             Bridge::ResetCommandList(nativeContext);
-            
-            // Render
+
+            // Render (records commands only; nothing is executed yet)
             LogDebug("[EngineWrapper::Render] RenderTestPattern...\n");
             Bridge::RenderTestPattern(nativePipeline, nativeRenderTarget, nativeScene);
             LogDebug("[EngineWrapper::Render] RenderTestPattern completed\n");
-            
-            // Execute command list
-            LogDebug("[EngineWrapper::Render] ExecuteCommandList...\n");
-            Bridge::ExecuteCommandList(nativeContext);
-            
-            // Wait for GPU completion
-            LogDebug("[EngineWrapper::Render] WaitForGPU...\n");
-            Bridge::WaitForGPU(nativeContext);
-            
-            // Copy to readback buffer
+
+            // Record the readback copy into the same command list. CopyToReadback
+            // performs its own UAV -> COPY_SOURCE -> UAV transitions, and barriers
+            // are ordered within a command list, so a separate submit (and the
+            // extra WaitForGPU round-trip it required) is unnecessary.
             LogDebug("[EngineWrapper::Render] CopyRenderTargetToReadback...\n");
-            Bridge::ResetCommandList(nativeContext);
             Bridge::CopyRenderTargetToReadback(nativeRenderTarget, nativeContext);
+
+            // Execute render + readback together, then wait once
+            LogDebug("[EngineWrapper::Render] ExecuteCommandList...\n");
             Bridge::ExecuteCommandList(nativeContext);
             Bridge::WaitForGPU(nativeContext);
             LogDebug("[EngineWrapper::Render] Completed\n");
