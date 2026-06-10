@@ -312,28 +312,33 @@ namespace RayTraceVS::Interop::Bridge
                 return true;
             }
 
-            // Check if all zeros (scan full buffer with early exit)
-            bool allZero = true;
-            for (size_t k = 0; k < pixels.size(); ++k)
+            // Diagnostic only: detect an all-zero frame and paint it orange so it
+            // stands out while debugging. The full-buffer scan (up to ~8MB per frame
+            // for dark images) is wasted in normal operation, so gate it on logging.
+            if (RayTraceVS::DXEngine::GetLogEnabled())
             {
-                if (pixels[k] != 0)
+                bool allZero = true;
+                for (size_t k = 0; k < pixels.size(); ++k)
                 {
-                    allZero = false;
-                    break;
+                    if (pixels[k] != 0)
+                    {
+                        allZero = false;
+                        break;
+                    }
                 }
-            }
-            
-            if (allZero)
-            {
-                // All zeros - fill with orange
-                for (int j = 0; j < dataSize; j += 4)
+
+                if (allZero)
                 {
-                    outData[j + 0] = 255;
-                    outData[j + 1] = 128;
-                    outData[j + 2] = 0;
-                    outData[j + 3] = 255;
+                    // All zeros - fill with orange
+                    for (int j = 0; j < dataSize; j += 4)
+                    {
+                        outData[j + 0] = 255;
+                        outData[j + 1] = 128;
+                        outData[j + 2] = 0;
+                        outData[j + 3] = 255;
+                    }
+                    return true;
                 }
-                return true;
             }
 
             // Success: copy actual pixel data
