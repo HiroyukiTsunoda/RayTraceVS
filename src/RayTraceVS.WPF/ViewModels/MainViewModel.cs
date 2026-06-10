@@ -578,6 +578,59 @@ namespace RayTraceVS.WPF.ViewModels
             }
         }
 
+        /// <summary>
+        /// 全SceneNodeのソケット数が「接続数+1（空きソケット1つ）」になるように調整する。
+        /// ファイル読み込み後やUndo/Redo後のグラフ正規化として呼ばれる。
+        /// </summary>
+        public void EnsureSceneNodeSocketCounts()
+        {
+            foreach (var node in Nodes)
+            {
+                if (node is Models.Nodes.SceneNode sceneNode)
+                {
+                    // オブジェクトソケットをチェック
+                    var objectSockets = sceneNode.InputSockets.Where(s => s.SocketType == Models.SocketType.Object).ToList();
+                    var connectedObjectSockets = objectSockets.Count(s => Connections.Any(c => c.InputSocket == s));
+                    var emptyObjectSockets = objectSockets.Count - connectedObjectSockets;
+
+                    // 空のソケットが0個なら1個追加
+                    if (emptyObjectSockets == 0)
+                    {
+                        sceneNode.AddObjectSocket();
+                    }
+                    // 空のソケットが2個以上なら余分を削除
+                    else if (emptyObjectSockets > 1)
+                    {
+                        var emptySockets = objectSockets.Where(s => !Connections.Any(c => c.InputSocket == s)).Skip(1).ToList();
+                        foreach (var socket in emptySockets)
+                        {
+                            sceneNode.RemoveSocket(socket.Name);
+                        }
+                    }
+
+                    // ライトソケットをチェック
+                    var lightSockets = sceneNode.InputSockets.Where(s => s.SocketType == Models.SocketType.Light).ToList();
+                    var connectedLightSockets = lightSockets.Count(s => Connections.Any(c => c.InputSocket == s));
+                    var emptyLightSockets = lightSockets.Count - connectedLightSockets;
+
+                    // 空のソケットが0個なら1個追加
+                    if (emptyLightSockets == 0)
+                    {
+                        sceneNode.AddLightSocket();
+                    }
+                    // 空のソケットが2個以上なら余分を削除
+                    else if (emptyLightSockets > 1)
+                    {
+                        var emptySockets = lightSockets.Where(s => !Connections.Any(c => c.InputSocket == s)).Skip(1).ToList();
+                        foreach (var socket in emptySockets)
+                        {
+                            sceneNode.RemoveSocket(socket.Name);
+                        }
+                    }
+                }
+            }
+        }
+
         private void CleanupSceneNodeSockets(Models.Nodes.SceneNode sceneNode)
         {
             // オブジェクトソケットをクリーンアップ（最低1つは残す）
