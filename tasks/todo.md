@@ -209,7 +209,7 @@ Releaseビルドの前後比較は全コミット後に git checkout で実施�
 ## マイルストーン3: UI/MVVM神クラス分割（最後にまとめてUI手動検証）
 - [x] Step 9 [C#]: 空振りインターフェース3つ削除（IRenderService/ISceneFileService/ISettingsService、実装ゼロ・シグネチャ乖離のため）＋IMeshCacheProvider導入でFBXMeshNode→App層の直接依存を解消（FBXメッシュ2個入りシーンでピクセル一致確認）
 - [x] Step 10 [C#]: 型互換チェック統合＋CreateConnectionのConnectionHandler移動。**発見したUXバグを修正**: プレビュー線の互換判定（Color↔Vector3のみ）と実接続判定（Object特例のみ）が別ルールだった→実接続ルール（同型+Object特例）に統一。実接続の挙動は完全不変、プレビュー線の色のみ正しい表示に（Object系接続: 赤→緑、Color↔Vector3: 緑→赤）。ハンドラ内デッドコード（EndConnectionDrag系約230行）も削除。空中ドロップの元接続削除2箇所重複をRemoveOriginalConnectionに集約。要GUI手動検証
-- [ ] Step 11 [C#]: コピー/ペーストのEditCommandHandler移動
+- [x] Step 11 [C#]: コピー/ペースト（HandleCopy/HandlePaste/ClipboardData 約200行）をEditCommandHandlerへ移動。PerformCopy/Pasteコールバック中継を廃止し実装をハンドラに一本化、座標取得はGetCurrentCanvasPositionコールバック注入。要GUI手動検証
 - [ ] Step 12 [C#]: MainViewModelへのファイルI/O・ICommand移動（DIコンテナは導入しない）
 - [ ] Step 13 [C#]: SceneNodeソケット管理の集約
 - [ ] 手動検証チェックリストをユーザーに提示

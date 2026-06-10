@@ -103,8 +103,7 @@ namespace RayTraceVS.WPF.Views
             {
                 GetViewModel = GetViewModel,
                 ClearSelections = vm => _selectionHandler.ClearAllSelections(vm),
-                PerformCopy = HandleCopy,
-                PerformPaste = HandlePaste
+                GetCurrentCanvasPosition = () => _coordTransformer.GetCurrentCanvasPosition()
             };
             
             // UIコンポーネント参照を設定
@@ -676,19 +675,19 @@ namespace RayTraceVS.WPF.Views
             }
 
             var key = GetRealKey(e);
-            
-            // CTRL+C: コピー
+
+            // CTRL+C: コピー（ハンドラーに委譲）
             if (key == Key.C && Keyboard.Modifiers == ModifierKeys.Control)
             {
-                HandleCopy();
+                _editCommandHandler.HandleCopy();
                 e.Handled = true;
                 return;
             }
-            
-            // CTRL+V: ペースト
+
+            // CTRL+V: ペースト（ハンドラーに委譲）
             if (key == Key.V && Keyboard.Modifiers == ModifierKeys.Control)
             {
-                HandlePaste();
+                _editCommandHandler.HandlePaste();
                 e.Handled = true;
                 return;
             }
@@ -706,229 +705,24 @@ namespace RayTraceVS.WPF.Views
         }
         
         #region コピー＆ペースト
-        
+
         /// <summary>
-        /// クリップボードにコピーするデータの形式
-        /// </summary>
-        private const string ClipboardFormat = "RayTraceVS.NodeClipboard";
-        
-        /// <summary>
-        /// 選択されたノードをクリップボードにコピー（外部公開用）
+        /// 選択されたノードをクリップボードにコピー（外部公開用、実装はEditCommandHandler）
         /// </summary>
         public void CopySelectedNodes()
         {
-            HandleCopy();
+            _editCommandHandler.HandleCopy();
         }
-        
+
         /// <summary>
-        /// クリップボードからノードをペースト（外部公開用）
+        /// クリップボードからノードをペースト（外部公開用、実装はEditCommandHandler）
         /// </summary>
         public void PasteNodes()
         {
-            HandlePaste();
+            _editCommandHandler.HandlePaste();
         }
-        
-        /// <summary>
-        /// 選択されたノードをクリップボードにコピー
-        /// </summary>
-        private void HandleCopy()
-        {
-            if (selectedNodes.Count == 0) return;
-            
-            var viewModel = GetViewModel();
-            if (viewModel == null) return;
-            
-            try
-            {
-                // 選択されたノードのIDセット
-                var selectedNodeIds = new HashSet<Guid>(selectedNodes.Select(n => n.Id));
-                
-                // ノードをシリアライズ（SceneFileServiceの公開メソッドを共用）
-                var nodeDataList = selectedNodes.Select(n => SceneFileService.SerializeNode(n)).ToList();
 
-                // 選択されたノード間の接続のみをシリアライズ
-                var connectionDataList = viewModel.Connections
-                    .Where(c => c.OutputSocket?.ParentNode != null && c.InputSocket?.ParentNode != null &&
-                               selectedNodeIds.Contains(c.OutputSocket.ParentNode.Id) &&
-                               selectedNodeIds.Contains(c.InputSocket.ParentNode.Id))
-                    .Select(c => new SceneFileService.ConnectionData
-                    {
-                        OutputNodeId = c.OutputSocket!.ParentNode!.Id,
-                        OutputSocketName = c.OutputSocket.Name,
-                        InputNodeId = c.InputSocket!.ParentNode!.Id,
-                        InputSocketName = c.InputSocket.Name
-                    })
-                    .ToList();
-
-                var clipboardData = new ClipboardData
-                {
-                    Nodes = nodeDataList,
-                    Connections = connectionDataList
-                };
-                
-                var json = JsonConvert.SerializeObject(clipboardData, Formatting.Indented);
-                
-                // クリップボードに設定
-                var dataObject = new DataObject();
-                dataObject.SetData(ClipboardFormat, json);
-                dataObject.SetData(DataFormats.Text, json); // テキストとしてもコピー（デバッグ用）
-                Clipboard.SetDataObject(dataObject, true);
-                
-                Debug.WriteLine($"コピー完了: {selectedNodes.Count}個のノード, {connectionDataList.Count}個の接続");
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"コピー失敗: {ex.Message}");
-                Debug.WriteLine($"スタックトレース: {ex.StackTrace}");
-                System.Windows.MessageBox.Show(
-                    $"ノードのコピーに失敗しました。\n{ex.Message}",
-                    "コピーエラー",
-                    System.Windows.MessageBoxButton.OK,
-                    System.Windows.MessageBoxImage.Warning);
-            }
-        }
-        
-        /// <summary>
-        /// クリップボードからノードをペースト
-        /// </summary>
-        private void HandlePaste()
-        {
-            var viewModel = GetViewModel();
-            if (viewModel == null) return;
-            
-            try
-            {
-                // クリップボードからデータを取得
-                var dataObject = Clipboard.GetDataObject();
-                if (dataObject == null) return;
-                
-                string? json = null;
-                if (dataObject.GetDataPresent(ClipboardFormat))
-                {
-                    json = dataObject.GetData(ClipboardFormat) as string;
-                }
-                else if (dataObject.GetDataPresent(DataFormats.Text))
-                {
-                    // テキストとして取得を試みる
-                    json = dataObject.GetData(DataFormats.Text) as string;
-                }
-                
-                if (string.IsNullOrEmpty(json)) return;
-                
-                var clipboardData = JsonConvert.DeserializeObject<ClipboardData>(json);
-                if (clipboardData?.Nodes == null || clipboardData.Nodes.Count == 0) return;
-                
-                // マウス位置を取得（Canvas座標系）
-                var mousePos = _coordTransformer.GetCurrentCanvasPosition();
-                
-                // コピー元のノードの位置の中心を計算
-                double minX = clipboardData.Nodes.Min(n => n.PositionX);
-                double minY = clipboardData.Nodes.Min(n => n.PositionY);
-                double maxX = clipboardData.Nodes.Max(n => n.PositionX);
-                double maxY = clipboardData.Nodes.Max(n => n.PositionY);
-                double centerX = (minX + maxX) / 2;
-                double centerY = (minY + maxY) / 2;
-                
-                // オフセット（マウス位置を中心にペースト）
-                double offsetX = mousePos.X - centerX;
-                double offsetY = mousePos.Y - centerY;
-                
-                // 旧ID -> 新ノードのマッピング
-                var idMapping = new Dictionary<Guid, Node>();
-                var newNodes = new List<Node>();
-                var newConnections = new List<NodeConnection>();
-                
-                // ノードをデシリアライズして新しいIDを割り当て（SceneFileService共用）
-                foreach (var nodeData in clipboardData.Nodes)
-                {
-                    // DeserializeNodeは元のIDを設定するので、まずそれを使って復元
-                    var node = SceneFileService.DeserializeNode(nodeData);
-                    if (node != null)
-                    {
-                        // 旧IDを記録してから新しいIDを割り当て
-                        idMapping[nodeData.Id] = node;
-                        node.Id = Guid.NewGuid();
-                        // 新しい位置を設定
-                        node.Position = new Point(nodeData.PositionX + offsetX, nodeData.PositionY + offsetY);
-                        newNodes.Add(node);
-                    }
-                }
-                
-                // 接続を復元
-                if (clipboardData.Connections != null)
-                {
-                    foreach (var connData in clipboardData.Connections)
-                    {
-                        if (idMapping.TryGetValue(connData.OutputNodeId, out var outputNode) &&
-                            idMapping.TryGetValue(connData.InputNodeId, out var inputNode))
-                        {
-                            var outputSocket = outputNode.OutputSockets.FirstOrDefault(s => s.Name == connData.OutputSocketName);
-                            var inputSocket = inputNode.InputSockets.FirstOrDefault(s => s.Name == connData.InputSocketName);
-                            
-                            if (outputSocket != null && inputSocket != null)
-                            {
-                                newConnections.Add(new NodeConnection(outputSocket, inputSocket));
-                            }
-                        }
-                    }
-                }
-                
-                // 選択をクリア（ハンドラーに委譲）
-                _selectionHandler.ClearAllSelections(viewModel);
-                
-                // コマンドとして実行（Undo対応）
-                if (newNodes.Count > 0)
-                {
-                    var composite = new CompositeCommand($"{newNodes.Count}個のノードをペースト");
-                    
-                    foreach (var node in newNodes)
-                    {
-                        composite.Add(new AddNodeCommand(viewModel, node));
-                    }
-                    
-                    foreach (var connection in newConnections)
-                    {
-                        composite.Add(new AddConnectionCommand(viewModel, connection));
-                    }
-                    
-                    viewModel.CommandManager.Execute(composite);
-                    
-                    // ペーストしたノードを選択状態にする
-                    foreach (var node in newNodes)
-                    {
-                        node.IsSelected = true;
-                        selectedNodes.Add(node);
-                    }
-                    
-                    Debug.WriteLine($"ペースト完了: {newNodes.Count}個のノード, {newConnections.Count}個の接続");
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"ペースト失敗: {ex.Message}");
-                Debug.WriteLine($"スタックトレース: {ex.StackTrace}");
-                System.Windows.MessageBox.Show(
-                    $"ノードのペーストに失敗しました。\n{ex.Message}",
-                    "ペーストエラー",
-                    System.Windows.MessageBoxButton.OK,
-                    System.Windows.MessageBoxImage.Warning);
-            }
-        }
-        
         #endregion コピー＆ペースト
-
-        #region クリップボード用データクラス
-
-        /// <summary>
-        /// クリップボードに保存するデータ（SceneFileServiceのNodeData/ConnectionDataを共用）
-        /// </summary>
-        private class ClipboardData
-        {
-            public List<SceneFileService.NodeData> Nodes { get; set; } = new();
-            public List<SceneFileService.ConnectionData> Connections { get; set; } = new();
-        }
-
-        #endregion クリップボード用データクラス
         
         /// <summary>
         /// 選択されたノードを削除（MainWindowから呼び出し用）
