@@ -31,53 +31,48 @@ namespace RayTraceVS.WPF.Services
 {
     public class SceneEvaluator
     {
+        /// <summary>
+        /// 評価結果のデータ型 → SceneCollectorへの振り分け処理。
+        /// 新しいデータ型を追加する場合はここに1エントリ追加するだけでよい
+        /// （SceneNodeあり/なしの両経路で共通に使われる）。
+        /// </summary>
+        private static readonly Dictionary<Type, Action<object, SceneCollector>> Dispatchers = new()
+        {
+            [typeof(SphereData)] = (obj, c) =>
+            {
+                var data = (SphereData)obj;
+                if (data.Radius > 0)
+                {
+#if DEBUG
+                    Debug.WriteLine($"[SceneEvaluator] Sphere Pos({data.Position.X:F3}, {data.Position.Y:F3}, {data.Position.Z:F3}) R={data.Radius:F3} " +
+                                    $"Base({data.Material.BaseColor.X:F3}, {data.Material.BaseColor.Y:F3}, {data.Material.BaseColor.Z:F3}, {data.Material.BaseColor.W:F3}) " +
+                                    $"M={data.Material.Metallic:F3} Rgh={data.Material.Roughness:F3} T={data.Material.Transmission:F3} IOR={data.Material.IOR:F3}");
+#endif
+                    c.Spheres.Add(ConvertSphereData(data));
+                }
+            },
+            [typeof(PlaneData)] = (obj, c) => c.Planes.Add(ConvertPlaneData((PlaneData)obj)),
+            [typeof(BoxData)] = (obj, c) => c.Boxes.Add(ConvertBoxData((BoxData)obj)),
+            [typeof(LightData)] = (obj, c) => c.Lights.Add(ConvertLightData((LightData)obj)),
+            [typeof(CameraData)] = (obj, c) => c.Camera = ConvertCameraData((CameraData)obj),
+            [typeof(MeshObjectData)] = (obj, c) => c.AddMeshInstance((MeshObjectData)obj),
+        };
+
         public SceneEvaluationResult EvaluateScene(NodeGraph nodeGraph)
         {
-            var spheres = new List<InteropSphereData>();
-            var planes = new List<InteropPlaneData>();
-            var boxes = new List<InteropBoxData>();
-            var lights = new List<InteropLightData>();
-            var meshInstances = new List<InteropMeshInstanceData>();
-            var meshCaches = new Dictionary<string, InteropMeshCacheData>();
-            int samplesPerPixel = 1;
-            int maxBounces = 6;
-            int traceRecursionDepth = 2;
-            float exposure = 1.0f;
-            int toneMapOperator = 2;
-            float denoiserStabilization = 1.0f;
-            float shadowStrength = 1.0f;
-            float shadowAbsorptionScale = 4.0f;
-            bool enableDenoiser = true;
-            float gamma = 1.0f;
-            // P1 optimization settings
-            float lightAttenuationConstant = 1.0f;
-            float lightAttenuationLinear = 0.0f;
-            float lightAttenuationQuadratic = 0.01f;
-            int maxShadowLights = 2;
-            float nrdBypassDistance = 8.0f;
-            float nrdBypassBlendRange = 2.0f;
-            InteropCameraData camera = new InteropCameraData
-            {
-                Position = new InteropVector3(0, 2, -5),
-                LookAt = new InteropVector3(0, 0, 0),
-                Up = new InteropVector3(0, 1, 0),
-                FieldOfView = 60.0f,
-                AspectRatio = 16.0f / 9.0f
-            };
-
+            var collector = new SceneCollector();
             var allNodes = nodeGraph.GetAllNodes();
             var connections = nodeGraph.GetAllConnections();
-            
+
             // SceneNodeが存在するか確認
             var sceneNode = allNodes.OfType<Models.Nodes.SceneNode>().FirstOrDefault();
-            
+
+            // グラフを評価（増分評価: Dirtyなノードのみ再評価）
+            var results = nodeGraph.EvaluateGraph();
+
             if (sceneNode != null && connections.Any())
             {
-                // SceneNodeが存在する場合：グラフを評価してSceneNodeの出力を使用
-                // 増分評価を使用（Dirtyなノードのみ再評価）
-                var results = nodeGraph.EvaluateGraph();
-                
-                // SceneNodeの評価結果を取得
+                // SceneNodeが存在する場合：SceneNodeの出力（接続されたオブジェクト/ライトのみ）を使用
                 if (results.TryGetValue(sceneNode.Id, out var sceneResult) && sceneResult is SceneData sceneData)
                 {
 #if DEBUG
@@ -102,249 +97,177 @@ namespace RayTraceVS.WPF.Services
                     // カメラの設定（デフォルト値でなければ使用）
                     if (sceneData.Camera.FieldOfView > 0)
                     {
-                        camera = ConvertCameraData(sceneData.Camera);
+                        collector.Camera = ConvertCameraData(sceneData.Camera);
                     }
-                    
+
                     // SceneNodeに接続されたオブジェクトのみを追加
                     foreach (var obj in sceneData.Objects)
                     {
-                        if (obj is SphereData sd && sd.Radius > 0)
-                        {
-#if DEBUG
-                            Debug.WriteLine($"[SceneEvaluator] Sphere Pos({sd.Position.X:F3}, {sd.Position.Y:F3}, {sd.Position.Z:F3}) R={sd.Radius:F3} " +
-                                            $"Base({sd.Material.BaseColor.X:F3}, {sd.Material.BaseColor.Y:F3}, {sd.Material.BaseColor.Z:F3}, {sd.Material.BaseColor.W:F3}) " +
-                                            $"M={sd.Material.Metallic:F3} Rgh={sd.Material.Roughness:F3} T={sd.Material.Transmission:F3} IOR={sd.Material.IOR:F3}");
-#endif
-                            spheres.Add(ConvertSphereData(sd));
-                        }
-                        else if (obj is PlaneData pd)
-                        {
-                            planes.Add(ConvertPlaneData(pd));
-                        }
-                        else if (obj is BoxData bd)
-                        {
-                            boxes.Add(ConvertBoxData(bd));
-                        }
-                        else if (obj is MeshObjectData md && !string.IsNullOrEmpty(md.MeshName))
-                        {
-                            // キャッシュが存在する場合のみインスタンスを追加
-                            // キャッシュがない場合はスキップ（AccessViolation防止）
-                            if (!meshCaches.ContainsKey(md.MeshName))
-                            {
-                                var cache = CreateMeshCacheData(md.MeshName);
-                                if (cache != null)
-                                {
-                                    meshCaches[md.MeshName] = cache;
-                                }
-                                else
-                                {
-                                    // キャッシュが存在しない場合はこのメッシュインスタンスをスキップ
-                                    continue;
-                                }
-                            }
-                            meshInstances.Add(ConvertMeshInstanceData(md));
-                        }
+                        collector.Dispatch(obj);
                     }
-                    
+
                     // SceneNodeに接続されたライトのみを追加
                     foreach (var light in sceneData.Lights)
                     {
-                        lights.Add(ConvertLightData(light));
+                        collector.Lights.Add(ConvertLightData(light));
                     }
-                    
+
 #if DEBUG
-                    Debug.WriteLine($"[SceneEvaluator] Objects: spheres={spheres.Count}, planes={planes.Count}, boxes={boxes.Count}, meshInstances={meshInstances.Count}");
-                    Debug.WriteLine($"[SceneEvaluator] Lights: {lights.Count}");
+                    Debug.WriteLine($"[SceneEvaluator] Objects: spheres={collector.Spheres.Count}, planes={collector.Planes.Count}, boxes={collector.Boxes.Count}, meshInstances={collector.MeshInstances.Count}");
+                    Debug.WriteLine($"[SceneEvaluator] Lights: {collector.Lights.Count}");
 #endif
-                    
+
                     // レンダリング設定を取得
-                    samplesPerPixel = sceneData.SamplesPerPixel > 0 ? sceneData.SamplesPerPixel : 1;
-                    maxBounces = sceneData.MaxBounces > 0 ? sceneData.MaxBounces : 6;
-                    traceRecursionDepth = sceneData.TraceRecursionDepth > 0 ? sceneData.TraceRecursionDepth : 2;
-                    exposure = sceneData.Exposure > 0 ? sceneData.Exposure : 1.0f;
-                    toneMapOperator = sceneData.ToneMapOperator;
-                    denoiserStabilization = sceneData.DenoiserStabilization > 0 ? sceneData.DenoiserStabilization : 1.0f;
-                    shadowStrength = sceneData.ShadowStrength >= 0 ? sceneData.ShadowStrength : 1.0f;
-                    shadowAbsorptionScale = sceneData.ShadowAbsorptionScale >= 0 ? sceneData.ShadowAbsorptionScale : 4.0f;
-                    enableDenoiser = sceneData.EnableDenoiser;
-                    gamma = sceneData.Gamma > 0 ? sceneData.Gamma : 1.0f;
-                    // P1 optimization settings
-                    lightAttenuationConstant = sceneData.LightAttenuationConstant > 0 ? sceneData.LightAttenuationConstant : 1.0f;
-                    lightAttenuationLinear = sceneData.LightAttenuationLinear >= 0 ? sceneData.LightAttenuationLinear : 0.0f;
-                    lightAttenuationQuadratic = sceneData.LightAttenuationQuadratic >= 0 ? sceneData.LightAttenuationQuadratic : 0.01f;
-                    maxShadowLights = sceneData.MaxShadowLights > 0 ? sceneData.MaxShadowLights : 2;
-                    nrdBypassDistance = sceneData.NRDBypassDistance > 0 ? sceneData.NRDBypassDistance : 8.0f;
-                    nrdBypassBlendRange = sceneData.NRDBypassBlendRange > 0 ? sceneData.NRDBypassBlendRange : 2.0f;
+                    collector.ApplyRenderSettings(sceneData);
                 }
+                // SceneNodeの評価結果が取得できない場合は空シーンのまま（従来挙動）
             }
             else
             {
-                // SceneNodeがない場合：すべてのオブジェクトノードから直接取得（フォールバック）
-                // 接続がある場合はグラフ評価を利用（入力値が正しく伝播される）
-                Dictionary<Guid, object?>? results = null;
-                if (connections.Any())
-                {
-                    results = nodeGraph.EvaluateGraph();
-                }
-                
+                // SceneNodeがない場合（フォールバック）：全ノードの評価結果をディスパッチ
+                // 各ノードのEvaluateは入力未接続時に内部プロパティへフォールバックするため、
+                // 接続の有無に関わらず評価結果をそのまま使える
                 foreach (var node in allNodes)
                 {
-                    // グラフ評価結果があればそれを使用、なければノードプロパティから取得
-                    if (node is Models.Nodes.SphereNode sphereNode)
+                    if (results.TryGetValue(node.Id, out var result) && result != null)
                     {
-                        SphereData sphereData;
-                        if (results != null && results.TryGetValue(sphereNode.Id, out var evalResult) && evalResult is SphereData sd)
-                        {
-                            sphereData = sd;
-                        }
-                        else
-                        {
-                            sphereData = new SphereData
-                            {
-                                Position = sphereNode.ObjectTransform.Position,
-                                Radius = sphereNode.Radius,
-                                Material = MaterialData.Default
-                            };
-                        }
-                        if (sphereData.Radius > 0)
-                        {
-                            spheres.Add(ConvertSphereData(sphereData));
-                        }
-                    }
-                    else if (node is Models.Nodes.PlaneNode planeNode)
-                    {
-                        PlaneData planeData;
-                        if (results != null && results.TryGetValue(planeNode.Id, out var evalResult) && evalResult is PlaneData pd)
-                        {
-                            planeData = pd;
-                        }
-                        else
-                        {
-                            planeData = new PlaneData
-                            {
-                                Position = planeNode.ObjectTransform.Position,
-                                Normal = planeNode.Normal,
-                                Material = MaterialData.Default
-                            };
-                        }
-                        planes.Add(ConvertPlaneData(planeData));
-                    }
-                    else if (node is Models.Nodes.BoxNode boxNode)
-                    {
-                        BoxData boxData;
-                        if (results != null && results.TryGetValue(boxNode.Id, out var evalResult) && evalResult is BoxData bd)
-                        {
-                            boxData = bd;
-                        }
-                        else
-                        {
-                            // Default: identity rotation (axis-aligned)
-                            boxData = new BoxData
-                            {
-                                Center = boxNode.ObjectTransform.Position,
-                                Size = boxNode.Size * 0.5f,  // half-extents
-                                AxisX = Vector3.UnitX,
-                                AxisY = Vector3.UnitY,
-                                AxisZ = Vector3.UnitZ,
-                                Material = MaterialData.Default
-                            };
-                        }
-                        boxes.Add(ConvertBoxData(boxData));
-                    }
-                    else if (node is Models.Nodes.CameraNode cameraNode)
-                    {
-                        CameraData cameraData;
-                        if (results != null && results.TryGetValue(cameraNode.Id, out var evalResult) && evalResult is CameraData cd)
-                        {
-                            cameraData = cd;
-                        }
-                        else
-                        {
-                            cameraData = new CameraData
-                            {
-                                Position = cameraNode.CameraPosition,
-                                LookAt = cameraNode.LookAt,
-                                Up = cameraNode.Up,
-                                FieldOfView = cameraNode.FieldOfView,
-                                Near = cameraNode.Near,
-                                Far = cameraNode.Far,
-                                ApertureSize = cameraNode.ApertureSize,
-                                FocusDistance = cameraNode.FocusDistance
-                            };
-                        }
-                        camera = ConvertCameraData(cameraData);
-                    }
-                    else if (node is Models.Nodes.PointLightNode pointLightNode)
-                    {
-                        var lightData = new LightData
-                        {
-                            Type = LightType.Point,
-                            Position = pointLightNode.LightPosition,
-                            Direction = Vector3.Zero,
-                            Color = pointLightNode.Color,
-                            Intensity = pointLightNode.Intensity,
-                            Attenuation = pointLightNode.Attenuation
-                        };
-                        lights.Add(ConvertLightData(lightData));
-                    }
-                    else if (node is Models.Nodes.AmbientLightNode ambientLightNode)
-                    {
-                        var lightData = new LightData
-                        {
-                            Type = LightType.Ambient,
-                            Position = Vector3.Zero,
-                            Direction = Vector3.Zero,
-                            Color = ambientLightNode.Color,
-                            Intensity = ambientLightNode.Intensity,
-                            Attenuation = 0.0f
-                        };
-                        lights.Add(ConvertLightData(lightData));
-                    }
-                    else if (node is Models.Nodes.DirectionalLightNode directionalLightNode)
-                    {
-                        var lightData = new LightData
-                        {
-                            Type = LightType.Directional,
-                            Position = Vector3.Zero,
-                            Direction = directionalLightNode.Direction,
-                            Color = directionalLightNode.Color,
-                            Intensity = directionalLightNode.Intensity,
-                            Attenuation = 0.0f
-                        };
-                        lights.Add(ConvertLightData(lightData));
+                        collector.Dispatch(result);
                     }
                 }
             }
 
-            return new SceneEvaluationResult
-            {
-                Spheres = spheres.ToArray(),
-                Planes = planes.ToArray(),
-                Boxes = boxes.ToArray(),
-                Camera = camera,
-                Lights = lights.ToArray(),
-                MeshInstances = meshInstances.ToArray(),
-                MeshCaches = meshCaches.Values.ToArray(),
-                SamplesPerPixel = samplesPerPixel,
-                MaxBounces = maxBounces,
-                TraceRecursionDepth = traceRecursionDepth,
-                Exposure = exposure,
-                ToneMapOperator = toneMapOperator,
-                DenoiserStabilization = denoiserStabilization,
-                ShadowStrength = shadowStrength,
-                ShadowAbsorptionScale = shadowAbsorptionScale,
-                EnableDenoiser = enableDenoiser,
-                Gamma = gamma,
-                LightAttenuationConstant = lightAttenuationConstant,
-                LightAttenuationLinear = lightAttenuationLinear,
-                LightAttenuationQuadratic = lightAttenuationQuadratic,
-                MaxShadowLights = maxShadowLights,
-                NRDBypassDistance = nrdBypassDistance,
-                NRDBypassBlendRange = nrdBypassBlendRange
-            };
+            return collector.ToResult();
         }
 
-        private InteropSphereData ConvertSphereData(SphereData data)
+        /// <summary>
+        /// 評価結果の収集先。Interop型への変換結果とレンダリング設定を蓄積し、
+        /// SceneEvaluationResult を構築する。
+        /// </summary>
+        private sealed class SceneCollector
+        {
+            public List<InteropSphereData> Spheres { get; } = new();
+            public List<InteropPlaneData> Planes { get; } = new();
+            public List<InteropBoxData> Boxes { get; } = new();
+            public List<InteropLightData> Lights { get; } = new();
+            public List<InteropMeshInstanceData> MeshInstances { get; } = new();
+            public Dictionary<string, InteropMeshCacheData> MeshCaches { get; } = new();
+
+            public InteropCameraData Camera { get; set; } = new InteropCameraData
+            {
+                Position = new InteropVector3(0, 2, -5),
+                LookAt = new InteropVector3(0, 0, 0),
+                Up = new InteropVector3(0, 1, 0),
+                FieldOfView = 60.0f,
+                AspectRatio = 16.0f / 9.0f
+            };
+
+            // レンダリング設定（デフォルト値で初期化、SceneNodeがあれば上書き）
+            private int _samplesPerPixel = 1;
+            private int _maxBounces = 6;
+            private int _traceRecursionDepth = 2;
+            private float _exposure = 1.0f;
+            private int _toneMapOperator = 2;
+            private float _denoiserStabilization = 1.0f;
+            private float _shadowStrength = 1.0f;
+            private float _shadowAbsorptionScale = 4.0f;
+            private bool _enableDenoiser = true;
+            private float _gamma = 1.0f;
+            // P1 optimization settings
+            private float _lightAttenuationConstant = 1.0f;
+            private float _lightAttenuationLinear = 0.0f;
+            private float _lightAttenuationQuadratic = 0.01f;
+            private int _maxShadowLights = 2;
+            private float _nrdBypassDistance = 8.0f;
+            private float _nrdBypassBlendRange = 2.0f;
+
+            /// <summary>
+            /// 評価結果（データ型）をディスパッチテーブル経由で振り分ける。
+            /// 未登録の型（算術ノードの中間値など）は無視される。
+            /// </summary>
+            public void Dispatch(object? value)
+            {
+                if (value != null && Dispatchers.TryGetValue(value.GetType(), out var dispatcher))
+                {
+                    dispatcher(value, this);
+                }
+            }
+
+            /// <summary>
+            /// メッシュインスタンスを追加する。キャッシュが存在しない場合はスキップ（AccessViolation防止）
+            /// </summary>
+            public void AddMeshInstance(MeshObjectData data)
+            {
+                if (string.IsNullOrEmpty(data.MeshName)) return;
+
+                if (!MeshCaches.ContainsKey(data.MeshName))
+                {
+                    var cache = CreateMeshCacheData(data.MeshName);
+                    if (cache == null)
+                    {
+                        // キャッシュが存在しない場合はこのメッシュインスタンスをスキップ
+                        return;
+                    }
+                    MeshCaches[data.MeshName] = cache;
+                }
+                MeshInstances.Add(ConvertMeshInstanceData(data));
+            }
+
+            /// <summary>
+            /// SceneNodeの評価結果からレンダリング設定を取得する（不正値はデフォルトに置換）
+            /// </summary>
+            public void ApplyRenderSettings(SceneData sceneData)
+            {
+                _samplesPerPixel = sceneData.SamplesPerPixel > 0 ? sceneData.SamplesPerPixel : 1;
+                _maxBounces = sceneData.MaxBounces > 0 ? sceneData.MaxBounces : 6;
+                _traceRecursionDepth = sceneData.TraceRecursionDepth > 0 ? sceneData.TraceRecursionDepth : 2;
+                _exposure = sceneData.Exposure > 0 ? sceneData.Exposure : 1.0f;
+                _toneMapOperator = sceneData.ToneMapOperator;
+                _denoiserStabilization = sceneData.DenoiserStabilization > 0 ? sceneData.DenoiserStabilization : 1.0f;
+                _shadowStrength = sceneData.ShadowStrength >= 0 ? sceneData.ShadowStrength : 1.0f;
+                _shadowAbsorptionScale = sceneData.ShadowAbsorptionScale >= 0 ? sceneData.ShadowAbsorptionScale : 4.0f;
+                _enableDenoiser = sceneData.EnableDenoiser;
+                _gamma = sceneData.Gamma > 0 ? sceneData.Gamma : 1.0f;
+                // P1 optimization settings
+                _lightAttenuationConstant = sceneData.LightAttenuationConstant > 0 ? sceneData.LightAttenuationConstant : 1.0f;
+                _lightAttenuationLinear = sceneData.LightAttenuationLinear >= 0 ? sceneData.LightAttenuationLinear : 0.0f;
+                _lightAttenuationQuadratic = sceneData.LightAttenuationQuadratic >= 0 ? sceneData.LightAttenuationQuadratic : 0.01f;
+                _maxShadowLights = sceneData.MaxShadowLights > 0 ? sceneData.MaxShadowLights : 2;
+                _nrdBypassDistance = sceneData.NRDBypassDistance > 0 ? sceneData.NRDBypassDistance : 8.0f;
+                _nrdBypassBlendRange = sceneData.NRDBypassBlendRange > 0 ? sceneData.NRDBypassBlendRange : 2.0f;
+            }
+
+            public SceneEvaluationResult ToResult()
+            {
+                return new SceneEvaluationResult
+                {
+                    Spheres = Spheres.ToArray(),
+                    Planes = Planes.ToArray(),
+                    Boxes = Boxes.ToArray(),
+                    Camera = Camera,
+                    Lights = Lights.ToArray(),
+                    MeshInstances = MeshInstances.ToArray(),
+                    MeshCaches = MeshCaches.Values.ToArray(),
+                    SamplesPerPixel = _samplesPerPixel,
+                    MaxBounces = _maxBounces,
+                    TraceRecursionDepth = _traceRecursionDepth,
+                    Exposure = _exposure,
+                    ToneMapOperator = _toneMapOperator,
+                    DenoiserStabilization = _denoiserStabilization,
+                    ShadowStrength = _shadowStrength,
+                    ShadowAbsorptionScale = _shadowAbsorptionScale,
+                    EnableDenoiser = _enableDenoiser,
+                    Gamma = _gamma,
+                    LightAttenuationConstant = _lightAttenuationConstant,
+                    LightAttenuationLinear = _lightAttenuationLinear,
+                    LightAttenuationQuadratic = _lightAttenuationQuadratic,
+                    MaxShadowLights = _maxShadowLights,
+                    NRDBypassDistance = _nrdBypassDistance,
+                    NRDBypassBlendRange = _nrdBypassBlendRange
+                };
+            }
+        }
+
+        private static InteropSphereData ConvertSphereData(SphereData data)
         {
             var material = data.Material;
             return new InteropSphereData
@@ -362,7 +285,7 @@ namespace RayTraceVS.WPF.Services
             };
         }
 
-        private InteropPlaneData ConvertPlaneData(PlaneData data)
+        private static InteropPlaneData ConvertPlaneData(PlaneData data)
         {
             // MaterialDataから旧形式のパラメータに変換
             var material = data.Material;
@@ -401,7 +324,7 @@ namespace RayTraceVS.WPF.Services
             };
         }
 
-        private InteropBoxData ConvertBoxData(BoxData data)
+        private static InteropBoxData ConvertBoxData(BoxData data)
         {
             var material = data.Material;
             return new InteropBoxData
@@ -423,7 +346,7 @@ namespace RayTraceVS.WPF.Services
             };
         }
 
-        private InteropCameraData ConvertCameraData(CameraData data)
+        private static InteropCameraData ConvertCameraData(CameraData data)
         {
             return new InteropCameraData
             {
@@ -439,7 +362,7 @@ namespace RayTraceVS.WPF.Services
             };
         }
 
-        private InteropLightData ConvertLightData(LightData data)
+        private static InteropLightData ConvertLightData(LightData data)
         {
             // LightTypeを正しく変換
             var interopType = data.Type switch
@@ -449,12 +372,12 @@ namespace RayTraceVS.WPF.Services
                 LightType.Point => InteropLightType.Point,
                 _ => InteropLightType.Point
             };
-            
+
             // Directionalライトの場合、Positionに方向ベクトルを格納
-            var position = data.Type == LightType.Directional 
-                ? data.Direction 
+            var position = data.Type == LightType.Directional
+                ? data.Direction
                 : data.Position;
-            
+
             return new InteropLightData
             {
                 Position = new InteropVector3(position.X, position.Y, position.Z),
@@ -466,7 +389,7 @@ namespace RayTraceVS.WPF.Services
             };
         }
 
-        private InteropMeshInstanceData ConvertMeshInstanceData(MeshObjectData data)
+        private static InteropMeshInstanceData ConvertMeshInstanceData(MeshObjectData data)
         {
             var material = data.Material;
             var transform = data.Transform;
@@ -474,7 +397,7 @@ namespace RayTraceVS.WPF.Services
             // EulerAnglesプロパティを使用してオイラー角（度数法）を取得
             // 注意: Transform.RotationはQuaternion型なので、直接X,Y,Zを使用してはいけない
             var eulerAngles = transform.EulerAngles;
-            
+
             // Scaleが0の場合はデフォルト(1,1,1)を使用（未初期化対策）
             var scale = transform.Scale;
             if (scale.X == 0 && scale.Y == 0 && scale.Z == 0)
@@ -499,7 +422,7 @@ namespace RayTraceVS.WPF.Services
             };
         }
 
-        private InteropMeshCacheData? CreateMeshCacheData(string meshName)
+        private static InteropMeshCacheData? CreateMeshCacheData(string meshName)
         {
             var meshCacheService = App.MeshCacheService;
             if (meshCacheService == null) return null;
