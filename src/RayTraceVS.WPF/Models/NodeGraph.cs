@@ -30,10 +30,17 @@ namespace RayTraceVS.WPF.Models
         
         // 隣接リスト: ノードID → 下流ノードのSet（GetDownstreamNodesの高速化用）
         private readonly Dictionary<Guid, HashSet<Node>> _outgoingEdges = new();
-        
+
+        // 入力ソケットID → 接続のインデックス（EvaluateNode/GetUpstreamNodesのO(1)探索用）
+        // 入力ソケットへの接続は最大1本（ConnectionHandlerが既存接続を削除してから追加する）
+        private readonly Dictionary<Guid, NodeConnection> _inputSocketIndex = new();
+
         // トポロジカルソート: 評価順序のキャッシュ
         private List<Node>? _topologicalOrder;
         private bool _topologyDirty = true;
+
+        // 直近のトポロジカルソートで循環が検出されたか（HasCycle用キャッシュ）
+        private bool _hasCycle;
 
         /// <summary>
         /// シーンが変更されたときに発火するイベント
@@ -140,6 +147,10 @@ namespace RayTraceVS.WPF.Models
                             Debug.WriteLine($"NodeGraph.RemoveNode: 接続 {connection.Id} のDisposeに失敗 - {ex.Message}");
                         }
                         connections.Remove(connection.Id);
+                        if (connection.InputSocket != null)
+                        {
+                            _inputSocketIndex.Remove(connection.InputSocket.Id);
+                        }
                     }
                     
                     // このノードが出力元として持っていた隣接リストエントリも削除
@@ -218,9 +229,8 @@ namespace RayTraceVS.WPF.Models
             
             foreach (var inputSocket in node.InputSockets)
             {
-                var incomingConnection = connections.Values
-                    .FirstOrDefault(c => c.InputSocket?.Id == inputSocket.Id);
-                
+                _inputSocketIndex.TryGetValue(inputSocket.Id, out var incomingConnection);
+
                 if (incomingConnection?.OutputSocket?.ParentNode != null)
                 {
                     upstreamNodes.Add(incomingConnection.OutputSocket.ParentNode);
@@ -248,7 +258,8 @@ namespace RayTraceVS.WPF.Models
                     }
 
                     connections[connection.Id] = connection;
-                    
+                    _inputSocketIndex[connection.InputSocket.Id] = connection;
+
                     // 隣接リストを更新（出力側ノード → 入力側ノード）
                     var sourceNode = connection.OutputSocket.ParentNode;
                     var targetNode = connection.InputSocket.ParentNode;
@@ -326,8 +337,12 @@ namespace RayTraceVS.WPF.Models
                     {
                         Debug.WriteLine($"NodeGraph.RemoveConnection: 接続 {connection.Id} のDisposeに失敗 - {ex.Message}");
                     }
-                    
+
                     connections.Remove(connection.Id);
+                    if (connection.InputSocket != null)
+                    {
+                        _inputSocketIndex.Remove(connection.InputSocket.Id);
+                    }
                     
                     // トポロジカル順序を無効化
                     InvalidateTopology();
@@ -428,7 +443,8 @@ namespace RayTraceVS.WPF.Models
             }
             
             // 循環検出: 処理されなかったノードがある場合
-            if (result.Count < nodes.Count)
+            _hasCycle = result.Count < nodes.Count;
+            if (_hasCycle)
             {
                 var cycleNodes = nodes.Values.Where(n => !result.Contains(n)).ToList();
                 Debug.WriteLine($"NodeGraph: 循環参照が検出されました。影響ノード数: {cycleNodes.Count}");
@@ -449,58 +465,9 @@ namespace RayTraceVS.WPF.Models
         /// </summary>
         public bool HasCycle()
         {
+            // ComputeTopologicalOrderが循環検出を兼ねるため、キャッシュ済みの結果を返す
             EnsureTopologicalOrder();
-            
-            // ComputeTopologicalOrderで全ノードが処理されなかった場合、循環がある
-            var inDegree = new Dictionary<Guid, int>();
-            foreach (var node in nodes.Values)
-            {
-                inDegree[node.Id] = 0;
-            }
-            
-            foreach (var edges in _outgoingEdges.Values)
-            {
-                foreach (var targetNode in edges)
-                {
-                    if (inDegree.ContainsKey(targetNode.Id))
-                    {
-                        inDegree[targetNode.Id]++;
-                    }
-                }
-            }
-            
-            var queue = new Queue<Node>();
-            foreach (var node in nodes.Values)
-            {
-                if (inDegree[node.Id] == 0)
-                {
-                    queue.Enqueue(node);
-                }
-            }
-            
-            int processedCount = 0;
-            while (queue.Count > 0)
-            {
-                var current = queue.Dequeue();
-                processedCount++;
-                
-                if (_outgoingEdges.TryGetValue(current.Id, out var downstream))
-                {
-                    foreach (var targetNode in downstream)
-                    {
-                        if (inDegree.ContainsKey(targetNode.Id))
-                        {
-                            inDegree[targetNode.Id]--;
-                            if (inDegree[targetNode.Id] == 0)
-                            {
-                                queue.Enqueue(targetNode);
-                            }
-                        }
-                    }
-                }
-            }
-            
-            return processedCount < nodes.Count;
+            return _hasCycle;
         }
 
         /// <summary>
@@ -586,9 +553,9 @@ namespace RayTraceVS.WPF.Models
 
             foreach (var inputSocket in node.InputSockets)
             {
-                // この入力に接続されている出力を探す
-                var connection = connections.Values.FirstOrDefault(c => c.InputSocket?.Id == inputSocket.Id);
-                
+                // この入力に接続されている出力を探す（インデックスでO(1)）
+                _inputSocketIndex.TryGetValue(inputSocket.Id, out var connection);
+
                 if (connection?.OutputSocket?.ParentNode != null)
                 {
                     // 依存ノードを先に評価
