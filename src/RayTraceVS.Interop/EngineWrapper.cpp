@@ -9,6 +9,11 @@
 // Declare OutputDebugStringA without including windows.h (avoids C++/CLI conflicts)
 extern "C" __declspec(dllimport) void __stdcall OutputDebugStringA(const char* lpOutputString);
 
+// Debug logging toggle. UpdateScene/Render call LogDebug 150+ times per frame;
+// the vsnprintf + OutputDebugStringA cost is wasted when no one is reading the
+// output, so it is disabled by default. Errors (LogError) are always emitted.
+static bool g_InteropLogEnabled = false;
+
 // Error log only
 static void LogError(const char* msg)
 {
@@ -18,6 +23,8 @@ static void LogError(const char* msg)
 // Debug log with printf-style formatting
 static void LogDebug(const char* format, ...)
 {
+    if (!g_InteropLogEnabled)
+        return;
     char buffer[1024];
     va_list args;
     va_start(args, format);
