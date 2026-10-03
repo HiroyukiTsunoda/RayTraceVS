@@ -1,0 +1,290 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <ProjectGuid>{7FD42DF7-442E-479A-BA76-D0022F99702A}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>RayTraceVSDXEngine</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <LinkIncremental>true</LinkIncremental>
+    <!-- Output directly to WPF output directory -->
+    <!-- Avoid $(SolutionDir) dependency so MSBuild works outside .sln context -->
+    <OutDir>$(ProjectDir)..\RayTraceVS.WPF\bin\$(Platform)\$(Configuration)\net8.0-windows\</OutDir>
+    <IntDir>$(ProjectDir)..\..\obj\$(ProjectName)\$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <LinkIncremental>false</LinkIncremental>
+    <!-- Output directly to WPF output directory -->
+    <!-- Avoid $(SolutionDir) dependency so MSBuild works outside .sln context -->
+    <OutDir>$(ProjectDir)..\RayTraceVS.WPF\bin\$(Platform)\$(Configuration)\net8.0-windows\</OutDir>
+    <IntDir>$(ProjectDir)..\..\obj\$(ProjectName)\$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <!-- NRD SDK Path -->
+  <PropertyGroup>
+    <NRD_SDK_PATH>C:\ProgramData\NVIDIA Corporation\SDKs\RTX_Kit_2025.4_Windows\RealTimeDenoiser</NRD_SDK_PATH>
+    <NRD_LIB_PATH>$(NRD_SDK_PATH)\_Build</NRD_LIB_PATH>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_DEBUG;DXENGINE_EXPORTS;_WINDOWS;_USRDLL;NRD_ENABLED=1;NRD_NORMAL_ENCODING=2;NRD_ROUGHNESS_ENCODING=1;NRD_SUPPORTS_VIEWPORT_OFFSET=0;NRD_SUPPORTS_HISTORY_CONFIDENCE=1;NRD_SUPPORTS_DISOCCLUSION_THRESHOLD_MIX=1;NRD_SUPPORTS_BASECOLOR_METALNESS=1;NRD_SUPPORTS_ANTIFIREFLY=1;NRD_SUPPORTS_CHECKERBOARD=1;NRD_EMBEDS_DXBC_SHADERS=0;NRD_EMBEDS_DXIL_SHADERS=1;NRD_EMBEDS_SPIRV_SHADERS=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(NRD_SDK_PATH)\_NRD_SDK\Include;$(NRD_SDK_PATH)\_NRD_SDK\Integration;$(NRD_SDK_PATH)\Shaders\Include;$(NRD_SDK_PATH)\..\MathLib;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>$(NRD_LIB_PATH);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>NRD.lib;d3d12.lib;dxgi.lib;dxguid.lib;d3dcompiler.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <PostBuildEvent>
+      <Command>xcopy /Y /D "$(NRD_LIB_PATH)\NRD.dll" "$(OutDir)"</Command>
+    </PostBuildEvent>
+    <FxCompile>
+      <PreprocessorDefinitions>ENABLE_NRD_GBUFFER=1;NRD_NORMAL_ENCODING=2;NRD_ROUGHNESS_ENCODING=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </FxCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;DXENGINE_EXPORTS;_WINDOWS;_USRDLL;NRD_ENABLED=1;NRD_NORMAL_ENCODING=2;NRD_ROUGHNESS_ENCODING=1;NRD_SUPPORTS_VIEWPORT_OFFSET=0;NRD_SUPPORTS_HISTORY_CONFIDENCE=1;NRD_SUPPORTS_DISOCCLUSION_THRESHOLD_MIX=1;NRD_SUPPORTS_BASECOLOR_METALNESS=1;NRD_SUPPORTS_ANTIFIREFLY=1;NRD_SUPPORTS_CHECKERBOARD=1;NRD_EMBEDS_DXBC_SHADERS=0;NRD_EMBEDS_DXIL_SHADERS=1;NRD_EMBEDS_SPIRV_SHADERS=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(NRD_SDK_PATH)\_NRD_SDK\Include;$(NRD_SDK_PATH)\_NRD_SDK\Integration;$(NRD_SDK_PATH)\Shaders\Include;$(NRD_SDK_PATH)\..\MathLib;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>$(NRD_LIB_PATH);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>NRD.lib;d3d12.lib;dxgi.lib;dxguid.lib;d3dcompiler.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <PostBuildEvent>
+      <Command>xcopy /Y /D "$(NRD_LIB_PATH)\NRD.dll" "$(OutDir)"</Command>
+    </PostBuildEvent>
+    <FxCompile>
+      <PreprocessorDefinitions>ENABLE_NRD_GBUFFER=1;NRD_NORMAL_ENCODING=2;NRD_ROUGHNESS_ENCODING=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </FxCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="DXContext.h" />
+    <ClInclude Include="DXRPipeline.h" />
+    <ClInclude Include="ResourceStateTracker.h" />
+    <ClInclude Include="ShaderCache.h" />
+    <ClInclude Include="AccelerationStructure.h" />
+    <ClInclude Include="RenderTarget.h" />
+    <ClInclude Include="NativeBridge.h" />
+    <ClInclude Include="Denoiser\NRDDenoiser.h" />
+    <ClInclude Include="Scene\Scene.h" />
+    <ClInclude Include="Scene\Camera.h" />
+    <ClInclude Include="Scene\Light.h" />
+    <ClInclude Include="Scene\Objects\RayTracingObject.h" />
+    <ClInclude Include="Scene\Objects\Sphere.h" />
+    <ClInclude Include="Scene\Objects\Plane.h" />
+    <ClInclude Include="Scene\Objects\Box.h" />
+    <!-- NRD SDK Headers - Uncomment when NRD_ENABLED=1
+    <ClInclude Include="$(NRD_SDK_PATH)\Include\NRD.h" />
+    <ClInclude Include="$(NRD_SDK_PATH)\Include\NRDDescs.h" />
+    <ClInclude Include="$(NRD_SDK_PATH)\Include\NRDSettings.h" />
+    -->
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="DXContext.cpp" />
+    <ClCompile Include="DXRPipeline.cpp" />
+    <ClCompile Include="ResourceStateTracker.cpp" />
+    <ClCompile Include="ShaderCache.cpp" />
+    <ClCompile Include="AccelerationStructure.cpp" />
+    <ClCompile Include="RenderTarget.cpp" />
+    <ClCompile Include="NativeBridge.cpp" />
+    <ClCompile Include="Denoiser\NRDDenoiser.cpp" />
+    <ClCompile Include="Scene\Scene.cpp" />
+    <ClCompile Include="Scene\Camera.cpp" />
+    <ClCompile Include="Scene\Light.cpp" />
+    <ClCompile Include="Scene\Objects\Sphere.cpp" />
+    <ClCompile Include="Scene\Objects\Plane.cpp" />
+    <ClCompile Include="Scene\Objects\Box.cpp" />
+    <!-- NRD SDK Sources - Comment out for now, need to build NRD separately with CMake
+    <ClCompile Include="$(NRD_SDK_PATH)\Source\InstanceImpl.cpp" />
+    <ClCompile Include="$(NRD_SDK_PATH)\Source\Reblur.cpp" />
+    <ClCompile Include="$(NRD_SDK_PATH)\Source\Relax.cpp" />
+    <ClCompile Include="$(NRD_SDK_PATH)\Source\Sigma.cpp" />
+    <ClCompile Include="$(NRD_SDK_PATH)\Source\Reference.cpp" />
+    <ClCompile Include="$(NRD_SDK_PATH)\Source\Wrapper.cpp" />
+    <ClCompile Include="$(NRD_SDK_PATH)\Source\Timer.cpp" />
+    -->
+  </ItemGroup>
+  <!-- Shader paths: Source = src\Shader\, Cache = src\Shader\Cache\ -->
+  <PropertyGroup>
+    <!-- Avoid $(SolutionDir) dependency so shader compilation works outside .sln context -->
+    <ShaderSourceDir>$(ProjectDir)..\Shader\</ShaderSourceDir>
+    <ShaderCacheDir>$(ProjectDir)..\Shader\Cache\</ShaderCacheDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- DXR Shaders (lib_6_3) - compiled with DXC -->
+    <!-- AdditionalDependencies ensures recompilation when .hlsli files change -->
+    <FxCompile Include="$(ShaderSourceDir)RayGen.hlsl">
+      <ShaderType>Library</ShaderType>
+      <ShaderModel>6.3</ShaderModel>
+      <ObjectFileOutput>$(ShaderCacheDir)%(Filename).cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(ShaderSourceDir)</AdditionalIncludeDirectories>
+      <AdditionalDependencies>$(ShaderSourceDir)Common.hlsli;$(ShaderSourceDir)SharedTypes.h;$(ShaderSourceDir)NRDEncoding.hlsli</AdditionalDependencies>
+    </FxCompile>
+    <FxCompile Include="$(ShaderSourceDir)ClosestHit.hlsl">
+      <ShaderType>Library</ShaderType>
+      <ShaderModel>6.3</ShaderModel>
+      <ObjectFileOutput>$(ShaderCacheDir)%(Filename).cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(ShaderSourceDir)</AdditionalIncludeDirectories>
+      <AdditionalDependencies>$(ShaderSourceDir)Common.hlsli;$(ShaderSourceDir)SharedTypes.h;$(ShaderSourceDir)NRDEncoding.hlsli</AdditionalDependencies>
+    </FxCompile>
+    <FxCompile Include="$(ShaderSourceDir)ClosestHit_Triangle.hlsl">
+      <ShaderType>Library</ShaderType>
+      <ShaderModel>6.3</ShaderModel>
+      <ObjectFileOutput>$(ShaderCacheDir)%(Filename).cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(ShaderSourceDir)</AdditionalIncludeDirectories>
+      <AdditionalDependencies>$(ShaderSourceDir)Common.hlsli;$(ShaderSourceDir)SharedTypes.h;$(ShaderSourceDir)NRDEncoding.hlsli</AdditionalDependencies>
+    </FxCompile>
+    <FxCompile Include="$(ShaderSourceDir)Miss.hlsl">
+      <ShaderType>Library</ShaderType>
+      <ShaderModel>6.3</ShaderModel>
+      <ObjectFileOutput>$(ShaderCacheDir)%(Filename).cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(ShaderSourceDir)</AdditionalIncludeDirectories>
+      <AdditionalDependencies>$(ShaderSourceDir)Common.hlsli;$(ShaderSourceDir)SharedTypes.h;$(ShaderSourceDir)NRDEncoding.hlsli</AdditionalDependencies>
+    </FxCompile>
+    <FxCompile Include="$(ShaderSourceDir)Intersection.hlsl">
+      <ShaderType>Library</ShaderType>
+      <ShaderModel>6.3</ShaderModel>
+      <ObjectFileOutput>$(ShaderCacheDir)%(Filename).cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(ShaderSourceDir)</AdditionalIncludeDirectories>
+      <AdditionalDependencies>$(ShaderSourceDir)Common.hlsli;$(ShaderSourceDir)SharedTypes.h;$(ShaderSourceDir)NRDEncoding.hlsli;$(ShaderSourceDir)BoxIntersection.hlsli</AdditionalDependencies>
+    </FxCompile>
+    <!-- Material-specific Closest Hit Shaders (DISABLED - need NRD fields) -->
+    <None Include="$(ShaderSourceDir)ClosestHit_Diffuse.hlsl" />
+    <None Include="$(ShaderSourceDir)ClosestHit_Glass.hlsl" />
+    <None Include="$(ShaderSourceDir)ClosestHit_Metal.hlsl" />
+    <!-- Shadow Any-Hit Shader -->
+    <FxCompile Include="$(ShaderSourceDir)AnyHit_Shadow.hlsl">
+      <ShaderType>Library</ShaderType>
+      <ShaderModel>6.3</ShaderModel>
+      <ObjectFileOutput>$(ShaderCacheDir)%(Filename).cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(ShaderSourceDir)</AdditionalIncludeDirectories>
+      <AdditionalDependencies>$(ShaderSourceDir)Common.hlsli;$(ShaderSourceDir)SharedTypes.h;$(ShaderSourceDir)NRDEncoding.hlsli</AdditionalDependencies>
+    </FxCompile>
+    <!-- Photon Mapping Shaders (for Caustics) -->
+    <FxCompile Include="$(ShaderSourceDir)PhotonEmit.hlsl">
+      <ShaderType>Library</ShaderType>
+      <ShaderModel>6.3</ShaderModel>
+      <ObjectFileOutput>$(ShaderCacheDir)%(Filename).cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(ShaderSourceDir)</AdditionalIncludeDirectories>
+      <AdditionalDependencies>$(ShaderSourceDir)Common.hlsli;$(ShaderSourceDir)SharedTypes.h;$(ShaderSourceDir)NRDEncoding.hlsli</AdditionalDependencies>
+    </FxCompile>
+    <FxCompile Include="$(ShaderSourceDir)PhotonTrace.hlsl">
+      <ShaderType>Library</ShaderType>
+      <ShaderModel>6.3</ShaderModel>
+      <ObjectFileOutput>$(ShaderCacheDir)%(Filename).cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(ShaderSourceDir)</AdditionalIncludeDirectories>
+      <AdditionalDependencies>$(ShaderSourceDir)Common.hlsli;$(ShaderSourceDir)SharedTypes.h;$(ShaderSourceDir)NRDEncoding.hlsli</AdditionalDependencies>
+    </FxCompile>
+    <!-- Compute Shader fallback (cs_5_1) -->
+    <FxCompile Include="$(ShaderSourceDir)RayTraceCompute.hlsl">
+      <ShaderType>Compute</ShaderType>
+      <ShaderModel>5.1</ShaderModel>
+      <EntryPointName>CSMain</EntryPointName>
+      <ObjectFileOutput>$(ShaderCacheDir)%(Filename).cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(ShaderSourceDir)</AdditionalIncludeDirectories>
+      <AdditionalDependencies>$(ShaderSourceDir)SharedTypes.h;$(ShaderSourceDir)BoxIntersection.hlsli</AdditionalDependencies>
+    </FxCompile>
+    <!-- Composite Shader for NRD output (cs_5_1) -->
+    <FxCompile Include="$(ShaderSourceDir)Composite.hlsl">
+      <ShaderType>Compute</ShaderType>
+      <ShaderModel>5.1</ShaderModel>
+      <EntryPointName>CSMain</EntryPointName>
+      <ObjectFileOutput>$(ShaderCacheDir)%(Filename).cso</ObjectFileOutput>
+      <AdditionalIncludeDirectories>$(ShaderSourceDir)</AdditionalIncludeDirectories>
+    </FxCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="$(ShaderSourceDir)Common.hlsli" />
+    <None Include="$(ShaderSourceDir)SharedTypes.h" />
+    <None Include="$(ShaderSourceDir)BoxIntersection.hlsli" />
+    <None Include="$(ShaderSourceDir)NRDEncoding.hlsli" />
+  </ItemGroup>
+  <!-- Verify shader compilation - runs after build -->
+  <Target Name="VerifyShaders" AfterTargets="Build">
+    <PropertyGroup>
+      <RequiredShaders>RayGen.cso;ClosestHit.cso;Miss.cso;Intersection.cso;AnyHit_Shadow.cso;PhotonEmit.cso;PhotonTrace.cso;RayTraceCompute.cso;Composite.cso</RequiredShaders>
+    </PropertyGroup>
+    <Error Condition="!Exists('$(ShaderCacheDir)RayGen.cso')" Text="ERROR: RayGen.cso not found in $(ShaderCacheDir)" />
+    <Error Condition="!Exists('$(ShaderCacheDir)ClosestHit.cso')" Text="ERROR: ClosestHit.cso not found in $(ShaderCacheDir)" />
+    <Error Condition="!Exists('$(ShaderCacheDir)Miss.cso')" Text="ERROR: Miss.cso not found in $(ShaderCacheDir)" />
+    <Error Condition="!Exists('$(ShaderCacheDir)Intersection.cso')" Text="ERROR: Intersection.cso not found in $(ShaderCacheDir)" />
+    <Error Condition="!Exists('$(ShaderCacheDir)AnyHit_Shadow.cso')" Text="ERROR: AnyHit_Shadow.cso not found in $(ShaderCacheDir)" />
+    <Error Condition="!Exists('$(ShaderCacheDir)PhotonEmit.cso')" Text="ERROR: PhotonEmit.cso not found in $(ShaderCacheDir)" />
+    <Error Condition="!Exists('$(ShaderCacheDir)PhotonTrace.cso')" Text="ERROR: PhotonTrace.cso not found in $(ShaderCacheDir)" />
+    <Error Condition="!Exists('$(ShaderCacheDir)RayTraceCompute.cso')" Text="ERROR: RayTraceCompute.cso not found in $(ShaderCacheDir)" />
+    <Error Condition="!Exists('$(ShaderCacheDir)Composite.cso')" Text="ERROR: Composite.cso not found in $(ShaderCacheDir)" />
+    <Message Text="All required shader files verified in $(ShaderCacheDir)" Importance="high" />
+  </Target>
+  <!-- Use the same Windows SDK compiler at build time and runtime. -->
+  <Target Name="CopyDxcRuntime" AfterTargets="Build">
+    <PropertyGroup>
+      <DxcRuntimeDirectory>$([System.String]::Copy('$(WindowsSDK_ExecutablePath_x64)').Split(';').GetValue(0))</DxcRuntimeDirectory>
+    </PropertyGroup>
+    <ItemGroup>
+      <DxcRuntimeDll Include="$(DxcRuntimeDirectory)\dxcompiler.dll" />
+      <DxcRuntimeDll Include="$(DxcRuntimeDirectory)\dxil.dll" />
+    </ItemGroup>
+    <Error Condition="!Exists('%(DxcRuntimeDll.Identity)')" Text="Windows SDK DXC runtime was not found: %(DxcRuntimeDll.Identity)" />
+    <Copy SourceFiles="@(DxcRuntimeDll)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+    <ItemGroup>
+      <FileWrites Include="@(DxcRuntimeDll->'$(OutDir)%(Filename)%(Extension)')" />
+    </ItemGroup>
+    <Message Text="DXC runtime copied from $(DxcRuntimeDirectory)" Importance="high" />
+  </Target>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

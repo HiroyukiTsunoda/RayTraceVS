@@ -1,0 +1,15 @@
+{
+  "omnisharp.enableMsBuildLoadProjectsOnDemand": false,
+  "omnisharp.disableMSBuildDiagnosticWarning": true,
+  "csharp.suppressProjectJsonWarning": true,
+  "dotnet.server.suppressLspErrorToasts": true,
+  "dotnet.server.trace": "off",
+  "csharp.trace.server": "off",
+  "files.watcherExclude": {
+    "**/*.vcxproj": true,
+    "**/*.vcxproj.filters": true,
+    "**/*.vcxproj.user": true,
+    "**/obj/**": true,
+    "**/bin/**": true
+  }
+}

@@ -1,0 +1,307 @@
+// This file is native code only - CLR compilation disabled
+#include <d3d12.h>
+#include <dxgi1_6.h>
+#include <wrl/client.h>
+#include <stdio.h>
+#include <fstream>
+#include "DXContext.h"
+#include "DXRPipeline.h"
+#include "RenderTarget.h"
+#include "DebugLog.h"
+#include "Scene/Scene.h"
+#include "Scene/Objects/Sphere.h"
+#include "Scene/Objects/Plane.h"
+#include "Scene/Objects/Box.h"
+#include "Scene/Camera.h"
+#include "Scene/Light.h"
+#include "NativeBridge.h"
+
+using namespace DirectX;
+
+namespace RayTraceVS::Interop::Bridge
+{
+    // Helper functions: conversion
+    static XMFLOAT3 ToXMFLOAT3(const Vector3Native& v)
+    {
+        return XMFLOAT3(v.x, v.y, v.z);
+    }
+
+    static XMFLOAT4 ToXMFLOAT4(const ColorNative& c)
+    {
+        return XMFLOAT4(c.r, c.g, c.b, c.a);
+    }
+
+    static RayTraceVS::DXEngine::Material ToMaterial(const MaterialNative& m)
+    {
+        RayTraceVS::DXEngine::Material material;
+        material.color = ToXMFLOAT4(m.color);
+        material.metallic = m.metallic;
+        material.roughness = m.roughness;
+        material.transmission = m.transmission;
+        material.ior = m.ior;
+        material.specular = m.specular;
+        material.emission = ToXMFLOAT3(m.emission);
+        material.absorption = ToXMFLOAT3(m.absorption);
+        return material;
+    }
+
+    // DXContext functions
+    RayTraceVS::DXEngine::DXContext* CreateDXContext()
+    {
+        return new RayTraceVS::DXEngine::DXContext();
+    }
+
+    bool InitializeDXContext(RayTraceVS::DXEngine::DXContext* context, void* hwnd, int width, int height)
+    {
+        return context->Initialize(static_cast<HWND>(hwnd), width, height);
+    }
+
+    void ShutdownDXContext(RayTraceVS::DXEngine::DXContext* context)
+    {
+        context->Shutdown();
+    }
+
+    void DestroyDXContext(RayTraceVS::DXEngine::DXContext* context)
+    {
+        delete context;
+    }
+
+    void ResetCommandList(RayTraceVS::DXEngine::DXContext* context)
+    {
+        context->ResetCommandList();
+    }
+
+    // DXRPipeline functions
+    RayTraceVS::DXEngine::DXRPipeline* CreateDXRPipeline(RayTraceVS::DXEngine::DXContext* context)
+    {
+        return new RayTraceVS::DXEngine::DXRPipeline(context);
+    }
+
+    bool InitializeDXRPipeline(RayTraceVS::DXEngine::DXRPipeline* pipeline)
+    {
+        return pipeline->Initialize();
+    }
+
+    void DestroyDXRPipeline(RayTraceVS::DXEngine::DXRPipeline* pipeline)
+    {
+        delete pipeline;
+    }
+
+    void DispatchRays(RayTraceVS::DXEngine::DXRPipeline* pipeline, int width, int height)
+    {
+        pipeline->DispatchRays(width, height);
+    }
+
+    // Scene functions
+    RayTraceVS::DXEngine::Scene* CreateScene()
+    {
+        return new RayTraceVS::DXEngine::Scene();
+    }
+
+    void DestroyScene(RayTraceVS::DXEngine::Scene* scene)
+    {
+        delete scene;
+    }
+
+    void ClearScene(RayTraceVS::DXEngine::Scene* scene)
+    {
+        scene->Clear();
+    }
+
+    void SetCamera(RayTraceVS::DXEngine::Scene* scene, const CameraDataNative& camera)
+    {
+        RayTraceVS::DXEngine::Camera nativeCamera(
+            ToXMFLOAT3(camera.position),
+            ToXMFLOAT3(camera.lookAt),
+            ToXMFLOAT3(camera.up),
+            camera.fov
+        );
+        nativeCamera.SetApertureSize(camera.apertureSize);
+        nativeCamera.SetFocusDistance(camera.focusDistance);
+        scene->SetCamera(nativeCamera);
+    }
+
+    void SetRenderSettings(RayTraceVS::DXEngine::Scene* scene, const RayTraceVS::DXEngine::RenderSettings& settings)
+    {
+        scene->SetRenderSettings(settings);
+    }
+
+    void AddSphere(RayTraceVS::DXEngine::Scene* scene, const SphereDataNative& sphere)
+    {
+        auto nativeSphere = std::make_shared<RayTraceVS::DXEngine::Sphere>(
+            ToXMFLOAT3(sphere.center),
+            sphere.radius
+        );
+        nativeSphere->SetMaterial(ToMaterial(sphere.material));
+        scene->AddObject(nativeSphere);
+    }
+
+    void AddPlane(RayTraceVS::DXEngine::Scene* scene, const PlaneDataNative& plane)
+    {
+        auto nativePlane = std::make_shared<RayTraceVS::DXEngine::Plane>(
+            ToXMFLOAT3(plane.position),
+            ToXMFLOAT3(plane.normal)
+        );
+        nativePlane->SetMaterial(ToMaterial(plane.material));
+        scene->AddObject(nativePlane);
+    }
+
+    void AddBox(RayTraceVS::DXEngine::Scene* scene, const BoxDataNative& box)
+    {
+        auto nativeBox = std::make_shared<RayTraceVS::DXEngine::Box>(
+            ToXMFLOAT3(box.center),
+            ToXMFLOAT3(box.size),
+            ToXMFLOAT3(box.axisX),
+            ToXMFLOAT3(box.axisY),
+            ToXMFLOAT3(box.axisZ)
+        );
+        nativeBox->SetMaterial(ToMaterial(box.material));
+        scene->AddObject(nativeBox);
+    }
+
+    void AddLight(RayTraceVS::DXEngine::Scene* scene, const LightDataNative& light)
+    {
+        RayTraceVS::DXEngine::Light nativeLight(
+            ToXMFLOAT3(light.position),
+            ToXMFLOAT4(light.color),
+            light.intensity
+        );
+        nativeLight.SetType(static_cast<RayTraceVS::DXEngine::LightType>(light.type));
+        nativeLight.SetRadius(light.radius);
+        nativeLight.SetSoftShadowSamples(light.softShadowSamples);
+        scene->AddLight(nativeLight);
+    }
+
+    void AddMeshCache(RayTraceVS::DXEngine::Scene* scene, const MeshCacheDataNative& meshCache)
+    {
+        // Mesh geometry is immutable at runtime and identified by name, so skip
+        // the expensive vertex/index copies if this mesh is already cached
+        // (Scene::Clear keeps the cache across UpdateScene calls).
+        if (meshCache.name && scene->HasMeshCache(meshCache.name))
+            return;
+
+        RayTraceVS::DXEngine::MeshCacheEntry entry;
+        entry.name = meshCache.name ? meshCache.name : "";
+        
+        // Copy vertex data (8 floats per vertex)
+        if (meshCache.vertices && meshCache.vertexCount > 0)
+        {
+            size_t floatCount = meshCache.vertexCount * 8;  // 8 floats per vertex
+            entry.vertices.resize(floatCount);
+            memcpy(entry.vertices.data(), meshCache.vertices, floatCount * sizeof(float));
+        }
+        
+        // Copy index data
+        if (meshCache.indices && meshCache.indexCount > 0)
+        {
+            entry.indices.resize(meshCache.indexCount);
+            memcpy(entry.indices.data(), meshCache.indices, meshCache.indexCount * sizeof(uint32_t));
+        }
+        
+        entry.boundsMin = ToXMFLOAT3(meshCache.boundsMin);
+        entry.boundsMax = ToXMFLOAT3(meshCache.boundsMax);
+        
+        scene->AddMeshCache(entry);
+    }
+
+    void AddMeshInstance(RayTraceVS::DXEngine::Scene* scene, const MeshInstanceDataNative& meshInstance)
+    {
+        RayTraceVS::DXEngine::MeshInstance instance;
+        instance.meshName = meshInstance.meshName ? meshInstance.meshName : "";
+        instance.transform.position = ToXMFLOAT3(meshInstance.position);
+        instance.transform.rotation = ToXMFLOAT3(meshInstance.rotation);
+        instance.transform.scale = ToXMFLOAT3(meshInstance.scale);
+        
+        // Copy material
+        instance.material.color = ToXMFLOAT4(meshInstance.material.color);
+        instance.material.metallic = meshInstance.material.metallic;
+        instance.material.roughness = meshInstance.material.roughness;
+        instance.material.transmission = meshInstance.material.transmission;
+        instance.material.ior = meshInstance.material.ior;
+        instance.material.specular = meshInstance.material.specular;
+        instance.material.emission = ToXMFLOAT3(meshInstance.material.emission);
+        instance.material.absorption = ToXMFLOAT3(meshInstance.material.absorption);
+        
+        scene->AddMeshInstance(instance);
+    }
+
+    // RenderTarget functions
+    RayTraceVS::DXEngine::RenderTarget* CreateRenderTarget(RayTraceVS::DXEngine::DXContext* context)
+    {
+        return new RayTraceVS::DXEngine::RenderTarget(context);
+    }
+
+    void DestroyRenderTarget(RayTraceVS::DXEngine::RenderTarget* target)
+    {
+        delete target;
+    }
+
+    bool InitializeRenderTarget(RayTraceVS::DXEngine::RenderTarget* target, int width, int height)
+    {
+        return target->Create(width, height);
+    }
+
+    void RenderTestPattern(RayTraceVS::DXEngine::DXRPipeline* pipeline, RayTraceVS::DXEngine::RenderTarget* target, RayTraceVS::DXEngine::Scene* scene)
+    {
+        if (!pipeline)
+        {
+            OutputDebugStringA("[Bridge::RenderTestPattern] ERROR: Null pipeline\n");
+            return;
+        }
+        if (!target)
+        {
+            OutputDebugStringA("[Bridge::RenderTestPattern] ERROR: Null target\n");
+            return;
+        }
+        if (!scene)
+        {
+            OutputDebugStringA("[Bridge::RenderTestPattern] ERROR: Null scene\n");
+            return;
+        }
+        
+        pipeline->Render(target, scene);
+    }
+
+    bool CopyRenderTargetToReadback(RayTraceVS::DXEngine::RenderTarget* target, RayTraceVS::DXEngine::DXContext* context)
+    {
+        return target && context && target->CopyToReadback(context->GetCommandList());
+    }
+
+    bool ReadRenderTargetPixels(RayTraceVS::DXEngine::RenderTarget* target, unsigned char* outData, int dataSize)
+    {
+        // Failure is part of the bridge contract. Never report diagnostic
+        // colors or a partial write as a successfully rendered frame.
+        if (!target || !outData || dataSize <= 0)
+            return false;
+
+        try
+        {
+            std::vector<unsigned char> pixels;
+            if (!target->ReadPixels(pixels) || pixels.empty() ||
+                pixels.size() > static_cast<size_t>(dataSize))
+            {
+                return false;
+            }
+            memcpy(outData, pixels.data(), pixels.size());
+            return true;
+        }
+        catch (...)
+        {
+            return false;
+        }
+    }
+
+    void ExecuteCommandList(RayTraceVS::DXEngine::DXContext* context)
+    {
+        if (!context)
+            throw std::runtime_error("Cannot execute commands without a DirectX context");
+        context->ExecuteCommandList();
+    }
+
+    void WaitForGPU(RayTraceVS::DXEngine::DXContext* context)
+    {
+        if (!context)
+            throw std::runtime_error("Cannot synchronize without a DirectX context");
+        context->WaitForGPU();
+    }
+}

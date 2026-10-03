@@ -1,0 +1,257 @@
+# RayTraceVS ビルドガイド
+
+このドキュメントでは、RayTraceVSプロジェクトをビルドして実行する手順を説明します。
+
+## 必須要件
+
+### ハードウェア
+- **GPU**: ハードウェアレイトレーシング対応GPU（**必須**）
+  - **NVIDIA**: RTX 20シリーズ以降（RTX 2060, RTX 3060, RTX 4060等）
+  - **AMD**: RX 6000シリーズ以降（RX 6600, RX 6700 XT, RX 7600等）
+  - **Intel**: Arc Aシリーズ（A750, A770等）
+  
+  > ⚠️ GTX 10シリーズやRX 5000シリーズ以前はDXRソフトウェアエミュレーションとなり、実用的なパフォーマンスは得られません。
+  
+  > 💡 NRDデノイザーはNVIDIA RTX Kitを使用しているため、NVIDIA GPUで最適なパフォーマンスが得られます。
+
+- **RAM**: 8GB以上（16GB推奨）
+- **VRAM**: 6GB以上推奨（4K解像度では8GB以上推奨）
+- **ストレージ**: 5GB以上の空き容量
+
+### ソフトウェア
+- **OS**: Windows 10 2004（ビルド19041）以降、または Windows 11
+- **Visual Studio**: Visual Studio 2022 (v17.0) 以降
+  - 必須ワークロード:
+    - .NET デスクトップ開発
+    - C++によるデスクトップ開発
+- **.NET SDK**: .NET 8.0 SDK
+- **Windows SDK**: 最新版（10.0.22621.0以降推奨）
+
+### グラフィックスドライバ
+- **NVIDIA**: Driver 450.82以降（RTX 20シリーズ以降用）
+- **AMD**: Adrenalin 20.11.2以降（RX 6000シリーズ以降用）
+- **Intel**: Arc Graphics Driver 31.0.101.3490以降（Arc Aシリーズ用）
+
+## セットアップ手順
+
+### 1. リポジトリのクローンまたはダウンロード
+
+```bash
+git clone https://github.com/HiroyukiTsunoda/RayTraceVS.git
+cd RayTraceVS
+```
+
+または、ZIPファイルをダウンロードして展開します。
+
+### 2. Visual Studioでソリューションを開く
+
+1. Visual Studio 2022を起動
+2. `RayTraceVS.sln` を開く
+3. ソリューションが読み込まれるまで待つ
+
+### 3. NuGetパッケージの復元
+
+Visual Studioは自動的にNuGetパッケージを復元しますが、手動で実行する場合：
+
+1. ソリューションエクスプローラーでソリューションを右クリック
+2. 「NuGetパッケージの復元」を選択
+
+### 4. ビルド構成の選択
+
+1. ツールバーで構成を選択:
+   - **Debug**: デバッグ用（開発中）
+   - **Release**: 最適化されたビルド（配布用）
+2. プラットフォームで **x64** を選択（**必須**）
+
+### 5. ビルド
+
+**方法1: Visual Studioから**
+1. メニュー: ビルド → ソリューションのビルド（F7）
+2. ビルドが成功するまで待つ
+
+**方法2: コマンドラインから**
+```bash
+msbuild RayTraceVS.sln /p:Configuration=Release /p:Platform=x64
+```
+
+**方法3: ビルドスクリプト（PowerShell）から**
+
+リポジトリルートの `build.ps1` はMSBuildの自動検出とオプション付きビルドに対応します（構成は Debug / x64）:
+```powershell
+.\build.ps1               # 通常ビルド（ソリューション全体）
+.\build.ps1 -NoPackage    # MSIX/Packageを除外しWPFアプリのみビルド（CLI検証に有用）
+.\build.ps1 -Rebuild      # クリーンしてリビルド
+.\build.ps1 -Clean        # クリーンのみ
+.\build.ps1 -Run          # ビルド後にアプリを起動
+```
+
+### 6. 実行
+
+1. ソリューションエクスプローラーで `RayTraceVS.WPF` を右クリック
+2. 「スタートアッププロジェクトに設定」を選択
+3. F5キー（デバッグ実行）または Ctrl+F5（デバッグなし実行）
+
+## ビルドエラーのトラブルシューティング
+
+### エラー: "DXR is not supported"
+
+**原因**: GPUがハードウェアレイトレーシングをサポートしていない
+
+**解決策**:
+1. GPUがハードウェアレイトレーシング対応か確認：
+   - NVIDIA: RTX 20シリーズ以降が必要
+   - AMD: RX 6000シリーズ以降が必要
+   - Intel: Arc Aシリーズが必要
+2. グラフィックスドライバを最新版に更新
+3. Windows Updateを実行してDirectX 12を最新化
+
+> ⚠️ GTX 10シリーズ、RX 5000シリーズ以前のGPUではDXRはソフトウェアエミュレーションで動作しますが、本アプリケーションでは実用的なパフォーマンスが得られません。
+
+### エラー: "d3d12.lib が見つかりません"
+
+**原因**: Windows SDKがインストールされていない
+
+**解決策**:
+1. Visual Studio Installerを起動
+2. 「変更」をクリック
+3. 「個別のコンポーネント」タブ
+4. 「Windows 10 SDK (最新版)」を選択
+5. 「変更」をクリックしてインストール
+
+### エラー: ".NET 8.0 SDK が見つかりません"
+
+**原因**: .NET 8.0 SDKがインストールされていない
+
+**解決策**:
+1. https://dotnet.microsoft.com/download/dotnet/8.0 にアクセス
+2. .NET 8.0 SDKをダウンロードしてインストール
+3. Visual Studioを再起動
+
+### エラー: "C++/CLI プロジェクトのビルドに失敗"
+
+**原因**: C++/CLI機能が有効でない
+
+**解決策**:
+1. Visual Studio Installerを起動
+2. 「変更」をクリック
+3. 「C++によるデスクトップ開発」をチェック
+4. 右側で「C++/CLI サポート」をチェック
+5. インストール
+
+### シェーダーコンパイルエラー
+
+**原因**: シェーダーコンパイラーが見つからない
+
+**解決策**:
+1. Windows SDKが正しくインストールされているか確認
+2. プロジェクトプロパティ → HLSL コンパイラ → シェーダーモデルが 6.3以上
+3. fxc.exe または dxc.exe がシステムパスに含まれているか確認
+
+## 初回実行時の確認事項
+
+### 1. DXRサポートの確認
+
+プログラムを起動すると、自動的にDXRサポートをチェックします。
+
+サポートされていない場合:
+- エラーメッセージが表示されます
+- グラフィックスドライバを更新してください
+- Windows Updateを実行してください
+
+### 2. パフォーマンス最適化
+
+初回実行時のパフォーマンスが低い場合:
+1. Releaseビルドを使用
+2. グラフィックス設定でハードウェアアクセラレーションを有効化
+3. バックグラウンドプロセスを最小化
+
+## 配布用ビルド
+
+### Releaseビルドの作成
+
+1. 構成: **Release**、プラットフォーム: **x64** を選択
+2. ビルド → ソリューションのビルド
+3. 出力: `bin\Release\`
+
+### 必須ファイル
+
+配布時に含める必要があるファイル:
+- `RayTraceVS.WPF.exe`
+- `RayTraceVS.DXEngine.dll`
+- `RayTraceVS.Interop.dll`
+- `NRD.dll`（デノイザー用）
+- `Shader/`フォルダ（HLSLソース + キャッシュ）
+  - `.hlsl` / `.hlsli` シェーダーソースファイル
+  - `Cache/shader_cache.json`（コンパイル済みシェーダーキャッシュ）
+- 必要なランタイム依存関係（.NET 8.0ランタイム）
+
+> 💡 シェーダーキャッシュ（`shader_cache.json`）は初回起動時に自動生成されます。ソースファイルが変更されると自動的に再コンパイルされます。
+
+### インストーラー作成（MSIXパッケージ）
+
+RayTraceVSはMSIXパッケージングに対応しています:
+
+1. `RayTraceVS.Package` プロジェクトを使用
+2. Visual Studioで「発行」→「アプリパッケージの作成」
+3. 詳細は **[INSTALLER_GUIDE.md](INSTALLER_GUIDE.md)** を参照
+
+**MSIXパッケージの利点:**
+- `.rtvs` ファイルの自動関連付け
+- クリーンなインストール/アンインストール
+- Windows 10/11への最適化
+
+## 開発のヒント
+
+### デバッグモード
+
+デバッグビルドでは以下が有効化されます:
+- DirectX 12デバッグレイヤー
+- 詳細なエラーメッセージ
+- パフォーマンスプロファイリング
+
+### GPU デバッガー
+
+Visual StudioのGraphics Diagnosticsを使用:
+1. デバッグ → Graphics → フレームキャプチャの開始
+2. レンダリング中にフレームをキャプチャ
+3. シェーダーとパイプラインをデバッグ
+
+### ホットリロード
+
+C#コードの変更は、ホットリロード機能で即座に反映できます:
+- デバッグ中に変更を保存すると自動的に適用されます
+
+### ヘッドレスレンダリング検証（CLI）
+
+リファクタリング等でレンダリング出力が変わっていないことを検証するためのCLIモードがあります。レンダリングは決定的（同一入力→同一出力）なので、出力画像をピクセル単位で比較できます。
+
+まずCLI検証用にWPFアプリ単体をビルドします（Debug / x64）:
+```powershell
+.\build.ps1 -NoPackage
+```
+
+ビルドした `RayTraceVS.WPF.exe` は以下のCLI引数に対応します:
+- `--render <scene.rtvs> --output <out.png> [--width W --height H --passes N]` — ヘッドレスでレンダリングしPNG保存
+- `--compare <ref.png> <target.png>` — 2枚の画像をピクセル比較（一致で終了コード0）
+- `--resave <in.rtvs> <out.rtvs>` — シーンを読み込んで再保存（シリアライズ往復の検証）
+
+検証スクリプト `tools\verify_render.ps1` で一連の流れを自動化できます:
+```powershell
+.\tools\verify_render.ps1 -UpdateBaseline   # 変更前に1回だけ実行し、ベースライン画像を生成
+.\tools\verify_render.ps1                    # 変更後に実行し、ベースラインと比較（[検証OK] / [検証NG]）
+```
+
+## サポート
+
+問題が解決しない場合:
+1. GitHubのIssuesページで既存の問題を検索
+2. 新しいIssueを作成（エラーログとシステム情報を含める）
+3. ドキュメントとFAQを確認
+
+## その他のリソース
+
+- [README.md](README.md) - プロジェクト概要
+- [USAGE.md](USAGE.md) - 使い方ガイド
+- [INSTALLER_GUIDE.md](INSTALLER_GUIDE.md) - MSIXインストーラー作成ガイド
+- [DirectX 12ドキュメント](https://docs.microsoft.com/en-us/windows/win32/direct3d12/direct3d-12-graphics)
+- [DXRドキュメント](https://microsoft.github.io/DirectX-Specs/d3d/Raytracing.html)

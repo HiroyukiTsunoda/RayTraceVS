@@ -1,0 +1,122 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Numerics;
+using RayTraceVS.WPF.Models.Data;
+using RayTraceVS.WPF.Models.Serialization;
+
+namespace RayTraceVS.WPF.Models.Nodes
+{
+    public partial class BoxNode : Node, ISerializableNode
+    {
+        private Transform _objectTransform = Transform.Identity;
+        private Vector3 _size = new Vector3(1.0f, 1.0f, 1.0f);
+
+        // Transform（位置・回転・スケール）
+        public Transform ObjectTransform
+        {
+            get => _objectTransform;
+            set
+            {
+                if (!_objectTransform.Equals(value))
+                {
+                    _objectTransform = value;
+                    OnPropertyChanged(nameof(ObjectTransform));
+                    MarkDirty();
+                }
+            }
+        }
+        
+        // 形状固有パラメータ（full size, not half-extents）
+        public Vector3 Size
+        {
+            get => _size;
+            set
+            {
+                if (_size != value)
+                {
+                    _size = value;
+                    OnPropertyChanged(nameof(Size));
+                    MarkDirty();
+                }
+            }
+        }
+
+        public BoxNode() : base("Box", NodeCategory.Object)
+        {
+            // 入力ソケット
+            AddInputSocket("Transform", SocketType.Transform);
+            AddInputSocket("Material", SocketType.Material);
+            AddInputSocket("Size", SocketType.Vector3);
+            
+            // 出力ソケット
+            AddOutputSocket("Object", SocketType.Object);
+        }
+
+        public override object? Evaluate(Dictionary<Guid, object?> inputValues)
+        {
+            // Transform入力を取得（未接続の場合は内部プロパティを使用）
+            var transformSocket = InputSockets.FirstOrDefault(s => s.Name == "Transform");
+            Transform transform = ObjectTransform;
+            if (transformSocket != null && inputValues.TryGetValue(transformSocket.Id, out var transformVal) && transformVal is Transform inputTransform)
+            {
+                transform = inputTransform;
+            }
+
+            // マテリアル入力を取得（未接続の場合はデフォルト）
+            var material = GetInputValue<MaterialData?>("Material", inputValues) ?? MaterialData.Default;
+            
+            // 形状パラメータ入力を取得
+            var sizeInput = GetInputValue<Vector3?>("Size", inputValues);
+            
+            var size = sizeInput ?? Size;
+            
+            // スケールをサイズに適用し、half-extents に変換
+            var scaledSize = new Vector3(
+                size.X * transform.Scale.X * 0.5f,
+                size.Y * transform.Scale.Y * 0.5f,
+                size.Z * transform.Scale.Z * 0.5f
+            );
+
+            // 回転行列を Quaternion から直接作成
+            var rotationMatrix = Matrix4x4.CreateFromQuaternion(transform.Rotation);
+
+            // Local axes in world space (use columns)
+            var axisX = new Vector3(rotationMatrix.M11, rotationMatrix.M21, rotationMatrix.M31);
+            var axisY = new Vector3(rotationMatrix.M12, rotationMatrix.M22, rotationMatrix.M32);
+            var axisZ = new Vector3(rotationMatrix.M13, rotationMatrix.M23, rotationMatrix.M33);
+
+            return new BoxData
+            {
+                Center = transform.Position,
+                Size = scaledSize,  // half-extents
+                AxisX = axisX,
+                AxisY = axisY,
+                AxisZ = axisZ,
+                Material = material
+            };
+        }
+
+        #region ISerializableNode
+        public void SerializeProperties(IDictionary<string, object?> properties)
+        {
+            properties["Transform"] = ObjectTransform;
+            properties["Size"] = Size;
+        }
+
+        public void DeserializeProperties(IReadOnlyDictionary<string, object?> properties)
+        {
+            if (properties.TryGetValue("Transform", out var boxTransform))
+                ObjectTransform = SerializationHelpers.ConvertToTransform(boxTransform);
+            else if (properties.TryGetValue("Position", out var boxPos))
+            {
+                var transform = Transform.Identity;
+                transform.Position = SerializationHelpers.ConvertToVector3(boxPos);
+                ObjectTransform = transform;
+            }
+            if (properties.TryGetValue("Size", out var size))
+                Size = SerializationHelpers.ConvertToVector3(size);
+        }
+        #endregion
+    }
+}

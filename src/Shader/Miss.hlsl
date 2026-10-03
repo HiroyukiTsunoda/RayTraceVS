@@ -1,0 +1,40 @@
+// Miss shader - realistic atmospheric sky gradient
+#include "Common.hlsli"
+
+[shader("miss")]
+void Miss(inout RadiancePayload payload)
+{
+    float3 rayDir = normalize(WorldRayDirection());
+    
+    // Use the shared GetSkyColor function for consistent sky rendering
+    float3 sky = GetSkyColor(rayDir) * payload.pathSkyBoost;
+    
+    payload.color = sky;
+    payload.diffuseRadiance = sky;  // NRD用：空の色をDiffuseに書き込む
+    payload.specularRadiance = float3(0, 0, 0);
+    payload.shadowVisibility = 1.0;
+    payload.shadowPenumbra = 0.0;
+    payload.shadowDistance = NRD_FP16_MAX;
+    payload.hit = 0;  // 明示的にヒットなしを設定
+    payload.hitObjectType = OBJECT_TYPE_INVALID;
+    payload.hitObjectIndex = 0;
+    
+    // No further rays for miss
+}
+
+[shader("miss")]
+void Miss_Shadow(inout ShadowPayload payload)
+{
+    payload.hit = 0;
+    payload.hitObjectType = OBJECT_TYPE_INVALID;
+    payload.hitObjectIndex = 0;
+}
+
+[shader("miss")]
+void Miss_Thickness(inout ThicknessPayload payload)
+{
+    payload.hit = 0;
+    payload.hitT = NRD_FP16_MAX;
+    payload.objectType = OBJECT_TYPE_INVALID;
+    payload.objectIndex = 0;
+}

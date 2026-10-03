@@ -1,0 +1,111 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Application metadata -->
+    <!-- <ApplicationIcon>..\..\Resource\app.ico</ApplicationIcon> -->
+    <Company>RayTraceVS Development Team</Company>
+    <Product>RayTraceVS</Product>
+    <Description>DirectX 12 DXR Visual Raytracing Application</Description>
+    <Copyright>Copyright (c) 2026 RayTraceVS Development Team</Copyright>
+    <Version>1.0.0</Version>
+    <FileVersion>1.0.0.0</FileVersion>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+  </PropertyGroup>
+  
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <DebugType>full</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AssimpNet" Version="5.0.0-beta1" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RayTraceVS.Interop\RayTraceVS.Interop.vcxproj" />
+  </ItemGroup>
+
+  <!-- NRD SDK path -->
+  <PropertyGroup>
+    <NRD_DLL_PATH>C:\ProgramData\NVIDIA Corporation\SDKs\RTX_Kit_2025.4_Windows\RealTimeDenoiser\_Build\NRD.dll</NRD_DLL_PATH>
+  </PropertyGroup>
+
+  <!-- Native projects write their DLLs to this output directory. -->
+  <Target Name="CopyNrdDll" AfterTargets="Build">
+    <Copy SourceFiles="$(NRD_DLL_PATH)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" Condition="Exists('$(NRD_DLL_PATH)')" />
+    <Message Text="Native output directory: $(OutDir)" Importance="high" />
+  </Target>
+
+  <!-- Include shader files for MSIX packaging -->
+  <ItemGroup>
+    <Content Include="..\Shader\*.hlsl">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Shader\%(Filename)%(Extension)</Link>
+    </Content>
+    <Content Include="..\Shader\*.hlsli">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Shader\%(Filename)%(Extension)</Link>
+    </Content>
+    <Content Include="..\Shader\*.h">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Shader\%(Filename)%(Extension)</Link>
+    </Content>
+    <Content Include="..\Shader\Cache\*.cso">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Shader\Cache\%(Filename)%(Extension)</Link>
+    </Content>
+    <Content Include="..\Shader\Cache\shader_cache.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Shader\Cache\%(Filename)%(Extension)</Link>
+    </Content>
+  </ItemGroup>
+
+  <!-- Include sample scene file -->
+  <ItemGroup>
+    <Content Include="..\..\sample_scene.rtvs">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>sample_scene.rtvs</Link>
+    </Content>
+  </ItemGroup>
+
+  <!-- Include resource files -->
+  <ItemGroup>
+    <Content Include="..\..\Resource\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Resource\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </Content>
+  </ItemGroup>
+
+  <!-- Mark NRD.dll as content for MSIX -->
+  <Target Name="IncludeNrdDllAsContent" AfterTargets="CopyNrdDll">
+    <ItemGroup Condition="Exists('$(OutDir)NRD.dll')">
+      <Content Include="$(OutDir)NRD.dll">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </Content>
+    </ItemGroup>
+  </Target>
+  <!-- Native builds copy the selected Windows SDK DXC runtime to OutDir. -->
+  <Target Name="IncludeDxcRuntimeAsContent" BeforeTargets="AssignTargetPaths">
+    <ItemGroup>
+      <Content Include="$(OutDir)dxcompiler.dll">
+        <Link>dxcompiler.dll</Link>
+        <TargetPath>dxcompiler.dll</TargetPath>
+        <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </Content>
+      <Content Include="$(OutDir)dxil.dll">
+        <Link>dxil.dll</Link>
+        <TargetPath>dxil.dll</TargetPath>
+        <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </Content>
+    </ItemGroup>
+  </Target>
+</Project>

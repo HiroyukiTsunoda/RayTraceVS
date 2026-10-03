@@ -1,0 +1,466 @@
+<UserControl x:Class="RayTraceVS.WPF.Views.PropertyPanelView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:nodes="clr-namespace:RayTraceVS.WPF.Models.Nodes"
+             xmlns:utils="clr-namespace:RayTraceVS.WPF.Utils"
+             mc:Ignorable="d" 
+             d:DesignHeight="450" d:DesignWidth="300">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="10">
+            <TextBlock Text="プロパティ" 
+                       FontSize="16" FontWeight="Bold" 
+                       Foreground="{StaticResource TextBrush}"
+                       Margin="0,0,0,10"/>
+
+            <Border BorderBrush="{StaticResource BorderBrush}" 
+                    BorderThickness="1" 
+                    Padding="10"
+                    Background="#252526">
+                <StackPanel>
+                    <StackPanel x:Name="EmptyState" 
+                                Visibility="{Binding SelectedNode, Converter={StaticResource NullToVisibilityConverter}}">
+                        <TextBlock Text="ノードを選択してください" 
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   Margin="0,20"/>
+                    </StackPanel>
+                    
+                    <StackPanel x:Name="PropertyContent"
+                                Visibility="{Binding SelectedNode, Converter={StaticResource NotNullToVisibilityConverter}}">
+                        <!-- ノード名 -->
+                        <TextBlock Text="{Binding SelectedNode.Title}" 
+                                   FontSize="14" FontWeight="Bold" 
+                                   Foreground="{StaticResource TextBrush}"
+                                   Margin="0,0,0,10"/>
+                        
+                        <!-- ノードタイプ -->
+                        <TextBlock Text="タイプ" 
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   FontSize="10"
+                                   Margin="0,5,0,2"/>
+                        <TextBlock Text="{Binding SelectedNode.Category}" 
+                                   Foreground="{StaticResource TextBrush}"
+                                   Margin="0,0,0,10"/>
+                        
+                        <!-- 入力ソケット -->
+                        <TextBlock Text="入力" 
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   FontSize="10"
+                                   Margin="0,15,0,5"/>
+                        <ItemsControl ItemsSource="{Binding SelectedNode.InputSockets}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal" Margin="0,2">
+                                        <Ellipse Width="8" Height="8" 
+                                                 Fill="{StaticResource AccentBrush}"
+                                                 Margin="0,0,5,0"/>
+                                        <TextBlock Text="{Binding Name}" 
+                                                   Foreground="{StaticResource TextBrush}"
+                                                   FontSize="11"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        
+                        <!-- 出力ソケット -->
+                        <TextBlock Text="出力" 
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   FontSize="10"
+                                   Margin="0,15,0,5"/>
+                        <ItemsControl ItemsSource="{Binding SelectedNode.OutputSockets}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal" Margin="0,2">
+                                        <Ellipse Width="8" Height="8" 
+                                                 Fill="{StaticResource AccentBrush}"
+                                                 Margin="0,0,5,0"/>
+                                        <TextBlock Text="{Binding Name}" 
+                                                   Foreground="{StaticResource TextBrush}"
+                                                   FontSize="11"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        
+                        <!-- SceneNode専用プロパティ -->
+                        <ContentControl Content="{Binding SelectedNode}" Margin="0,15,0,0">
+                            <ContentControl.Resources>
+                                <DataTemplate DataType="{x:Type nodes:SceneNode}">
+                                    <StackPanel>
+                                        <TextBlock Text="レンダリング設定" 
+                                                   Foreground="{StaticResource AccentBrush}"
+                                                   FontWeight="Bold"
+                                                   FontSize="12"
+                                                   Margin="0,0,0,10"/>
+                                        
+                                        <!-- SamplesPerPixel -->
+                                        <TextBlock Text="サンプル数 (SamplesPerPixel)" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="10"
+                                                   Margin="0,5,0,2"/>
+                                        <Grid Margin="0,0,0,5">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="50"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Slider Grid.Column="0" 
+                                                    Value="{Binding SamplesPerPixel, Mode=TwoWay, UpdateSourceTrigger=Explicit}" 
+                                                    Minimum="1" Maximum="32" 
+                                                    IsSnapToTickEnabled="True" TickFrequency="1"
+                                                    VerticalAlignment="Center" Margin="0,0,5,0"
+                                                    utils:SliderDragBehavior.UpdateOnDragCompleted="True"/>
+                                            <TextBox Grid.Column="1" 
+                                                     Text="{Binding SamplesPerPixel, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                     Background="#3C3C3C"
+                                                     Foreground="{StaticResource TextBrush}"
+                                                     BorderBrush="{StaticResource BorderBrush}"
+                                                     Padding="5,3" TextAlignment="Center"
+                                                     KeyDown="TextBox_KeyDown"/>
+                                        </Grid>
+                                        <TextBlock Text="1: プレビュー / 4-8: 高品質 / 16+: 最高品質" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="9"
+                                                   Margin="0,0,0,10"/>
+                                        
+                                        <!-- MaxBounces -->
+                                        <TextBlock Text="最大反射回数 (MaxBounces)" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="10"
+                                                   Margin="0,5,0,2"/>
+                                        <Grid Margin="0,0,0,5">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="50"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Slider Grid.Column="0" 
+                                                    Value="{Binding MaxBounces, Mode=TwoWay, UpdateSourceTrigger=Explicit}" 
+                                                    Minimum="1" Maximum="16" 
+                                                    IsSnapToTickEnabled="True" TickFrequency="1"
+                                                    VerticalAlignment="Center" Margin="0,0,5,0"
+                                                    utils:SliderDragBehavior.UpdateOnDragCompleted="True"/>
+                                            <TextBox Grid.Column="1" 
+                                                     Text="{Binding MaxBounces, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                     Background="#3C3C3C"
+                                                     Foreground="{StaticResource TextBrush}"
+                                                     BorderBrush="{StaticResource BorderBrush}"
+                                                     Padding="5,3" TextAlignment="Center"
+                                                     KeyDown="TextBox_KeyDown"/>
+                                        </Grid>
+                                        <TextBlock Text="ガラス/メタルの反射・屈折の最大回数" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="9"
+                                                   Margin="0,0,0,10"/>
+
+                                        <!-- TraceRecursionDepth -->
+                                        <TextBlock Text="再帰深度 (TraceRecursionDepth)" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="10"
+                                                   Margin="0,5,0,2"/>
+                                        <Grid Margin="0,0,0,5">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="50"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Slider Grid.Column="0" 
+                                                    Value="{Binding TraceRecursionDepth, Mode=TwoWay, UpdateSourceTrigger=Explicit}" 
+                                                    Minimum="2" Maximum="4" 
+                                                    IsSnapToTickEnabled="True" TickFrequency="1"
+                                                    VerticalAlignment="Center" Margin="0,0,5,0"
+                                                    utils:SliderDragBehavior.UpdateOnDragCompleted="True"/>
+                                            <TextBox Grid.Column="1" 
+                                                     Text="{Binding TraceRecursionDepth, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                     Background="#3C3C3C"
+                                                     Foreground="{StaticResource TextBrush}"
+                                                     BorderBrush="{StaticResource BorderBrush}"
+                                                     Padding="5,3" TextAlignment="Center"
+                                                     KeyDown="TextBox_KeyDown"/>
+                                        </Grid>
+                                        <TextBlock Text="シャドウTraceRay用の再帰深度（2推奨）" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="9"
+                                                   Margin="0,0,0,10"/>
+
+                                        <!-- Exposure -->
+                                        <TextBlock Text="露出 (Exposure)" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="10"
+                                                   Margin="0,5,0,2"/>
+                                        <Grid Margin="0,0,0,10">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="50"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Slider Grid.Column="0" 
+                                                    Value="{Binding Exposure, Mode=TwoWay, UpdateSourceTrigger=Explicit}" 
+                                                    Minimum="0.1" Maximum="5.0" 
+                                                    LargeChange="0.5" SmallChange="0.1"
+                                                    VerticalAlignment="Center" Margin="0,0,5,0"
+                                                    utils:SliderDragBehavior.UpdateOnDragCompleted="True"/>
+                                            <TextBox Grid.Column="1" 
+                                                     Text="{Binding Exposure, Mode=TwoWay, UpdateSourceTrigger=LostFocus, StringFormat=F2}"
+                                                     Background="#3C3C3C"
+                                                     Foreground="{StaticResource TextBrush}"
+                                                     BorderBrush="{StaticResource BorderBrush}"
+                                                     Padding="5,3" TextAlignment="Center"
+                                                     KeyDown="TextBox_KeyDown"/>
+                                        </Grid>
+
+                                        <!-- ToneMapOperator -->
+                                        <TextBlock Text="トーンマップ" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="10"
+                                                   Margin="0,5,0,2"/>
+                                        <StackPanel Margin="0,0,0,10">
+                                            <RadioButton Content="Reinhard" 
+                                                         IsChecked="{Binding ToneMapOperator, Converter={StaticResource IntToBoolConverter}, ConverterParameter=0}"
+                                                         Foreground="White" Margin="0,2"/>
+                                            <RadioButton Content="ACES" 
+                                                         IsChecked="{Binding ToneMapOperator, Converter={StaticResource IntToBoolConverter}, ConverterParameter=1}"
+                                                         Foreground="White" Margin="0,2"/>
+                                            <RadioButton Content="None" 
+                                                         IsChecked="{Binding ToneMapOperator, Converter={StaticResource IntToBoolConverter}, ConverterParameter=2}"
+                                                         Foreground="White" Margin="0,2"/>
+                                        </StackPanel>
+
+                                        <!-- Gamma -->
+                                        <TextBlock Text="ガンマ (Gamma)" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="10"
+                                                   Margin="0,5,0,2"/>
+                                        <Grid Margin="0,0,0,5">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="50"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Slider Grid.Column="0" 
+                                                    Value="{Binding Gamma, Mode=TwoWay, UpdateSourceTrigger=Explicit}" 
+                                                    Minimum="1.0" Maximum="3.0" 
+                                                    LargeChange="0.2" SmallChange="0.1"
+                                                    VerticalAlignment="Center" Margin="0,0,5,0"
+                                                    utils:SliderDragBehavior.UpdateOnDragCompleted="True"/>
+                                            <TextBox Grid.Column="1" 
+                                                     Text="{Binding Gamma, Mode=TwoWay, UpdateSourceTrigger=LostFocus, StringFormat=F2}"
+                                                     Background="#3C3C3C"
+                                                     Foreground="{StaticResource TextBrush}"
+                                                     BorderBrush="{StaticResource BorderBrush}"
+                                                     Padding="5,3" TextAlignment="Center"
+                                                     KeyDown="TextBox_KeyDown"/>
+                                        </Grid>
+                                        <TextBlock Text="2.2: 標準sRGB / 1.0: リニア" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="9"
+                                                   Margin="0,0,0,10"/>
+
+                                        <!-- ShadowStrength -->
+                                        <TextBlock Text="影の濃さ (ShadowStrength)" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="10"
+                                                   Margin="0,5,0,2"/>
+                                        <Grid Margin="0,0,0,5">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="50"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Slider Grid.Column="0" 
+                                                    Value="{Binding ShadowStrength, Mode=TwoWay, UpdateSourceTrigger=Explicit}" 
+                                                    Minimum="0.0" Maximum="2.0" 
+                                                    LargeChange="0.2" SmallChange="0.1"
+                                                    VerticalAlignment="Center" Margin="0,0,5,0"
+                                                    utils:SliderDragBehavior.UpdateOnDragCompleted="True"/>
+                                            <TextBox Grid.Column="1" 
+                                                     Text="{Binding ShadowStrength, Mode=TwoWay, UpdateSourceTrigger=LostFocus, StringFormat=F2}"
+                                                     Background="#3C3C3C"
+                                                     Foreground="{StaticResource TextBrush}"
+                                                     BorderBrush="{StaticResource BorderBrush}"
+                                                     Padding="5,3" TextAlignment="Center"
+                                                     KeyDown="TextBox_KeyDown"/>
+                                        </Grid>
+                                        <TextBlock Text="0.0: 影なし / 1.0: 通常 / 1.5+: 濃い影" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="9"
+                                                   Margin="0,0,0,10"/>
+
+                                        <!-- ShadowAbsorptionScale -->
+                                        <TextBlock Text="透過影の吸収 (ShadowAbsorptionScale)" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="10"
+                                                   Margin="0,5,0,2"/>
+                                        <Grid Margin="0,0,0,5">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="50"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Slider Grid.Column="0" 
+                                                    Value="{Binding ShadowAbsorptionScale, Mode=TwoWay, UpdateSourceTrigger=Explicit}" 
+                                                    Minimum="0.0" Maximum="10.0" 
+                                                    LargeChange="1.0" SmallChange="0.5"
+                                                    VerticalAlignment="Center" Margin="0,0,5,0"
+                                                    utils:SliderDragBehavior.UpdateOnDragCompleted="True"/>
+                                            <TextBox Grid.Column="1" 
+                                                     Text="{Binding ShadowAbsorptionScale, Mode=TwoWay, UpdateSourceTrigger=LostFocus, StringFormat=F1}"
+                                                     Background="#3C3C3C"
+                                                     Foreground="{StaticResource TextBrush}"
+                                                     BorderBrush="{StaticResource BorderBrush}"
+                                                     Padding="5,3" TextAlignment="Center"
+                                                     KeyDown="TextBox_KeyDown"/>
+                                        </Grid>
+                                        <TextBlock Text="1.0: 薄い色 / 4.0: 通常 / 8.0+: 濃い色付き影" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="9"
+                                                   Margin="0,0,0,10"/>
+
+                                        <!-- EnableDenoiser -->
+                                        <CheckBox Content="デノイザー有効" 
+                                                  IsChecked="{Binding EnableDenoiser, Mode=TwoWay}"
+                                                  Foreground="White"
+                                                  Margin="0,5,0,2"/>
+                                        <TextBlock Text="OFF: 生のレイトレース結果を表示" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="9"
+                                                   Margin="0,0,0,10"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ContentControl.Resources>
+                        </ContentControl>
+                        
+                        <!-- CameraNode専用プロパティ -->
+                        <ContentControl Content="{Binding SelectedNode}" Margin="0,15,0,0">
+                            <ContentControl.Resources>
+                                <DataTemplate DataType="{x:Type nodes:CameraNode}">
+                                    <StackPanel>
+                                        <TextBlock Text="被写界深度 (DoF)" 
+                                                   Foreground="{StaticResource AccentBrush}"
+                                                   FontWeight="Bold"
+                                                   FontSize="12"
+                                                   Margin="0,0,0,10"/>
+                                        
+                                        <!-- ApertureSize -->
+                                        <TextBlock Text="絞りサイズ (ApertureSize)" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="10"
+                                                   Margin="0,5,0,2"/>
+                                        <Grid Margin="0,0,0,5">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="50"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Slider Grid.Column="0" 
+                                                    Value="{Binding ApertureSize, Mode=TwoWay, UpdateSourceTrigger=Explicit}" 
+                                                    Minimum="0.0" Maximum="1.0" 
+                                                    LargeChange="0.1" SmallChange="0.01"
+                                                    VerticalAlignment="Center" Margin="0,0,5,0"
+                                                    utils:SliderDragBehavior.UpdateOnDragCompleted="True"/>
+                                            <TextBox Grid.Column="1" 
+                                                     Text="{Binding ApertureSize, Mode=TwoWay, UpdateSourceTrigger=LostFocus, StringFormat=F2}"
+                                                     Background="#3C3C3C"
+                                                     Foreground="{StaticResource TextBrush}"
+                                                     BorderBrush="{StaticResource BorderBrush}"
+                                                     Padding="5,3" TextAlignment="Center"
+                                                     KeyDown="TextBox_KeyDown"/>
+                                        </Grid>
+                                        <TextBlock Text="0: DoF無効 / 0.05-0.2: 弱いボケ / 0.5+: 強いボケ" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="9"
+                                                   Margin="0,0,0,10"/>
+                                        
+                                        <!-- FocusDistance -->
+                                        <TextBlock Text="焦点距離 (FocusDistance)" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="10"
+                                                   Margin="0,5,0,2"/>
+                                        <Grid Margin="0,0,0,5">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="50"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Slider Grid.Column="0" 
+                                                    Value="{Binding FocusDistance, Mode=TwoWay, UpdateSourceTrigger=Explicit}" 
+                                                    Minimum="0.1" Maximum="50.0" 
+                                                    LargeChange="1.0" SmallChange="0.1"
+                                                    VerticalAlignment="Center" Margin="0,0,5,0"
+                                                    utils:SliderDragBehavior.UpdateOnDragCompleted="True"/>
+                                            <TextBox Grid.Column="1" 
+                                                     Text="{Binding FocusDistance, Mode=TwoWay, UpdateSourceTrigger=LostFocus, StringFormat=F1}"
+                                                     Background="#3C3C3C"
+                                                     Foreground="{StaticResource TextBrush}"
+                                                     BorderBrush="{StaticResource BorderBrush}"
+                                                     Padding="5,3" TextAlignment="Center"
+                                                     KeyDown="TextBox_KeyDown"/>
+                                        </Grid>
+                                        <TextBlock Text="ピントが合う距離（カメラからの距離）" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="9"
+                                                   Margin="0,0,0,10"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ContentControl.Resources>
+                        </ContentControl>
+                        
+                        <!-- FBXMeshNode専用プロパティ -->
+                        <ContentControl Content="{Binding SelectedNode}" Margin="0,15,0,0">
+                            <ContentControl.Resources>
+                                <DataTemplate DataType="{x:Type nodes:FBXMeshNode}">
+                                    <StackPanel>
+                                        <TextBlock Text="メッシュ情報" 
+                                                   Foreground="{StaticResource AccentBrush}"
+                                                   FontWeight="Bold"
+                                                   FontSize="12"
+                                                   Margin="0,0,0,10"/>
+                                        
+                                        <!-- メッシュ名 -->
+                                        <TextBlock Text="メッシュ名" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="10"
+                                                   Margin="0,5,0,2"/>
+                                        <TextBlock Text="{Binding MeshName}" 
+                                                   Foreground="{StaticResource TextBrush}"
+                                                   Margin="0,0,0,10"/>
+                                        
+                                        <!-- 頂点数 -->
+                                        <TextBlock Text="頂点数" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="10"
+                                                   Margin="0,5,0,2"/>
+                                        <TextBlock Text="{Binding VertexCount, StringFormat=N0}" 
+                                                   Foreground="{StaticResource TextBrush}"
+                                                   Margin="0,0,0,10"/>
+                                        
+                                        <!-- 三角形数 -->
+                                        <TextBlock Text="三角形数" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="10"
+                                                   Margin="0,5,0,2"/>
+                                        <TextBlock Text="{Binding TriangleCount, StringFormat=N0}" 
+                                                   Foreground="{StaticResource TextBrush}"
+                                                   Margin="0,0,0,10"/>
+                                        
+                                        <!-- バウンディングボックスサイズ -->
+                                        <TextBlock Text="バウンディングボックス" 
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="10"
+                                                   Margin="0,5,0,2"/>
+                                        <TextBlock Text="{Binding BoundsSizeText}" 
+                                                   Foreground="{StaticResource TextBrush}"
+                                                   Margin="0,0,0,10"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ContentControl.Resources>
+                        </ContentControl>
+                        
+                        <!-- 削除ボタン -->
+                        <Button Content="ノードを削除" 
+                                Click="DeleteNode_Click"
+                                Margin="0,20,0,0"
+                                Padding="10,5"
+                                Background="#C62828"
+                                Foreground="White"
+                                BorderThickness="0"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

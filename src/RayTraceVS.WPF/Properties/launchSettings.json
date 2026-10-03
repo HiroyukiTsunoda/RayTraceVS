@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "RayTraceVS.WPF": {
+      "commandName": "Project",
+      "nativeDebugging": true
+    }
+  }
+}

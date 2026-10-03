@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PlatformTarget>x64</PlatformTarget>
+    <AppOutput>$(MSBuildThisFileDirectory)..\..\src\RayTraceVS.WPF\bin\x64\$(Configuration)\net8.0-windows</AppOutput>
+  </PropertyGroup>
+  <!-- ビルド済みアプリを検証する。検証前にbuild.ps1 -NoPackageを実行する。 -->
+  <ItemGroup>
+    <Reference Include="RayTraceVS.WPF" HintPath="$(AppOutput)\RayTraceVS.WPF.dll" />
+    <Reference Include="RayTraceVS.Interop" HintPath="$(AppOutput)\RayTraceVS.Interop.dll" />
+    <Reference Include="CommunityToolkit.Mvvm" HintPath="$(AppOutput)\CommunityToolkit.Mvvm.dll" />
+    <Reference Include="Newtonsoft.Json" HintPath="$(AppOutput)\Newtonsoft.Json.dll" />
+  </ItemGroup>
+  <Target Name="CopyRuntimeDependencies" AfterTargets="Build">
+    <ItemGroup><RuntimeDependency Include="$(AppOutput)\*.dll" /></ItemGroup>
+    <Copy SourceFiles="@(RuntimeDependency)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
+</Project>
